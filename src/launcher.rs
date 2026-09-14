@@ -1,5 +1,5 @@
 use std::{
-    io::{BufRead, BufReader, BufWriter, Write},
+    io::{BufRead, BufReader, BufWriter, Stdout, Write},
     path::PathBuf,
     process::Stdio,
 };
@@ -9,33 +9,39 @@ use ratatui::{
     buffer::Buffer,
     crossterm::event::{self, KeyModifiers},
     layout::{Alignment, Rect},
-    prelude::Backend,
+    prelude::CrosstermBackend,
     style::{Color, Style},
     text::{Line, ToLine},
     widgets::{Cell, Row, StatefulWidget, Table, TableState, Widget},
 };
 
-use crate::{dialogue, editor, index, legend, profile::Profile, resize, window::new_window};
+use crate::{
+    dialogue, editor,
+    error::{Error, Result},
+    index, legend,
+    profile::Profile,
+    resize,
+    window::new_window,
+};
 
-pub fn run(terminal: &mut Terminal<impl Backend>) {
+pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     let area = terminal.get_frame().area();
     if resize::should_resize(area.width, area.height) {
-        resize::run(terminal);
+        resize::run(terminal)?;
     }
     let mut state = TableState::new();
     let mut launcher = Launcher::new(&mut state);
-    while !launcher.should_quit {
-        terminal
-            .draw(|frame| frame.render_stateful_widget(&launcher, frame.area(), &mut state))
-            .unwrap();
-        launcher.prompt(terminal, &mut state);
+    loop {
+        terminal.draw(|frame| frame.render_stateful_widget(&launcher, frame.area(), &mut state))?;
+        if launcher.prompt(terminal, &mut state)? {
+            return Ok(());
+        }
     }
 }
 
 struct Launcher {
     profiles: Vec<Profile>,
     executable_path: Option<PathBuf>,
-    should_quit: bool,
 }
 
 impl Launcher {
@@ -53,16 +59,19 @@ impl Launcher {
         Self {
             profiles,
             executable_path: read_engine_path(),
-            should_quit: false,
         }
     }
 
-    fn prompt(&mut self, terminal: &mut Terminal<impl Backend>, state: &mut TableState) {
+    fn prompt(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+        state: &mut TableState,
+    ) -> Result<bool> {
         loop {
-            let event = event::read().unwrap();
+            let event = event::read()?;
             if let event::Event::Resize(width, height) = event {
                 if resize::should_resize(width, height) {
-                    self.should_quit = resize::run(terminal);
+                    resize::run(terminal)?;
                 }
                 break;
             } else if let event::Event::Key(key) = event
@@ -70,13 +79,10 @@ impl Launcher {
             {
                 match key.code {
                     event::KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        self.should_quit = true;
-                        break;
+                        return Err(Error::Exit);
                     }
                     event::KeyCode::Esc => {
-                        let should_quit = dialogue::run(terminal, "Do you really want to quit?");
-                        self.should_quit = should_quit.is_none_or(|should_quit| should_quit);
-                        break;
+                        return dialogue::run(terminal, "Do you really want to quit?");
                     }
                     event::KeyCode::Enter => {
                         let index = state.selected().unwrap();
@@ -85,7 +91,7 @@ impl Launcher {
                         }
                     }
                     event::KeyCode::Char('?') => {
-                        self.should_quit = legend::run(
+                        legend::run(
                             terminal,
                             &[
                                 ["Esc", "Quit"],
@@ -98,13 +104,12 @@ impl Launcher {
                                 ["D", "Delete"],
                                 ["[/]", "Swap"],
                             ],
-                        );
+                        )?;
                         break;
                     }
                     event::KeyCode::Char('a') => {
-                        let (profile, should_quit) = editor::run(terminal, Profile::default());
+                        let profile = editor::run(terminal, Profile::default())?;
                         let index = state.selected().unwrap();
-                        self.should_quit = should_quit;
                         self.profiles.insert(index, profile);
                         if index == self.profiles.len() - 1 {
                             state.select(Some(index + 1));
@@ -115,9 +120,7 @@ impl Launcher {
                     event::KeyCode::Char('e') => {
                         let index = state.selected().unwrap();
                         if index != self.profiles.len() {
-                            let (profile, should_quit) =
-                                editor::run(terminal, self.profiles.remove(index));
-                            self.should_quit = should_quit;
+                            let profile = editor::run(terminal, self.profiles.remove(index))?;
                             self.profiles.insert(index, profile);
                             write_profiles(&self.profiles);
                             break;
@@ -127,9 +130,8 @@ impl Launcher {
                         let index = state.selected().unwrap();
                         if index != self.profiles.len() {
                             let should_delete =
-                                dialogue::run(terminal, "Are you sure you want to delete?");
-                            self.should_quit = should_delete.is_none();
-                            if should_delete.is_some_and(|should_delete| should_delete) {
+                                dialogue::run(terminal, "Are you sure you want to delete?")?;
+                            if should_delete {
                                 self.profiles.remove(index);
                                 if index == self.profiles.len() {
                                     if index != 0 {
@@ -178,6 +180,7 @@ impl Launcher {
                 }
             }
         }
+        Ok(false)
     }
 
     pub fn set_engine_path(&mut self) {

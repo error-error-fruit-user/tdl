@@ -1,62 +1,66 @@
+use std::io::Stdout;
+
 use ratatui::{
     Terminal,
     buffer::Buffer,
     crossterm::event::{self, KeyModifiers},
     layout::{Alignment, Rect},
-    prelude::Backend,
+    prelude::CrosstermBackend,
     style::{Color, Style},
     text::ToLine,
     widgets::{Block, BorderType, Borders, Widget},
 };
 
-use crate::{resize, window};
+use crate::{
+    error::{Error, Result},
+    resize, window,
+};
 
-pub fn run(terminal: &mut Terminal<impl Backend>, message: &'static str) -> Option<bool> {
+pub fn run(
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    message: &'static str,
+) -> Result<bool> {
     let mut dialogue = Dialogue::new(message);
-    while !dialogue.should_quit {
-        terminal
-            .draw(|frame| frame.render_widget(&dialogue, frame.area()))
-            .unwrap();
-        if let Some(answer) = dialogue.prompt(terminal) {
-            return Some(answer);
+    loop {
+        terminal.draw(|frame| frame.render_widget(&dialogue, frame.area()))?;
+        if let Some(answer) = dialogue.prompt(terminal)? {
+            return Ok(answer);
         }
     }
-    None
 }
 
 struct Dialogue {
     message: &'static str,
-    should_quit: bool,
 }
 
 impl Dialogue {
     const LEGEND: &'static str = "[Y]es [N]o";
 
     fn new(message: &'static str) -> Self {
-        Self {
-            message,
-            should_quit: false,
-        }
+        Self { message }
     }
 
-    fn prompt(&mut self, terminal: &mut Terminal<impl Backend>) -> Option<bool> {
+    fn prompt(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    ) -> Result<Option<bool>> {
         loop {
-            let event = event::read().unwrap();
+            let event = event::read()?;
             if let event::Event::Resize(width, height) = event {
                 if resize::should_resize(width, height) {
-                    self.should_quit = resize::run(terminal);
+                    resize::run(terminal)?;
+                    return Ok(None);
                 }
-                return None;
+                return Ok(None);
             } else if let event::Event::Key(key) = event
                 && key.is_press()
             {
                 match key.code {
                     event::KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        self.should_quit = true;
-                        return None;
+                        return Err(Error::Exit);
                     }
-                    event::KeyCode::Char('y') => return Some(true),
-                    event::KeyCode::Char('n') => return Some(false),
+                    event::KeyCode::Char('y') => return Ok(Some(true)),
+                    event::KeyCode::Char('n') => return Ok(Some(false)),
                     _ => (),
                 }
             }

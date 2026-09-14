@@ -1,40 +1,45 @@
+use std::io::Stdout;
+
 use ratatui::{
     Terminal,
     buffer::Buffer,
     crossterm::event::{self, KeyModifiers},
     layout::{Alignment, Position, Rect},
-    prelude::Backend,
+    prelude::CrosstermBackend,
     style::{Color, Style},
     text::ToLine,
     widgets::{Cell, Row, StatefulWidget, Table, TableState, Widget},
 };
 
-use crate::{dialogue, index, legend, profile::Profile, resize, window::new_window};
+use crate::{
+    dialogue,
+    error::{Error, Result},
+    index, legend,
+    profile::Profile,
+    resize,
+    window::new_window,
+};
 
-pub fn run(terminal: &mut Terminal<impl Backend>, profile: Profile) -> (Profile, bool) {
+pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>, profile: Profile) -> Result<Profile> {
     let mut state = TableState::new();
     let mut editor = Editor::new(profile, &mut state);
-    while !editor.should_quit {
-        terminal
-            .draw(|frame| {
-                if !editor.editing_mods {
-                    frame.set_cursor_position(editor.get_cursor_position(frame.area()));
-                }
-                frame.render_stateful_widget(&editor, frame.area(), &mut state);
-            })
-            .unwrap();
-        if let Some(profile) = editor.prompt(terminal, &mut state) {
-            return (profile, false);
+    loop {
+        terminal.draw(|frame| {
+            if !editor.editing_mods {
+                frame.set_cursor_position(editor.get_cursor_position(frame.area()));
+            }
+            frame.render_stateful_widget(&editor, frame.area(), &mut state);
+        })?;
+        if let Some(profile) = editor.prompt(terminal, &mut state)? {
+            return Ok(profile);
         }
     }
-    (editor.profile, true)
 }
 
 #[derive(Default)]
 struct Editor {
     profile: Profile,
     editing_mods: bool,
-    should_quit: bool,
 }
 
 impl Editor {
@@ -46,20 +51,19 @@ impl Editor {
         Self {
             editing_mods: !profile.name.is_empty(),
             profile,
-            should_quit: false,
         }
     }
 
     fn prompt(
         &mut self,
-        terminal: &mut Terminal<impl Backend>,
+        terminal: &mut Terminal<CrosstermBackend<Stdout>>,
         state: &mut TableState,
-    ) -> Option<Profile> {
+    ) -> Result<Option<Profile>> {
         loop {
-            let event = event::read().unwrap();
+            let event = event::read()?;
             if let event::Event::Resize(width, height) = event {
                 if resize::should_resize(width, height) {
-                    self.should_quit = resize::run(terminal);
+                    resize::run(terminal)?;
                 }
                 break;
             } else if let event::Event::Key(key) = event
@@ -67,12 +71,10 @@ impl Editor {
             {
                 match key.code {
                     event::KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        self.should_quit = true;
-                        break;
+                        return Err(Error::Exit);
                     }
                     event::KeyCode::Esc | event::KeyCode::Enter => {
-                        self.should_quit = true;
-                        return Some(self.profile.clone());
+                        return Ok(Some(self.profile.clone()));
                     }
                     event::KeyCode::Char('?') => {
                         let legend: &[[&'static str; 2]] = if self.editing_mods {
@@ -91,7 +93,7 @@ impl Editor {
                                 ["A-Z|0-9|_", "Input"],
                             ]
                         };
-                        self.should_quit = legend::run(terminal, &legend);
+                        legend::run(terminal, &legend)?;
                         break;
                     }
                     event::KeyCode::Tab => {
@@ -123,9 +125,8 @@ impl Editor {
                         if let Some(index) = state.selected_mut() {
                             if *index != self.profile.mods.len() {
                                 let should_delete =
-                                    dialogue::run(terminal, "Are you sure you want to delete?");
-                                self.should_quit = should_delete.is_none();
-                                if should_delete.is_some_and(|should_delete| should_delete) {
+                                    dialogue::run(terminal, "Are you sure you want to delete?")?;
+                                if should_delete {
                                     self.profile.mods.remove(*index);
                                     if *index == self.profile.mods.len() && *index != 0 {
                                         *index -= 1;
@@ -221,7 +222,7 @@ impl Editor {
                 }
             }
         }
-        None
+        Ok(None)
     }
 
     fn get_cursor_position(&self, area: Rect) -> Position {
