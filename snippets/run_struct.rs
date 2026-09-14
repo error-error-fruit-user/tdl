@@ -18,8 +18,10 @@ pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     let mut window = Window::new();
     loop {
         terminal.draw(|frame| frame.render_widget(&window, frame.area()))?;
-        if window.prompt(terminal)? {
-            return Err(Error::Exit);
+        match window.prompt(terminal)? {
+            Status::Render => (),
+            Status::Return(_) => return Ok(()),
+            Status::Prompt => unreachable!(),
         }
     }
 }
@@ -31,23 +33,11 @@ impl Window {
         Self {}
     }
 
-    fn prompt(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<bool> {
+    fn prompt(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<Status> {
         loop {
-            let event = event::read()?;
-            if let event::Event::Resize(width, height) = event {
-                if resize::should_resize(width, height) {
-                    resize::run(terminal)?;
-                }
-                return Ok(false);
-            } else if let event::Event::Key(key) = event
-                && key.is_press()
-            {
-                match key.code {
-                    event::KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        return Err(Error::Exit);
-                    }
-                    _ => (),
-                }
+            let status = window::read_event(&mut |_, _| Ok(Status(())>), terminal)?;
+            if status != Status::Prompt {
+                return Ok(status)
             }
         }
     }

@@ -2,7 +2,6 @@ use std::io::Stdout;
 
 use ratatui::{
     Terminal,
-    crossterm::event::{self, KeyModifiers},
     layout::Alignment,
     prelude::CrosstermBackend,
     style::{Color, Style},
@@ -10,8 +9,8 @@ use ratatui::{
 };
 
 use crate::{
-    error::{Error, Result},
-    resize, window,
+    error::Result,
+    window::{self, Status},
 };
 
 pub fn run(
@@ -39,19 +38,11 @@ pub fn run(
             }
         })?;
         loop {
-            let event = event::read()?;
-            if let event::Event::Resize(width, height) = event {
-                if resize::should_resize(width, height) {
-                    return resize::run(terminal);
-                }
-                break;
-            } else if let event::Event::Key(key) = event
-                && key.code == event::KeyCode::Char('c')
-                && key.modifiers.contains(KeyModifiers::CONTROL)
-            {
-                return Err(Error::Exit);
-            } else {
-                return Ok(());
+            let status = window::read_event(&mut |_, _| Ok(Status::Return(())), terminal)?;
+            match status {
+                Status::Render => break,
+                Status::Return(_) => return Ok(()),
+                Status::Prompt => (),
             }
         }
     }

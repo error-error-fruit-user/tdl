@@ -7,7 +7,7 @@ use std::{
 use ratatui::{
     Terminal,
     buffer::Buffer,
-    crossterm::event::{self, KeyModifiers},
+    crossterm::event::{self},
     layout::{Alignment, Rect},
     prelude::CrosstermBackend,
     style::{Color, Style},
@@ -17,11 +17,11 @@ use ratatui::{
 
 use crate::{
     dialogue, editor,
-    error::{Error, Result},
+    error::Result,
     index, legend,
     profile::Profile,
     resize,
-    window::new_window,
+    window::{self, Status, new_window},
 };
 
 pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
@@ -33,8 +33,10 @@ pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     let mut launcher = Launcher::new(&mut state);
     loop {
         terminal.draw(|frame| frame.render_stateful_widget(&launcher, frame.area(), &mut state))?;
-        if launcher.prompt(terminal, &mut state)? {
-            return Ok(());
+        match launcher.prompt(terminal, &mut state)? {
+            Status::Render => (),
+            Status::Return(..) => return Ok(()),
+            Status::Prompt => unreachable!(),
         }
     }
 }
@@ -66,29 +68,23 @@ impl Launcher {
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<Stdout>>,
         state: &mut TableState,
-    ) -> Result<bool> {
+    ) -> Result<Status<()>> {
         loop {
-            let event = event::read()?;
-            if let event::Event::Resize(width, height) = event {
-                if resize::should_resize(width, height) {
-                    resize::run(terminal)?;
-                }
-                break;
-            } else if let event::Event::Key(key) = event
-                && key.is_press()
-            {
-                match key.code {
-                    event::KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        return Err(Error::Exit);
-                    }
+            let status = window::read_event(
+                &mut |key_code, terminal| match key_code {
                     event::KeyCode::Esc => {
-                        return dialogue::run(terminal, "Do you really want to quit?");
+                        if dialogue::run(terminal, "Do you really want to quit?")? {
+                            Ok(Status::Return(()))
+                        } else {
+                            Ok(Status::Render)
+                        }
                     }
                     event::KeyCode::Enter => {
                         let index = state.selected().unwrap();
                         if index != self.profiles.len() {
                             self.launch(index);
                         }
+                        Ok(Status::Prompt)
                     }
                     event::KeyCode::Char('?') => {
                         legend::run(
@@ -105,7 +101,7 @@ impl Launcher {
                                 ["[/]", "Swap"],
                             ],
                         )?;
-                        break;
+                        Ok(Status::Render)
                     }
                     event::KeyCode::Char('a') => {
                         let profile = editor::run(terminal, Profile::default())?;
@@ -115,7 +111,7 @@ impl Launcher {
                             state.select(Some(index + 1));
                         }
                         write_profiles(&self.profiles);
-                        break;
+                        Ok(Status::Render)
                     }
                     event::KeyCode::Char('e') => {
                         let index = state.selected().unwrap();
@@ -123,7 +119,9 @@ impl Launcher {
                             let profile = editor::run(terminal, self.profiles.remove(index))?;
                             self.profiles.insert(index, profile);
                             write_profiles(&self.profiles);
-                            break;
+                            Ok(Status::Render)
+                        } else {
+                            Ok(Status::Prompt)
                         }
                     }
                     event::KeyCode::Char('d') => {
@@ -140,20 +138,29 @@ impl Launcher {
                                 }
                                 write_profiles(&self.profiles);
                             }
-                            break;
+                            Ok(Status::Render)
+                        } else {
+                            Ok(Status::Prompt)
                         }
                     }
                     event::KeyCode::Char('j') => {
                         if index::select_next(state.selected_mut(), self.profiles.len() + 1) {
-                            break;
+                            Ok(Status::Render)
+                        } else {
+                            Ok(Status::Prompt)
                         }
                     }
                     event::KeyCode::Char('k') => {
                         if index::select_previous(state.selected_mut(), self.profiles.len() + 1) {
-                            break;
+                            Ok(Status::Render)
+                        } else {
+                            Ok(Status::Prompt)
                         }
                     }
-                    event::KeyCode::Char('w') => self.set_engine_path(),
+                    event::KeyCode::Char('w') => {
+                        self.set_engine_path();
+                        Ok(Status::Prompt)
+                    }
                     event::KeyCode::Char(']') => {
                         if let Some(index) = state.selected_mut()
                             && self.profiles.len() != 1
@@ -162,7 +169,9 @@ impl Launcher {
                             let next_index = index::next(*index, self.profiles.len());
                             self.profiles.swap(*index, next_index);
                             *index = next_index;
-                            break;
+                            Ok(Status::Render)
+                        } else {
+                            Ok(Status::Prompt)
                         }
                     }
                     event::KeyCode::Char('[') => {
@@ -173,14 +182,20 @@ impl Launcher {
                             let previous_index = index::previous(*index, self.profiles.len());
                             self.profiles.swap(*index, previous_index);
                             *index = previous_index;
-                            break;
+                            Ok(Status::Render)
+                        } else {
+                            Ok(Status::Prompt)
                         }
                     }
-                    _ => (),
-                }
+                    _ => Ok(Status::Prompt),
+                },
+                terminal,
+            )?;
+
+            if status != Status::Prompt {
+                return Ok(status);
             }
         }
-        Ok(false)
     }
 
     pub fn set_engine_path(&mut self) {

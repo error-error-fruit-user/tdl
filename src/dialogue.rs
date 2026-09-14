@@ -3,7 +3,7 @@ use std::io::Stdout;
 use ratatui::{
     Terminal,
     buffer::Buffer,
-    crossterm::event::{self, KeyModifiers},
+    crossterm::event::{self},
     layout::{Alignment, Rect},
     prelude::CrosstermBackend,
     style::{Color, Style},
@@ -12,8 +12,8 @@ use ratatui::{
 };
 
 use crate::{
-    error::{Error, Result},
-    resize, window,
+    error::Result,
+    window::{self, Status},
 };
 
 pub fn run(
@@ -23,8 +23,10 @@ pub fn run(
     let mut dialogue = Dialogue::new(message);
     loop {
         terminal.draw(|frame| frame.render_widget(&dialogue, frame.area()))?;
-        if let Some(answer) = dialogue.prompt(terminal)? {
-            return Ok(answer);
+        match dialogue.prompt(terminal)? {
+            Status::Render => (),
+            Status::Return(answer) => return Ok(answer),
+            Status::Prompt => unreachable!(),
         }
     }
 }
@@ -43,26 +45,18 @@ impl Dialogue {
     fn prompt(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    ) -> Result<Option<bool>> {
+    ) -> Result<Status<bool>> {
         loop {
-            let event = event::read()?;
-            if let event::Event::Resize(width, height) = event {
-                if resize::should_resize(width, height) {
-                    resize::run(terminal)?;
-                    return Ok(None);
-                }
-                return Ok(None);
-            } else if let event::Event::Key(key) = event
-                && key.is_press()
-            {
-                match key.code {
-                    event::KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        return Err(Error::Exit);
-                    }
-                    event::KeyCode::Char('y') => return Ok(Some(true)),
-                    event::KeyCode::Char('n') => return Ok(Some(false)),
-                    _ => (),
-                }
+            let status = window::read_event(
+                &mut |key_code, _| match key_code {
+                    event::KeyCode::Char('y') => Ok(Status::Return(true)),
+                    event::KeyCode::Char('n') => Ok(Status::Return(false)),
+                    _ => Ok(Status::Prompt),
+                },
+                terminal,
+            )?;
+            if status != Status::Prompt {
+                return Ok(status);
             }
         }
     }
