@@ -47,14 +47,11 @@ impl Dialogue {
         terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     ) -> Result<Status<bool>> {
         loop {
-            let status = window::read_event(
-                &mut |key_code, _| match key_code {
-                    event::KeyCode::Char('y') => Ok(Status::Return(true)),
-                    event::KeyCode::Char('n') => Ok(Status::Return(false)),
-                    _ => Ok(Status::Prompt),
-                },
-                terminal,
-            )?;
+            let status = window::read_event(terminal, &mut |_, key_code| match key_code {
+                event::KeyCode::Char('y') => Ok(Status::Return(true)),
+                event::KeyCode::Char('n') => Ok(Status::Return(false)),
+                _ => Ok(Status::Prompt),
+            })?;
             if status != Status::Prompt {
                 return Ok(status);
             }

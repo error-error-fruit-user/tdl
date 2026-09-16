@@ -16,10 +16,10 @@ pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     loop {
         terminal.draw(|frame| {})?;
         loop {
-            let status = window::read_event(&mut |_, _| Ok(Status::Return(())), terminal)?;
+            let status = window::read_event(terminal, &mut |_, _| Ok(Status::Return(())))?;
             match status {
                 Status::Render => break,
-                Status::Return(_) => return Ok(()),
+                Status::Return(value) => return Ok(value),
                 Status::Prompt => (),
             }
         }

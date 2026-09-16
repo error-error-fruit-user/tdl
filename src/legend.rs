@@ -38,7 +38,7 @@ pub fn run(
             }
         })?;
         loop {
-            let status = window::read_event(&mut |_, _| Ok(Status::Return(())), terminal)?;
+            let status = window::read_event(terminal, &mut |_, _| Ok(Status::Return(())))?;
             match status {
                 Status::Render => break,
                 Status::Return(_) => return Ok(()),

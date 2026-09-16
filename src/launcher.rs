@@ -70,127 +70,124 @@ impl Launcher {
         state: &mut TableState,
     ) -> Result<Status<()>> {
         loop {
-            let status = window::read_event(
-                &mut |key_code, terminal| match key_code {
-                    event::KeyCode::Esc => {
-                        if dialogue::run(terminal, "Do you really want to quit?")? {
-                            Ok(Status::Return(()))
-                        } else {
-                            Ok(Status::Render)
-                        }
-                    }
-                    event::KeyCode::Enter => {
-                        let index = state.selected().unwrap();
-                        if index != self.profiles.len() {
-                            self.launch(index);
-                        }
-                        Ok(Status::Prompt)
-                    }
-                    event::KeyCode::Char('?') => {
-                        legend::run(
-                            terminal,
-                            &[
-                                ["Esc", "Quit"],
-                                ["Enter", "Launch"],
-                                ["W", "Set Executable"],
-                                ["J/K", "Traverse"],
-                                ["A", "Add"],
-                                ["E", "Edit"],
-                                ["F", "Import Folder"],
-                                ["D", "Delete"],
-                                ["[/]", "Swap"],
-                            ],
-                        )?;
+            let status = window::read_event(terminal, &mut |terminal, key_code| match key_code {
+                event::KeyCode::Esc => {
+                    if dialogue::run(terminal, "Are you sure you want to quit?")? {
+                        Ok(Status::Return(()))
+                    } else {
                         Ok(Status::Render)
                     }
-                    event::KeyCode::Char('a') => {
-                        let profile = editor::run(terminal, Profile::default())?;
-                        let index = state.selected().unwrap();
+                }
+                event::KeyCode::Enter => {
+                    let index = state.selected().unwrap();
+                    if index != self.profiles.len() {
+                        self.launch(index);
+                    }
+                    Ok(Status::Prompt)
+                }
+                event::KeyCode::Char('?') => {
+                    legend::run(
+                        terminal,
+                        &[
+                            ["Esc", "Quit"],
+                            ["Enter", "Launch"],
+                            ["W", "Set Executable"],
+                            ["J/K", "Traverse"],
+                            ["A", "Add"],
+                            ["E", "Edit"],
+                            ["F", "Import Folder"],
+                            ["D", "Delete"],
+                            ["[/]", "Swap"],
+                        ],
+                    )?;
+                    Ok(Status::Render)
+                }
+                event::KeyCode::Char('a') => {
+                    let profile = editor::run(terminal, Profile::default())?;
+                    let index = state.selected().unwrap();
+                    self.profiles.insert(index, profile);
+                    if index == self.profiles.len() - 1 {
+                        state.select(Some(index + 1));
+                    }
+                    write_profiles(&self.profiles);
+                    Ok(Status::Render)
+                }
+                event::KeyCode::Char('e') => {
+                    let index = state.selected().unwrap();
+                    if index != self.profiles.len() {
+                        let profile = editor::run(terminal, self.profiles.remove(index))?;
                         self.profiles.insert(index, profile);
-                        if index == self.profiles.len() - 1 {
-                            state.select(Some(index + 1));
-                        }
                         write_profiles(&self.profiles);
                         Ok(Status::Render)
-                    }
-                    event::KeyCode::Char('e') => {
-                        let index = state.selected().unwrap();
-                        if index != self.profiles.len() {
-                            let profile = editor::run(terminal, self.profiles.remove(index))?;
-                            self.profiles.insert(index, profile);
-                            write_profiles(&self.profiles);
-                            Ok(Status::Render)
-                        } else {
-                            Ok(Status::Prompt)
-                        }
-                    }
-                    event::KeyCode::Char('d') => {
-                        let index = state.selected().unwrap();
-                        if index != self.profiles.len() {
-                            let should_delete =
-                                dialogue::run(terminal, "Are you sure you want to delete?")?;
-                            if should_delete {
-                                self.profiles.remove(index);
-                                if index == self.profiles.len() {
-                                    if index != 0 {
-                                        state.select(Some(index - 1));
-                                    }
-                                }
-                                write_profiles(&self.profiles);
-                            }
-                            Ok(Status::Render)
-                        } else {
-                            Ok(Status::Prompt)
-                        }
-                    }
-                    event::KeyCode::Char('j') => {
-                        if index::select_next(state.selected_mut(), self.profiles.len() + 1) {
-                            Ok(Status::Render)
-                        } else {
-                            Ok(Status::Prompt)
-                        }
-                    }
-                    event::KeyCode::Char('k') => {
-                        if index::select_previous(state.selected_mut(), self.profiles.len() + 1) {
-                            Ok(Status::Render)
-                        } else {
-                            Ok(Status::Prompt)
-                        }
-                    }
-                    event::KeyCode::Char('w') => {
-                        self.set_engine_path();
+                    } else {
                         Ok(Status::Prompt)
                     }
-                    event::KeyCode::Char(']') => {
-                        if let Some(index) = state.selected_mut()
-                            && self.profiles.len() != 1
-                            && *index != self.profiles.len()
-                        {
-                            let next_index = index::next(*index, self.profiles.len());
-                            self.profiles.swap(*index, next_index);
-                            *index = next_index;
-                            Ok(Status::Render)
-                        } else {
-                            Ok(Status::Prompt)
+                }
+                event::KeyCode::Char('d') => {
+                    let index = state.selected().unwrap();
+                    if index != self.profiles.len() {
+                        let should_delete =
+                            dialogue::run(terminal, "Are you sure you want to delete?")?;
+                        if should_delete {
+                            self.profiles.remove(index);
+                            if index == self.profiles.len() {
+                                if index != 0 {
+                                    state.select(Some(index - 1));
+                                }
+                            }
+                            write_profiles(&self.profiles);
                         }
+                        Ok(Status::Render)
+                    } else {
+                        Ok(Status::Prompt)
                     }
-                    event::KeyCode::Char('[') => {
-                        if let Some(index) = state.selected_mut()
-                            && self.profiles.len() != 1
-                            && *index != self.profiles.len()
-                        {
-                            let previous_index = index::previous(*index, self.profiles.len());
-                            self.profiles.swap(*index, previous_index);
-                            *index = previous_index;
-                            Ok(Status::Render)
-                        } else {
-                            Ok(Status::Prompt)
-                        }
+                }
+                event::KeyCode::Char('j') => {
+                    if index::select_next(state.selected_mut(), self.profiles.len() + 1) {
+                        Ok(Status::Render)
+                    } else {
+                        Ok(Status::Prompt)
                     }
-                    _ => Ok(Status::Prompt),
-                },
-                terminal,
-            )?;
+                }
+                event::KeyCode::Char('k') => {
+                    if index::select_previous(state.selected_mut(), self.profiles.len() + 1) {
+                        Ok(Status::Render)
+                    } else {
+                        Ok(Status::Prompt)
+                    }
+                }
+                event::KeyCode::Char('w') => {
+                    self.set_engine_path();
+                    Ok(Status::Prompt)
+                }
+                event::KeyCode::Char(']') => {
+                    if let Some(index) = state.selected_mut()
+                        && self.profiles.len() != 1
+                        && *index != self.profiles.len()
+                    {
+                        let next_index = index::next(*index, self.profiles.len());
+                        self.profiles.swap(*index, next_index);
+                        *index = next_index;
+                        Ok(Status::Render)
+                    } else {
+                        Ok(Status::Prompt)
+                    }
+                }
+                event::KeyCode::Char('[') => {
+                    if let Some(index) = state.selected_mut()
+                        && self.profiles.len() != 1
+                        && *index != self.profiles.len()
+                    {
+                        let previous_index = index::previous(*index, self.profiles.len());
+                        self.profiles.swap(*index, previous_index);
+                        *index = previous_index;
+                        Ok(Status::Render)
+                    } else {
+                        Ok(Status::Prompt)
+                    }
+                }
+                _ => Ok(Status::Prompt),
+            })?;
 
             if status != Status::Prompt {
                 return Ok(status);

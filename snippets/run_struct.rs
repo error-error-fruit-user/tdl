@@ -35,9 +35,9 @@ impl Window {
 
     fn prompt(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<Status> {
         loop {
-            let status = window::read_event(&mut |_, _| Ok(Status(())>), terminal)?;
+            let status = window::read_event(terminal, &mut |_, _| Ok(Status(())))?;
             if status != Status::Prompt {
-                return Ok(status)
+                return Ok(status);
             }
         }
     }

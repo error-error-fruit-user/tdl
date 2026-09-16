@@ -62,26 +62,26 @@ pub enum Status<T> {
 }
 
 pub fn read_event<T>(
-    key_handler: &mut impl FnMut(
-        event::KeyCode,
-        &mut Terminal<CrosstermBackend<Stdout>>,
-    ) -> Result<Status<T>>,
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    key_handler: &mut impl FnMut(
+        &mut Terminal<CrosstermBackend<Stdout>>,
+        event::KeyCode,
+    ) -> Result<Status<T>>,
 ) -> Result<Status<T>> {
     let event = event::read()?;
     if let event::Event::Resize(width, height) = event {
         if resize::should_resize(width, height) {
             resize::run(terminal)?;
         }
-        return Ok(Status::Render);
+        Ok(Status::Render)
     } else if let event::Event::Key(key) = event
         && key.is_press()
     {
         match key.code {
             event::KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                return Err(Error::Exit);
+                Err(Error::Exit)
             }
-            key_code => key_handler(key_code, terminal),
+            key_code => key_handler(terminal, key_code),
         }
     } else {
         Ok(Status::Prompt)
