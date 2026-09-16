@@ -10,6 +10,7 @@ use ratatui::{
 
 use crate::{
     error::Result,
+    handle_status,
     window::{self, Status},
 };
 
@@ -38,12 +39,9 @@ pub fn run(
             }
         })?;
         loop {
-            let status = window::read_event(terminal, &mut |_, _| Ok(Status::Return(())))?;
-            match status {
-                Status::Render => break,
-                Status::Return(_) => return Ok(()),
-                Status::Prompt => (),
-            }
+            handle_status![window::read_event(terminal, &mut |_, _| Ok(
+                Status::Return(())
+            ))?];
         }
     }
 }

@@ -54,11 +54,23 @@ pub fn new_window_area(width: u16, height: u16, area: Rect) -> Rect {
     )
 }
 
+#[must_use]
 #[derive(Eq, PartialEq)]
 pub enum Status<T> {
     Render,
     Prompt,
     Return(T),
+}
+
+#[macro_export]
+macro_rules! handle_status {
+    [$expr:expr] => {
+        match $expr {
+            Status::Render => break,
+            Status::Return(x) => return Ok(x),
+            _ => (),
+        }
+    }
 }
 
 pub fn read_event<T>(

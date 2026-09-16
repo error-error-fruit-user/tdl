@@ -11,17 +11,15 @@ use ratatui::{
 
 use crate::{
     error::{Error, Result},
-    resize,
+    handle_status, resize,
 };
 
 pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     let mut window = Window::new();
     loop {
         terminal.draw(|frame| frame.render_widget(&window, frame.area()))?;
-        match window.prompt(terminal)? {
-            Status::Render => (),
-            Status::Return(_) => return Ok(()),
-            Status::Prompt => unreachable!(),
+        loop {
+            handle_status![window.prompt(terminal)?];
         }
     }
 }
@@ -34,12 +32,7 @@ impl Window {
     }
 
     fn prompt(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<Status> {
-        loop {
-            let status = window::read_event(terminal, &mut |_, _| Ok(Status(())))?;
-            if status != Status::Prompt {
-                return Ok(status);
-            }
-        }
+        window::read_event(terminal, &mut |_, _| Ok(Status(())))
     }
 }
 

@@ -13,6 +13,7 @@ use ratatui::{
 
 use crate::{
     error::Result,
+    handle_status,
     window::{self, Status},
 };
 
@@ -23,10 +24,8 @@ pub fn run(
     let mut dialogue = Dialogue::new(message);
     loop {
         terminal.draw(|frame| frame.render_widget(&dialogue, frame.area()))?;
-        match dialogue.prompt(terminal)? {
-            Status::Render => (),
-            Status::Return(answer) => return Ok(answer),
-            Status::Prompt => unreachable!(),
+        loop {
+            handle_status![dialogue.prompt(terminal)?];
         }
     }
 }
@@ -46,16 +45,11 @@ impl Dialogue {
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     ) -> Result<Status<bool>> {
-        loop {
-            let status = window::read_event(terminal, &mut |_, key_code| match key_code {
-                event::KeyCode::Char('y') => Ok(Status::Return(true)),
-                event::KeyCode::Char('n') => Ok(Status::Return(false)),
-                _ => Ok(Status::Prompt),
-            })?;
-            if status != Status::Prompt {
-                return Ok(status);
-            }
-        }
+        window::read_event(terminal, &mut |_, key_code| match key_code {
+            event::KeyCode::Char('y') => Ok(Status::Return(true)),
+            event::KeyCode::Char('n') => Ok(Status::Return(false)),
+            _ => Ok(Status::Prompt),
+        })
     }
 }
 
