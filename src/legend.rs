@@ -10,16 +10,17 @@ use ratatui::{
 
 use crate::{
     error::Result,
-    handle_status,
-    window::{self, Status},
+    stage,
+    window::{self, Step},
 };
 
 pub fn run(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     legend: &[[&'static str; 2]],
 ) -> Result<()> {
-    loop {
-        terminal.draw(|frame| {
+    stage![
+        terminal,
+        |frame| {
             let width = 31;
             let height = legend.len() as u16 * 2 + 3;
             let (window, mut window_area, ..) =
@@ -37,11 +38,7 @@ pub fn run(
                 frame.render_widget(line, window_area);
                 window_area.y += 2;
             }
-        })?;
-        loop {
-            handle_status![window::read_event(terminal, &mut |_, _| Ok(
-                Status::Return(())
-            ))?];
-        }
-    }
+        },
+        &mut |_, _| Ok(Step::Return(()))
+    ];
 }

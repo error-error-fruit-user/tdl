@@ -14,9 +14,10 @@ use ratatui::{
 use crate::{
     dialogue,
     error::Result,
-    handle_status, index, legend, loop_prompt,
+    index, legend,
     profile::Profile,
-    window::{self, Status, new_window},
+    resolve,
+    window::{self, Step, new_window},
 };
 
 pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>, profile: Profile) -> Result<Profile> {
@@ -29,7 +30,7 @@ pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>, profile: Profile) 
             }
             frame.render_stateful_widget(&editor, frame.area(), &mut state);
         })?;
-        loop_prompt!(terminal, editor, &mut state);
+        resolve![terminal, editor, &mut state];
     }
 }
 
@@ -55,9 +56,9 @@ impl Editor {
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<Stdout>>,
         state: &mut TableState,
-    ) -> Result<Status<Profile>> {
-        window::read_event(terminal, &mut |terminal, key_code| match key_code {
-            event::KeyCode::Esc | event::KeyCode::Enter => Ok(Status::Return(self.profile.clone())),
+    ) -> Result<Step<Profile>> {
+        window::process(terminal, &mut |terminal, key_code| match key_code {
+            event::KeyCode::Esc | event::KeyCode::Enter => Ok(Step::Return(self.profile.clone())),
             event::KeyCode::Char('?') => {
                 let legend: &[[&'static str; 2]] = if self.editing_mods {
                     &[
@@ -76,34 +77,34 @@ impl Editor {
                     ]
                 };
                 legend::run(terminal, legend)?;
-                Ok(Status::Render)
+                Ok(Step::Render)
             }
             event::KeyCode::Tab => {
                 self.editing_mods = !self.editing_mods;
-                Ok(Status::Render)
+                Ok(Step::Render)
             }
             event::KeyCode::Char(c @ 'a'..='z' | c @ 'A'..='Z' | c @ '0'..='9' | c @ '_')
                 if !self.editing_mods =>
             {
                 self.profile.name.push(c);
-                Ok(Status::Render)
+                Ok(Step::Render)
             }
             event::KeyCode::Backspace if !self.editing_mods => {
                 self.profile.name.pop();
-                Ok(Status::Render)
+                Ok(Step::Render)
             }
             event::KeyCode::Char('j') => {
                 if index::select_next(state.selected_mut(), self.profile.mods.len() + 1) {
-                    Ok(Status::Render)
+                    Ok(Step::Render)
                 } else {
-                    Ok(Status::Prompt)
+                    Ok(Step::Prompt)
                 }
             }
             event::KeyCode::Char('k') => {
                 if index::select_previous(state.selected_mut(), self.profile.mods.len() + 1) {
-                    Ok(Status::Render)
+                    Ok(Step::Render)
                 } else {
-                    Ok(Status::Prompt)
+                    Ok(Step::Prompt)
                 }
             }
             event::KeyCode::Char('d') => {
@@ -118,9 +119,9 @@ impl Editor {
                             *index -= 1;
                         }
                     }
-                    Ok(Status::Render)
+                    Ok(Step::Render)
                 } else {
-                    Ok(Status::Prompt)
+                    Ok(Step::Prompt)
                 }
             }
             event::KeyCode::Char(']') => {
@@ -131,9 +132,9 @@ impl Editor {
                     let next_index = index::next(*index, self.profile.mods.len());
                     self.profile.mods.swap(*index, next_index);
                     *index = next_index;
-                    Ok(Status::Render)
+                    Ok(Step::Render)
                 } else {
-                    Ok(Status::Prompt)
+                    Ok(Step::Prompt)
                 }
             }
             event::KeyCode::Char('[') => {
@@ -144,9 +145,9 @@ impl Editor {
                     let previous_index = index::previous(*index, self.profile.mods.len());
                     self.profile.mods.swap(*index, previous_index);
                     *index = previous_index;
-                    Ok(Status::Render)
+                    Ok(Step::Render)
                 } else {
-                    Ok(Status::Prompt)
+                    Ok(Step::Prompt)
                 }
             }
             event::KeyCode::Char('a') => {
@@ -155,10 +156,10 @@ impl Editor {
                     .add_filter("wads", &["wad", "pk3"])
                     .pick_files();
                 let Some(new_mods) = new_mods else {
-                    return Ok(Status::Prompt);
+                    return Ok(Step::Prompt);
                 };
                 if new_mods.is_empty() {
-                    return Ok(Status::Prompt);
+                    return Ok(Step::Prompt);
                 }
                 let mut index = state.selected().unwrap();
                 let new_mods = new_mods.iter().map(|f| f.to_string_lossy().to_string());
@@ -171,14 +172,14 @@ impl Editor {
                     index += length
                 }
                 state.select(Some(index));
-                Ok(Status::Render)
+                Ok(Step::Render)
             }
             event::KeyCode::Char('f') => {
                 let folder = rfd::FileDialog::new()
                     .set_directory(std::env::current_dir().unwrap())
                     .pick_folder();
                 let Some(folder) = folder else {
-                    return Ok(Status::Prompt);
+                    return Ok(Step::Prompt);
                 };
                 let new_mods = std::fs::read_dir(folder)
                     .into_iter()
@@ -195,7 +196,7 @@ impl Editor {
                     .map(|path| path.to_string_lossy().to_string())
                     .collect::<Vec<_>>();
                 if new_mods.is_empty() {
-                    return Ok(Status::Prompt);
+                    return Ok(Step::Prompt);
                 }
                 let mut index = state.selected().unwrap();
                 let length = new_mods.len();
@@ -207,9 +208,9 @@ impl Editor {
                     index += length
                 }
                 state.select(Some(index));
-                Ok(Status::Render)
+                Ok(Step::Render)
             }
-            _ => Ok(Status::Prompt),
+            _ => Ok(Step::Prompt),
         })
     }
 

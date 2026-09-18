@@ -56,25 +56,22 @@ pub fn new_window_area(width: u16, height: u16, area: Rect) -> Rect {
 
 #[must_use]
 #[derive(Eq, PartialEq)]
-pub enum Status<T> {
+pub enum Step<T> {
     Render,
     Prompt,
     Return(T),
 }
 
-pub fn read_event<T>(
+pub fn process<T>(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    key_handler: &mut impl FnMut(
-        &mut Terminal<CrosstermBackend<Stdout>>,
-        event::KeyCode,
-    ) -> Result<Status<T>>,
-) -> Result<Status<T>> {
+    prompt: &mut impl FnMut(&mut Terminal<CrosstermBackend<Stdout>>, event::KeyCode) -> Result<Step<T>>,
+) -> Result<Step<T>> {
     let event = event::read()?;
     if let event::Event::Resize(width, height) = event {
         if resize::should_resize(width, height) {
             resize::run(terminal)?;
         }
-        Ok(Status::Render)
+        Ok(Step::Render)
     } else if let event::Event::Key(key) = event
         && key.is_press()
     {
@@ -82,19 +79,19 @@ pub fn read_event<T>(
             event::KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 Err(Error::Exit)
             }
-            key_code => key_handler(terminal, key_code),
+            key_code => prompt(terminal, key_code),
         }
     } else {
-        Ok(Status::Prompt)
+        Ok(Step::Prompt)
     }
 }
 
 #[macro_export]
-macro_rules! handle_status {
+macro_rules! dispatch {
     [$expr:expr] => {
         match $expr {
-            Status::Render => break,
-            Status::Return(x) => return Ok(x),
+            Step::Render => break,
+            Step::Return(x) => return Ok(x),
             _ => (),
         }
     };
@@ -111,15 +108,43 @@ macro_rules! render {
 }
 
 #[macro_export]
-macro_rules! loop_prompt {
+macro_rules! resolve {
     [$terminal:expr, $window:expr] => {
         loop {
-            handle_status![$window.prompt($terminal)?];
+            crate::dispatch![$window.prompt($terminal)?];
         }
     };
     [$terminal:expr, $window:expr, $state:expr] => {
         loop {
-            handle_status![$window.prompt($terminal, $state)?]
+            crate::dispatch![$window.prompt($terminal, $state)?]
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! present {
+    [$terminal:expr, $window:expr] => {
+        loop {
+            crate::render![$terminal, &$window];
+            crate::resolve![$terminal, $window];
+        }
+    };
+    [$terminal:expr, $window:expr, $state:expr] => {
+        loop {
+            crate::render![$terminal, &$window, $state];
+            crate::resolve![$terminal, $window, $state];
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! stage {
+    [$terminal:expr, $renderer:expr, $prompt:expr] => {
+        loop {
+            $terminal.draw($renderer)?;
+            loop {
+                crate::dispatch![window::process($terminal, $prompt)?];
+            }
         }
     };
 }

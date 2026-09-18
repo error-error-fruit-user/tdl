@@ -18,10 +18,10 @@ use ratatui::{
 use crate::{
     dialogue, editor,
     error::Result,
-    handle_status, index, legend, loop_prompt,
+    index, legend, present,
     profile::Profile,
-    render, resize,
-    window::{self, Status, new_window},
+    resize,
+    window::{self, Step, new_window},
 };
 
 pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
@@ -31,10 +31,7 @@ pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     }
     let mut state = TableState::new();
     let mut launcher = Launcher::new(&mut state);
-    loop {
-        render![terminal, &launcher, &mut state];
-        loop_prompt![terminal, launcher, &mut state];
-    }
+    present![terminal, launcher, &mut state];
 }
 
 struct Launcher {
@@ -64,26 +61,26 @@ impl Launcher {
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<Stdout>>,
         state: &mut TableState,
-    ) -> Result<Status<()>> {
-        window::read_event(terminal, &mut |terminal, key_code| match key_code {
+    ) -> Result<Step<()>> {
+        window::process(terminal, &mut |terminal, key_code| match key_code {
             event::KeyCode::Esc => {
                 if dialogue::run(terminal, "Are you sure you want to quit?")? {
-                    Ok(Status::Return(()))
+                    Ok(Step::Return(()))
                 } else {
-                    Ok(Status::Render)
+                    Ok(Step::Render)
                 }
             }
             event::KeyCode::Enter => {
                 let index = state.selected().unwrap();
                 if index != self.profiles.len() {
                     self.launch(index);
-                    Ok(Status::Prompt)
+                    Ok(Step::Prompt)
                 } else {
                     let profile = editor::run(terminal, Profile::default())?;
                     self.profiles.push(profile);
                     state.select(Some(index + 1));
                     write_profiles(&self.profiles);
-                    Ok(Status::Render)
+                    Ok(Step::Render)
                 }
             }
             event::KeyCode::Char('?') => {
@@ -101,7 +98,7 @@ impl Launcher {
                         ["[/]", "Swap"],
                     ],
                 )?;
-                Ok(Status::Render)
+                Ok(Step::Render)
             }
             event::KeyCode::Char('a') => {
                 let profile = editor::run(terminal, Profile::default())?;
@@ -111,7 +108,7 @@ impl Launcher {
                     state.select(Some(index + 1));
                 }
                 write_profiles(&self.profiles);
-                Ok(Status::Render)
+                Ok(Step::Render)
             }
             event::KeyCode::Char('e') => {
                 let index = state.selected().unwrap();
@@ -119,9 +116,9 @@ impl Launcher {
                     let profile = editor::run(terminal, self.profiles.remove(index))?;
                     self.profiles.insert(index, profile);
                     write_profiles(&self.profiles);
-                    Ok(Status::Render)
+                    Ok(Step::Render)
                 } else {
-                    Ok(Status::Prompt)
+                    Ok(Step::Prompt)
                 }
             }
             event::KeyCode::Char('d') => {
@@ -138,28 +135,28 @@ impl Launcher {
                         }
                         write_profiles(&self.profiles);
                     }
-                    Ok(Status::Render)
+                    Ok(Step::Render)
                 } else {
-                    Ok(Status::Prompt)
+                    Ok(Step::Prompt)
                 }
             }
             event::KeyCode::Char('j') => {
                 if index::select_next(state.selected_mut(), self.profiles.len() + 1) {
-                    Ok(Status::Render)
+                    Ok(Step::Render)
                 } else {
-                    Ok(Status::Prompt)
+                    Ok(Step::Prompt)
                 }
             }
             event::KeyCode::Char('k') => {
                 if index::select_previous(state.selected_mut(), self.profiles.len() + 1) {
-                    Ok(Status::Render)
+                    Ok(Step::Render)
                 } else {
-                    Ok(Status::Prompt)
+                    Ok(Step::Prompt)
                 }
             }
             event::KeyCode::Char('w') => {
                 self.set_engine_path();
-                Ok(Status::Prompt)
+                Ok(Step::Prompt)
             }
             event::KeyCode::Char(']') => {
                 if let Some(index) = state.selected_mut()
@@ -169,9 +166,9 @@ impl Launcher {
                     let next_index = index::next(*index, self.profiles.len());
                     self.profiles.swap(*index, next_index);
                     *index = next_index;
-                    Ok(Status::Render)
+                    Ok(Step::Render)
                 } else {
-                    Ok(Status::Prompt)
+                    Ok(Step::Prompt)
                 }
             }
             event::KeyCode::Char('[') => {
@@ -182,12 +179,12 @@ impl Launcher {
                     let previous_index = index::previous(*index, self.profiles.len());
                     self.profiles.swap(*index, previous_index);
                     *index = previous_index;
-                    Ok(Status::Render)
+                    Ok(Step::Render)
                 } else {
-                    Ok(Status::Prompt)
+                    Ok(Step::Prompt)
                 }
             }
-            _ => Ok(Status::Prompt),
+            _ => Ok(Step::Prompt),
         })
     }
 
