@@ -18,9 +18,9 @@ use ratatui::{
 use crate::{
     dialogue, editor,
     error::Result,
-    handle_status, index, legend,
+    handle_status, index, legend, loop_prompt,
     profile::Profile,
-    resize,
+    render, resize,
     window::{self, Status, new_window},
 };
 
@@ -32,16 +32,14 @@ pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     let mut state = TableState::new();
     let mut launcher = Launcher::new(&mut state);
     loop {
-        terminal.draw(|frame| frame.render_stateful_widget(&launcher, frame.area(), &mut state))?;
-        loop {
-            handle_status![launcher.prompt(terminal, &mut state)?];
-        }
+        render![terminal, &launcher, &mut state];
+        loop_prompt![terminal, launcher, &mut state];
     }
 }
 
 struct Launcher {
     profiles: Vec<Profile>,
-    executable_path: Option<PathBuf>,
+    executable_file: Option<PathBuf>,
 }
 
 impl Launcher {
@@ -58,7 +56,7 @@ impl Launcher {
         state.select(Some(0));
         Self {
             profiles,
-            executable_path: read_engine_path(),
+            executable_file: read_engine_path(),
         }
     }
 
@@ -199,11 +197,11 @@ impl Launcher {
             .pick_file()
             .unwrap();
         write_engine_path(path.to_str().unwrap());
-        self.executable_path = Some(path);
+        self.executable_file = Some(path);
     }
 
     pub fn launch(&self, index: usize) {
-        let mut doom = std::process::Command::new(self.executable_path.as_ref().unwrap())
+        let mut doom = std::process::Command::new(self.executable_file.as_ref().unwrap())
             .args(self.profiles[index].mods.iter())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())

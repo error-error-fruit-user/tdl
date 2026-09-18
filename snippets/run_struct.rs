@@ -9,18 +9,13 @@ use ratatui::{
     widgets::Widget,
 };
 
-use crate::{
-    error::{Error, Result},
-    handle_status, resize,
-};
+use crate::{error::Error, handle_status, loop_prompt, render, resize};
 
 pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     let mut window = Window::new();
     loop {
-        terminal.draw(|frame| frame.render_widget(&window, frame.area()))?;
-        loop {
-            handle_status![window.prompt(terminal)?];
-        }
+        render!(terminal, &window);
+        loop_prompt!(terminal, window);
     }
 }
 
@@ -32,7 +27,7 @@ impl Window {
     }
 
     fn prompt(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<Status> {
-        window::read_event(terminal, &mut |_, _| Ok(Status(())))
+        window::read_event(terminal, &mut |_, _| Ok(Status::Return(())))
     }
 }
 

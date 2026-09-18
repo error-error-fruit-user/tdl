@@ -13,7 +13,7 @@ use ratatui::{
 
 use crate::{
     error::Result,
-    handle_status,
+    handle_status, loop_prompt, render,
     window::{self, Status},
 };
 
@@ -23,10 +23,8 @@ pub fn run(
 ) -> Result<bool> {
     let mut dialogue = Dialogue::new(message);
     loop {
-        terminal.draw(|frame| frame.render_widget(&dialogue, frame.area()))?;
-        loop {
-            handle_status![dialogue.prompt(terminal)?];
-        }
+        render!(terminal, &dialogue);
+        loop_prompt!(terminal, dialogue);
     }
 }
 

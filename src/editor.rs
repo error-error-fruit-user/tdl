@@ -14,7 +14,7 @@ use ratatui::{
 use crate::{
     dialogue,
     error::Result,
-    handle_status, index, legend,
+    handle_status, index, legend, loop_prompt,
     profile::Profile,
     window::{self, Status, new_window},
 };
@@ -29,9 +29,7 @@ pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>, profile: Profile) 
             }
             frame.render_stateful_widget(&editor, frame.area(), &mut state);
         })?;
-        loop {
-            handle_status![editor.prompt(terminal, &mut state)?];
-        }
+        loop_prompt!(terminal, editor, &mut state);
     }
 }
 
@@ -74,10 +72,10 @@ impl Editor {
                     &[
                         ["Enter/Esc", "Quit to Launcher"],
                         ["Tab", "Switch Mode"],
-                        ["A-Z|0-9|_", "Input"],
+                        ["A-Z/0-9/_", "Input"],
                     ]
                 };
-                legend::run(terminal, &legend)?;
+                legend::run(terminal, legend)?;
                 Ok(Status::Render)
             }
             event::KeyCode::Tab => {

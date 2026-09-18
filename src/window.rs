@@ -62,17 +62,6 @@ pub enum Status<T> {
     Return(T),
 }
 
-#[macro_export]
-macro_rules! handle_status {
-    [$expr:expr] => {
-        match $expr {
-            Status::Render => break,
-            Status::Return(x) => return Ok(x),
-            _ => (),
-        }
-    }
-}
-
 pub fn read_event<T>(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     key_handler: &mut impl FnMut(
@@ -98,4 +87,39 @@ pub fn read_event<T>(
     } else {
         Ok(Status::Prompt)
     }
+}
+
+#[macro_export]
+macro_rules! handle_status {
+    [$expr:expr] => {
+        match $expr {
+            Status::Render => break,
+            Status::Return(x) => return Ok(x),
+            _ => (),
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! render {
+    [$terminal:expr, $widget:expr] => {
+        $terminal.draw(|frame| frame.render_widget($widget, frame.area()))?;
+    };
+    [$terminal:expr, $widget:expr, $state:expr] => {
+        $terminal.draw(|frame| frame.render_stateful_widget($widget, frame.area(), $state))?;
+    };
+}
+
+#[macro_export]
+macro_rules! loop_prompt {
+    [$terminal:expr, $window:expr] => {
+        loop {
+            handle_status![$window.prompt($terminal)?];
+        }
+    };
+    [$terminal:expr, $window:expr, $state:expr] => {
+        loop {
+            handle_status![$window.prompt($terminal, $state)?]
+        }
+    };
 }
