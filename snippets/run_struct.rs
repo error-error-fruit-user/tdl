@@ -2,7 +2,7 @@ use std::io::Stdout;
 
 use ratatui::{Terminal, buffer::Buffer, layout::Rect, prelude::CrosstermBackend, widgets::Widget};
 
-use crate::{error::Result, present, window::Step};
+use crate::{error::Result, present, window::Phase};
 
 pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     let mut window = Window::new();
@@ -16,8 +16,8 @@ impl Window {
         Self {}
     }
 
-    fn prompt(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<Step> {
-        window::process(terminal, &mut |_, _| Ok(Step::Return(())))
+    fn prompt(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<Step<()>> {
+        window::process(terminal, &mut |_, _| Ok(Phase::Return(())))
     }
 }
 

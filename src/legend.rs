@@ -11,20 +11,22 @@ use ratatui::{
 use crate::{
     error::Result,
     stage,
-    window::{self, Step},
+    window::{self, Phase},
 };
+
+const TITLE: &'static str = "Legend";
 
 pub fn run(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     legend: &[[&'static str; 2]],
 ) -> Result<()> {
+    let width = 31;
+    let height = legend.len() as u16 * 2 + 3;
     stage![
         terminal,
         |frame| {
-            let width = 31;
-            let height = legend.len() as u16 * 2 + 3;
             let (window, mut window_area, ..) =
-                window::new_window(width, height, "Legend", Color::LightGreen, frame.area());
+                window::new(width, height, TITLE, Color::LightGreen, frame.area());
             frame.render_widget(&window, window_area);
             window_area.x += 1;
             window_area.width -= 2;
@@ -39,6 +41,6 @@ pub fn run(
                 window_area.y += 2;
             }
         },
-        &mut |_, _| Ok(Step::Return(()))
+        &mut |_, _| Ok(Phase::Return(()))
     ];
 }

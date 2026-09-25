@@ -13,7 +13,7 @@ use ratatui::{
 use crate::{
     error::Result,
     stage,
-    window::{self, Step},
+    window::{self, Phase},
 };
 
 const LEGEND: &'static str = "[Y]es [N]o";
@@ -30,16 +30,12 @@ pub fn run(
                 .borders(Borders::all())
                 .border_type(BorderType::Thick)
                 .border_style(Style::new().fg(Color::Yellow));
-
             let width = message.len().max(LEGEND.len()) as u16 + 4;
             let height = 7;
-            let mut window_area = window::new_window_area(width, height, area);
-
+            let mut window_area = window::new_area(width, height, area);
             frame.render_widget(window, window_area);
-
             let message = message.to_line().alignment(Alignment::Center);
             let legend = LEGEND.to_line().alignment(Alignment::Center);
-
             window_area.y += 2;
             frame.render_widget(message, window_area);
             window_area.y += 2;
@@ -47,9 +43,9 @@ pub fn run(
         },
         &mut |_, key_code| {
             match key_code {
-                event::KeyCode::Char('y') => Ok(Step::Return(true)),
-                event::KeyCode::Char('n') => Ok(Step::Return(false)),
-                _ => Ok(Step::Prompt),
+                event::KeyCode::Char('y') => Ok(Phase::Return(true)),
+                event::KeyCode::Char('n') => Ok(Phase::Return(false)),
+                _ => Ok(Phase::Prompt),
             }
         }
     ];

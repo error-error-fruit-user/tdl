@@ -1,7 +1,7 @@
 use std::{
     io::{BufRead, BufReader, BufWriter, Stdout, Write},
-    path::PathBuf,
-    process::Stdio,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
 };
 
 use ratatui::{
@@ -18,11 +18,32 @@ use ratatui::{
 use crate::{
     dialogue, editor,
     error::Result,
-    index, legend, present,
+    host, index, join, legend, present,
     profile::Profile,
     resize,
-    window::{self, Step, new_window},
+    window::{self, Phase},
 };
+
+const TITLE: &'static str = "Launcher";
+const WIDTH: u16 = CONSTRAINTS[0] + CONSTRAINTS[1] + 2;
+const HEIGHT: u16 = 12;
+const HEADERS: [&'static str; 2] = ["Profile", "Mods"];
+const CONSTRAINTS: [u16; 2] = [24, 6];
+const ENGINE_FILE: &'static str = "engine.txt";
+const PROFILES_FILE: &'static str = "profiles.json";
+const LEGEND: &[[&'static str; 2]] = &[
+    ["Esc", "Quit"],
+    ["Enter", "Launch"],
+    ["H", "Host"],
+    ["N", "Join"],
+    ["W", "Set Executable"],
+    ["J/K", "Traverse"],
+    ["A", "Add"],
+    ["E", "Edit"],
+    ["F", "Import Folder"],
+    ["D", "Delete"],
+    ["[/]", "Swap"],
+];
 
 pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     let area = terminal.get_frame().area();
@@ -40,14 +61,6 @@ struct Launcher {
 }
 
 impl Launcher {
-    const ENGINE_FILE: &'static str = "engine.txt";
-    const PROFILES_FILE: &'static str = "profiles.json";
-    const TITLE: &'static str = "Launcher";
-    const HEADERS: [&'static str; 2] = ["Profile", "Mods"];
-    const CONSTRAINTS: [u16; 2] = [24, 6];
-    const WIDTH: u16 = Self::CONSTRAINTS[0] + Self::CONSTRAINTS[1] + 2;
-    const HEIGHT: u16 = 12;
-
     fn new(state: &mut TableState) -> Self {
         let profiles = read_profiles();
         state.select(Some(0));
@@ -61,165 +74,141 @@ impl Launcher {
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<Stdout>>,
         state: &mut TableState,
-    ) -> Result<Step<()>> {
-        window::process(terminal, &mut |terminal, key_code| match key_code {
-            event::KeyCode::Esc => {
-                if dialogue::run(terminal, "Are you sure you want to quit?")? {
-                    Ok(Step::Return(()))
-                } else {
-                    Ok(Step::Render)
-                }
-            }
-            event::KeyCode::Enter => {
-                let index = state.selected().unwrap();
-                if index != self.profiles.len() {
-                    self.launch(index);
-                    Ok(Step::Prompt)
-                } else {
-                    let profile = editor::run(terminal, Profile::default())?;
-                    self.profiles.push(profile);
-                    state.select(Some(index + 1));
-                    write_profiles(&self.profiles);
-                    Ok(Step::Render)
-                }
-            }
-            event::KeyCode::Char('?') => {
-                legend::run(
-                    terminal,
-                    &[
-                        ["Esc", "Quit"],
-                        ["Enter", "Launch"],
-                        ["W", "Set Executable"],
-                        ["J/K", "Traverse"],
-                        ["A", "Add"],
-                        ["E", "Edit"],
-                        ["F", "Import Folder"],
-                        ["D", "Delete"],
-                        ["[/]", "Swap"],
-                    ],
-                )?;
-                Ok(Step::Render)
-            }
-            event::KeyCode::Char('a') => {
-                let profile = editor::run(terminal, Profile::default())?;
-                let index = state.selected().unwrap();
-                self.profiles.insert(index, profile);
-                if index == self.profiles.len() - 1 {
-                    state.select(Some(index + 1));
-                }
-                write_profiles(&self.profiles);
-                Ok(Step::Render)
-            }
-            event::KeyCode::Char('e') => {
-                let index = state.selected().unwrap();
-                if index != self.profiles.len() {
-                    let profile = editor::run(terminal, self.profiles.remove(index))?;
-                    self.profiles.insert(index, profile);
-                    write_profiles(&self.profiles);
-                    Ok(Step::Render)
-                } else {
-                    Ok(Step::Prompt)
-                }
-            }
-            event::KeyCode::Char('d') => {
-                let index = state.selected().unwrap();
-                if index != self.profiles.len() {
-                    let should_delete =
-                        dialogue::run(terminal, "Are you sure you want to delete?")?;
-                    if should_delete {
-                        self.profiles.remove(index);
-                        if index == self.profiles.len() {
-                            if index != 0 {
-                                state.select(Some(index - 1));
-                            }
-                        }
-                        write_profiles(&self.profiles);
+    ) -> Result<Phase<()>> {
+        window::process(terminal, &mut |terminal, key_code| {
+            let index = state.selected_mut().as_mut().unwrap();
+            match key_code {
+                event::KeyCode::Esc => {
+                    if dialogue::run(terminal, "Are you sure you want to quit?")? {
+                        Ok(Phase::Return(()))
+                    } else {
+                        Ok(Phase::Render)
                     }
-                    Ok(Step::Render)
-                } else {
-                    Ok(Step::Prompt)
                 }
-            }
-            event::KeyCode::Char('j') => {
-                if index::select_next(state.selected_mut(), self.profiles.len() + 1) {
-                    Ok(Step::Render)
-                } else {
-                    Ok(Step::Prompt)
+                event::KeyCode::Enter => {
+                    if *index != self.profiles.len() {
+                        let Some(executable_file) = self.executable_file.as_ref() else {
+                            return Ok(Phase::Prompt);
+                        };
+                        launch(executable_file, &self.profiles[*index])?;
+                        Ok(Phase::Prompt)
+                    } else {
+                        let profile = editor::run(terminal, Profile::default())?;
+                        self.profiles.push(profile);
+                        *index += 1;
+                        write_profiles(&self.profiles);
+                        Ok(Phase::Render)
+                    }
                 }
-            }
-            event::KeyCode::Char('k') => {
-                if index::select_previous(state.selected_mut(), self.profiles.len() + 1) {
-                    Ok(Step::Render)
-                } else {
-                    Ok(Step::Prompt)
+                event::KeyCode::Char('?') => {
+                    legend::run(terminal, LEGEND)?;
+                    Ok(Phase::Render)
                 }
-            }
-            event::KeyCode::Char('w') => {
-                self.set_engine_path();
-                Ok(Step::Prompt)
-            }
-            event::KeyCode::Char(']') => {
-                if let Some(index) = state.selected_mut()
-                    && self.profiles.len() != 1
-                    && *index != self.profiles.len()
-                {
-                    let next_index = index::next(*index, self.profiles.len());
-                    self.profiles.swap(*index, next_index);
-                    *index = next_index;
-                    Ok(Step::Render)
-                } else {
-                    Ok(Step::Prompt)
+                event::KeyCode::Char('a') => {
+                    let profile = editor::run(terminal, Profile::default())?;
+                    self.profiles.insert(*index, profile);
+                    if *index == self.profiles.len() - 1 {
+                        *index += 1;
+                    }
+                    write_profiles(&self.profiles);
+                    Ok(Phase::Render)
                 }
-            }
-            event::KeyCode::Char('[') => {
-                if let Some(index) = state.selected_mut()
-                    && self.profiles.len() != 1
-                    && *index != self.profiles.len()
-                {
-                    let previous_index = index::previous(*index, self.profiles.len());
-                    self.profiles.swap(*index, previous_index);
-                    *index = previous_index;
-                    Ok(Step::Render)
-                } else {
-                    Ok(Step::Prompt)
+                event::KeyCode::Char('e') => {
+                    if *index != self.profiles.len() {
+                        let profile = editor::run(terminal, self.profiles.remove(*index))?;
+                        self.profiles.insert(*index, profile);
+                        write_profiles(&self.profiles);
+                        Ok(Phase::Render)
+                    } else {
+                        Ok(Phase::Prompt)
+                    }
                 }
+                event::KeyCode::Char('d') => {
+                    if *index != self.profiles.len() {
+                        if dialogue::run(terminal, "Are you sure you want to delete?")? {
+                            self.profiles.remove(*index);
+                            if *index == self.profiles.len() {
+                                if *index != 0 {
+                                    *index -= 1;
+                                }
+                            }
+                            write_profiles(&self.profiles);
+                        }
+                        Ok(Phase::Render)
+                    } else {
+                        Ok(Phase::Prompt)
+                    }
+                }
+                event::KeyCode::Char('j') => {
+                    if index::select_next(state.selected_mut(), self.profiles.len() + 1) {
+                        Ok(Phase::Render)
+                    } else {
+                        Ok(Phase::Prompt)
+                    }
+                }
+                event::KeyCode::Char('k') => {
+                    if index::select_previous(state.selected_mut(), self.profiles.len() + 1) {
+                        Ok(Phase::Render)
+                    } else {
+                        Ok(Phase::Prompt)
+                    }
+                }
+                event::KeyCode::Char('w') => {
+                    self.set_engine_path();
+                    Ok(Phase::Prompt)
+                }
+                event::KeyCode::Char(']') => {
+                    if self.profiles.len() != 1 && *index != self.profiles.len() {
+                        let next_index = index::next(*index, self.profiles.len());
+                        self.profiles.swap(*index, next_index);
+                        *index = next_index;
+                        Ok(Phase::Render)
+                    } else {
+                        Ok(Phase::Prompt)
+                    }
+                }
+                event::KeyCode::Char('[') => {
+                    if self.profiles.len() != 1 && *index != self.profiles.len() {
+                        let previous_index = index::previous(*index, self.profiles.len());
+                        self.profiles.swap(*index, previous_index);
+                        *index = previous_index;
+                        Ok(Phase::Render)
+                    } else {
+                        Ok(Phase::Prompt)
+                    }
+                }
+                event::KeyCode::Char('h') => {
+                    if *index != self.profiles.len()
+                        && let Some(executable_file) = self.executable_file.as_ref()
+                        && let Some(player_count) = host::run(terminal)?
+                    {
+                        host(executable_file, &self.profiles[*index], player_count)?;
+                    }
+                    Ok(Phase::Render)
+                }
+                event::KeyCode::Char('n') => {
+                    if *index != self.profiles.len()
+                        && let Some(executable_file) = self.executable_file.as_ref()
+                        && let Some(ip) = join::run(terminal)?
+                    {
+                        join(executable_file, &self.profiles[*index], &ip)?;
+                    }
+                    Ok(Phase::Render)
+                }
+                _ => Ok(Phase::Prompt),
             }
-            _ => Ok(Step::Prompt),
         })
     }
 
     pub fn set_engine_path(&mut self) {
         let path = rfd::FileDialog::new()
             .set_directory(std::env::current_dir().unwrap())
-            .pick_file()
-            .unwrap();
+            .pick_file();
+        let Some(path) = path else {
+            return;
+        };
         write_engine_path(path.to_str().unwrap());
         self.executable_file = Some(path);
-    }
-
-    pub fn launch(&self, index: usize) {
-        let mut doom = std::process::Command::new(self.executable_file.as_ref().unwrap())
-            .args(self.profiles[index].mods.iter())
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        doom.wait().unwrap();
-        if let Some(stdout) = doom.stdout.take() {
-            let reader = BufReader::new(stdout);
-            let log = std::fs::OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open("session.log")
-                .unwrap();
-            let mut writer = BufWriter::new(log);
-            for line in reader.lines() {
-                writeln!(&mut writer, "{}", line.unwrap()).unwrap();
-            }
-            writer.flush().unwrap();
-        }
     }
 }
 
@@ -228,7 +217,7 @@ impl StatefulWidget for &Launcher {
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         let header =
-            Row::new(Launcher::HEADERS.iter().map(|header| {
+            Row::new(HEADERS.iter().map(|header| {
                 Cell::from(Line::from(header.to_string()).alignment(Alignment::Center))
             }));
         let mut rows = self
@@ -250,29 +239,21 @@ impl StatefulWidget for &Launcher {
             ["+".to_line().alignment(Alignment::Center)].into_iter(),
         ));
 
-        let (window, window_area, question_area) = new_window(
-            Launcher::WIDTH,
-            Launcher::HEIGHT,
-            Launcher::TITLE,
-            Color::LightRed,
-            area,
-        );
+        let (window, window_area, indicator, indicator_area) =
+            window::new(WIDTH, HEIGHT, TITLE, Color::LightRed, area);
 
-        let table = Table::new(rows, Launcher::CONSTRAINTS)
+        let table = Table::new(rows, CONSTRAINTS)
             .header(header)
             .block(window)
             .highlight_symbol("> ")
             .row_highlight_style(Style::new().fg(Color::Black).bg(Color::White));
         StatefulWidget::render(table, window_area, buf, state);
-        "[?]"
-            .to_line()
-            .alignment(Alignment::Center)
-            .render(question_area, buf);
+        indicator.render(indicator_area, buf);
     }
 }
 
 fn read_profiles() -> Vec<Profile> {
-    let Ok(profiles) = std::fs::read_to_string(Launcher::PROFILES_FILE) else {
+    let Ok(profiles) = std::fs::read_to_string(PROFILES_FILE) else {
         return Vec::new();
     };
     serde_json::from_str(&profiles).unwrap_or_default()
@@ -280,18 +261,56 @@ fn read_profiles() -> Vec<Profile> {
 
 pub fn write_profiles(profiles: &Vec<Profile>) {
     std::fs::write(
-        Launcher::PROFILES_FILE,
+        PROFILES_FILE,
         serde_json::to_string_pretty(profiles).unwrap(),
     )
     .unwrap();
 }
 
 fn read_engine_path() -> Option<PathBuf> {
-    std::fs::read_to_string(Launcher::ENGINE_FILE)
-        .ok()
-        .map(PathBuf::from)
+    std::fs::read_to_string(ENGINE_FILE).ok().map(PathBuf::from)
 }
 
 fn write_engine_path(engine_path: &str) {
-    std::fs::write(Launcher::ENGINE_FILE, engine_path).unwrap();
+    std::fs::write(ENGINE_FILE, engine_path).unwrap();
+}
+
+fn execute(executable_file: &Path, profile: &Profile, args: &[&str]) -> Result<()> {
+    let mut doom = Command::new(executable_file)
+        .args(args)
+        .args(profile.mods.iter())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    if let Some(stdout) = doom.stdout.take() {
+        let reader = BufReader::new(stdout);
+        let log = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open("session.log")?;
+        let mut writer = BufWriter::new(log);
+        for line in reader.lines() {
+            writeln!(&mut writer, "{}", line.unwrap())?;
+        }
+        writer.flush()?;
+    }
+    Ok(())
+}
+
+fn launch(executable_file: &Path, profile: &Profile) -> Result<()> {
+    execute(executable_file, profile, &[])
+}
+
+fn host(executable_file: &Path, profile: &Profile, player_count: u8) -> Result<()> {
+    execute(
+        executable_file,
+        profile,
+        &["-host", &player_count.to_string()],
+    )
+}
+
+pub fn join(executable_file: &Path, profile: &Profile, ip: &str) -> Result<()> {
+    execute(executable_file, profile, &["-join", ip])
 }

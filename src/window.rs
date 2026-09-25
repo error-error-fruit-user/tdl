@@ -6,8 +6,8 @@ use ratatui::{
     layout::{Alignment, Rect},
     prelude::CrosstermBackend,
     style::{Color, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders},
+    text::{Line, Span, ToLine},
+    widgets::{Block, BorderType, Borders},
 };
 
 use crate::{
@@ -17,13 +17,13 @@ use crate::{
 
 pub const TITLE_COLOR: Color = Color::LightYellow;
 
-pub fn new_window<'a>(
+pub fn new<'a>(
     width: u16,
     height: u16,
     title: &'a str,
     border_color: Color,
     area: Rect,
-) -> (Block<'a>, Rect, Rect) {
+) -> (Block<'a>, Rect, Line<'a>, Rect) {
     let title = Line::from(vec![
         Span::styled("[", Style::new().fg(border_color)),
         Span::styled(format!(" {title} "), Style::new().fg(TITLE_COLOR)),
@@ -31,21 +31,22 @@ pub fn new_window<'a>(
     ]);
     let window = Block::new()
         .borders(Borders::all())
-        .border_type(ratatui::widgets::BorderType::Thick)
+        .border_type(BorderType::Thick)
         .border_style(Style::new().fg(border_color))
         .title(title)
         .title_alignment(Alignment::Center);
-    let window_area = new_window_area(width, height, area);
-    let question_area = Rect::new(
+    let window_area = new_area(width, height, area);
+    let indicator = "[?]".to_line().alignment(Alignment::Center);
+    let indicator_area = Rect::new(
         window_area.x,
         window_area.bottom() + 1,
         window_area.width,
         1,
     );
-    (window, window_area, question_area)
+    (window, window_area, indicator, indicator_area)
 }
 
-pub fn new_window_area(width: u16, height: u16, area: Rect) -> Rect {
+pub fn new_area(width: u16, height: u16, area: Rect) -> Rect {
     Rect::new(
         area.width / 2 - width / 2,
         area.height / 2 - height / 2,
@@ -56,7 +57,7 @@ pub fn new_window_area(width: u16, height: u16, area: Rect) -> Rect {
 
 #[must_use]
 #[derive(Eq, PartialEq)]
-pub enum Step<T> {
+pub enum Phase<T> {
     Render,
     Prompt,
     Return(T),
@@ -64,25 +65,24 @@ pub enum Step<T> {
 
 pub fn process<T>(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    prompt: &mut impl FnMut(&mut Terminal<CrosstermBackend<Stdout>>, event::KeyCode) -> Result<Step<T>>,
-) -> Result<Step<T>> {
+    prompt: &mut impl FnMut(&mut Terminal<CrosstermBackend<Stdout>>, event::KeyCode) -> Result<Phase<T>>,
+) -> Result<Phase<T>> {
     let event = event::read()?;
     if let event::Event::Resize(width, height) = event {
         if resize::should_resize(width, height) {
             resize::run(terminal)?;
         }
-        Ok(Step::Render)
+        Ok(Phase::Render)
     } else if let event::Event::Key(key) = event
         && key.is_press()
     {
-        match key.code {
-            event::KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                Err(Error::Exit)
-            }
-            key_code => prompt(terminal, key_code),
+        if key.code == event::KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            Err(Error::Exit)
+        } else {
+            prompt(terminal, key.code)
         }
     } else {
-        Ok(Step::Prompt)
+        Ok(Phase::Prompt)
     }
 }
 
@@ -90,9 +90,9 @@ pub fn process<T>(
 macro_rules! dispatch {
     [$expr:expr] => {
         match $expr {
-            Step::Render => break,
-            Step::Return(x) => return Ok(x),
-            _ => (),
+            Phase::Render => break,
+            Phase::Prompt => (),
+            Phase::Return(x) => return Ok(x),
         }
     };
 }
@@ -138,12 +138,34 @@ macro_rules! present {
 }
 
 #[macro_export]
+macro_rules! present_with {
+    [$terminal:expr, $window:expr, $renderer:expr] => {
+        loop {
+            $terminal.draw(|frame| {
+                $renderer(frame);
+                frame.render_widget(&$window);
+            })?;
+            crate::resolve![$terminal, $window];
+        }
+    };
+    [$terminal:expr, $window:expr, $state:expr, $renderer:expr] => {
+        loop {
+            $terminal.draw(|frame| {
+                $renderer(frame);
+                frame.render_stateful_widget(&$window, frame.area(), $state);
+            })?;
+            crate::resolve![$terminal, $window, $state];
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! stage {
     [$terminal:expr, $renderer:expr, $prompt:expr] => {
         loop {
             $terminal.draw($renderer)?;
             loop {
-                crate::dispatch![window::process($terminal, $prompt)?];
+                crate::dispatch![crate::window::process($terminal, $prompt)?];
             }
         }
     };
