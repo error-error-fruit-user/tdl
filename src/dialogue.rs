@@ -22,6 +22,8 @@ pub fn run(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     message: &'static str,
 ) -> Result<bool> {
+    let width = message.len().max(LEGEND.len()) as u16 + 4;
+    let height = 7;
     stage![
         terminal,
         |frame| {
@@ -30,8 +32,6 @@ pub fn run(
                 .borders(Borders::all())
                 .border_type(BorderType::Thick)
                 .border_style(Style::new().fg(Color::Yellow));
-            let width = message.len().max(LEGEND.len()) as u16 + 4;
-            let height = 7;
             let mut window_area = window::new_area(width, height, area);
             frame.render_widget(window, window_area);
             let message = message.to_line().alignment(Alignment::Center);
@@ -41,12 +41,10 @@ pub fn run(
             window_area.y += 2;
             frame.render_widget(legend, window_area);
         },
-        &mut |_, key_code| {
-            match key_code {
-                event::KeyCode::Char('y') => Ok(Phase::Return(true)),
-                event::KeyCode::Char('n') => Ok(Phase::Return(false)),
-                _ => Ok(Phase::Prompt),
-            }
+        &mut |_, key_code| match key_code {
+            event::KeyCode::Char('y') => Ok(Phase::Return(true)),
+            event::KeyCode::Char('n') => Ok(Phase::Return(false)),
+            _ => Ok(Phase::Prompt),
         }
     ];
 }

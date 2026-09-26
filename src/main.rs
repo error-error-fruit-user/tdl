@@ -3,6 +3,7 @@ use std::io::Write;
 mod dialogue;
 mod editor;
 mod error;
+mod execute;
 mod host;
 mod index;
 mod join;

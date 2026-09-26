@@ -20,7 +20,7 @@ pub fn run(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     legend: &[[&'static str; 2]],
 ) -> Result<()> {
-    let width = 31;
+    let width = 32;
     let height = legend.len() as u16 * 2 + 3;
     stage![
         terminal,

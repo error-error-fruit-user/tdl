@@ -6,3 +6,5 @@ nacht.pk3
 engine.txt
 profiles.json
 token.txt
+commit.sh
+push.sh

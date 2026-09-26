@@ -55,6 +55,14 @@ pub fn new_area(width: u16, height: u16, area: Rect) -> Rect {
     )
 }
 
+pub fn new_input<'a>(message: &'a str, input: &'a str) -> Line<'a> {
+    Line::from(vec![
+        Span::from(message).style(Style::new().fg(Color::LightYellow)),
+        Span::from(input),
+    ])
+    .alignment(Alignment::Center)
+}
+
 #[must_use]
 #[derive(Eq, PartialEq)]
 pub enum Phase<T> {

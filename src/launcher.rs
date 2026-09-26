@@ -1,8 +1,4 @@
-use std::{
-    io::{BufRead, BufReader, BufWriter, Stdout, Write},
-    path::{Path, PathBuf},
-    process::{Command, Stdio},
-};
+use std::{io::Stdout, path::PathBuf};
 
 use ratatui::{
     Terminal,
@@ -18,7 +14,7 @@ use ratatui::{
 use crate::{
     dialogue, editor,
     error::Result,
-    host, index, join, legend, present,
+    execute, host, index, join, legend, present,
     profile::Profile,
     resize,
     window::{self, Phase},
@@ -29,7 +25,7 @@ const WIDTH: u16 = CONSTRAINTS[0] + CONSTRAINTS[1] + 2;
 const HEIGHT: u16 = 12;
 const HEADERS: [&'static str; 2] = ["Profile", "Mods"];
 const CONSTRAINTS: [u16; 2] = [24, 6];
-const ENGINE_FILE: &'static str = "engine.txt";
+const UZDOOM_FILE: &'static str = "engine.txt";
 const PROFILES_FILE: &'static str = "profiles.json";
 const LEGEND: &[[&'static str; 2]] = &[
     ["Esc", "Quit"],
@@ -57,16 +53,15 @@ pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
 
 struct Launcher {
     profiles: Vec<Profile>,
-    executable_file: Option<PathBuf>,
+    uzdoom: Option<PathBuf>,
 }
 
 impl Launcher {
     fn new(state: &mut TableState) -> Self {
-        let profiles = read_profiles();
         state.select(Some(0));
         Self {
-            profiles,
-            executable_file: read_engine_path(),
+            profiles: read_profiles(),
+            uzdoom: read_uzdoom(),
         }
     }
 
@@ -87,10 +82,10 @@ impl Launcher {
                 }
                 event::KeyCode::Enter => {
                     if *index != self.profiles.len() {
-                        let Some(executable_file) = self.executable_file.as_ref() else {
+                        let Some(executable_file) = self.uzdoom.as_ref() else {
                             return Ok(Phase::Prompt);
                         };
-                        launch(executable_file, &self.profiles[*index])?;
+                        execute::launch(executable_file, &self.profiles[*index])?;
                         Ok(Phase::Prompt)
                     } else {
                         let profile = editor::run(terminal, Profile::default())?;
@@ -154,7 +149,7 @@ impl Launcher {
                     }
                 }
                 event::KeyCode::Char('w') => {
-                    self.set_engine_path();
+                    self.set_uzdoom();
                     Ok(Phase::Prompt)
                 }
                 event::KeyCode::Char(']') => {
@@ -179,36 +174,38 @@ impl Launcher {
                 }
                 event::KeyCode::Char('h') => {
                     if *index != self.profiles.len()
-                        && let Some(executable_file) = self.executable_file.as_ref()
-                        && let Some(player_count) = host::run(terminal)?
+                        && let Some(uzdoom) = self.uzdoom.as_ref()
                     {
-                        host(executable_file, &self.profiles[*index], player_count)?;
+                        host::run(terminal, uzdoom, &self.profiles[*index])?;
+                        Ok(Phase::Render)
+                    } else {
+                        Ok(Phase::Prompt)
                     }
-                    Ok(Phase::Render)
                 }
                 event::KeyCode::Char('n') => {
                     if *index != self.profiles.len()
-                        && let Some(executable_file) = self.executable_file.as_ref()
-                        && let Some(ip) = join::run(terminal)?
+                        && let Some(executable_file) = self.uzdoom.as_ref()
                     {
-                        join(executable_file, &self.profiles[*index], &ip)?;
+                        join::run(terminal, executable_file, &self.profiles[*index])?;
+                        Ok(Phase::Render)
+                    } else {
+                        Ok(Phase::Prompt)
                     }
-                    Ok(Phase::Render)
                 }
                 _ => Ok(Phase::Prompt),
             }
         })
     }
 
-    pub fn set_engine_path(&mut self) {
+    pub fn set_uzdoom(&mut self) {
         let path = rfd::FileDialog::new()
             .set_directory(std::env::current_dir().unwrap())
             .pick_file();
         let Some(path) = path else {
             return;
         };
-        write_engine_path(path.to_str().unwrap());
-        self.executable_file = Some(path);
+        write_uzdoom(path.to_str().unwrap());
+        self.uzdoom = Some(path);
     }
 }
 
@@ -226,7 +223,7 @@ impl StatefulWidget for &Launcher {
             .map(|profile| {
                 Row::new(
                     [
-                        Cell::from(Line::from(profile.name.clone()).alignment(Alignment::Center)),
+                        Cell::from(profile.name.to_line().alignment(Alignment::Center)),
                         Cell::from(
                             Line::from(profile.mods.len().to_string()).alignment(Alignment::Center),
                         ),
@@ -267,50 +264,10 @@ pub fn write_profiles(profiles: &Vec<Profile>) {
     .unwrap();
 }
 
-fn read_engine_path() -> Option<PathBuf> {
-    std::fs::read_to_string(ENGINE_FILE).ok().map(PathBuf::from)
+fn read_uzdoom() -> Option<PathBuf> {
+    std::fs::read_to_string(UZDOOM_FILE).ok().map(PathBuf::from)
 }
 
-fn write_engine_path(engine_path: &str) {
-    std::fs::write(ENGINE_FILE, engine_path).unwrap();
-}
-
-fn execute(executable_file: &Path, profile: &Profile, args: &[&str]) -> Result<()> {
-    let mut doom = Command::new(executable_file)
-        .args(args)
-        .args(profile.mods.iter())
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    if let Some(stdout) = doom.stdout.take() {
-        let reader = BufReader::new(stdout);
-        let log = std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open("session.log")?;
-        let mut writer = BufWriter::new(log);
-        for line in reader.lines() {
-            writeln!(&mut writer, "{}", line.unwrap())?;
-        }
-        writer.flush()?;
-    }
-    Ok(())
-}
-
-fn launch(executable_file: &Path, profile: &Profile) -> Result<()> {
-    execute(executable_file, profile, &[])
-}
-
-fn host(executable_file: &Path, profile: &Profile, player_count: u8) -> Result<()> {
-    execute(
-        executable_file,
-        profile,
-        &["-host", &player_count.to_string()],
-    )
-}
-
-pub fn join(executable_file: &Path, profile: &Profile, ip: &str) -> Result<()> {
-    execute(executable_file, profile, &["-join", ip])
+fn write_uzdoom(uzdoom: &str) {
+    std::fs::write(UZDOOM_FILE, uzdoom).unwrap();
 }

@@ -240,6 +240,6 @@ impl StatefulWidget for &Editor {
             table
         };
         StatefulWidget::render(table, window_area, buf, state);
-        Widget::render(&indicator, indicator_area, buf);
+        Widget::render(indicator, indicator_area, buf);
     }
 }
