@@ -1,6 +1,8 @@
 use std::{io::Stdout, path::Path};
 
-use ratatui::{Terminal, crossterm::event, prelude::CrosstermBackend, style::Color};
+use ratatui::{
+    Terminal, crossterm::event, layout::Position, prelude::CrosstermBackend, style::Color,
+};
 
 use crate::{
     error::Result,
@@ -10,8 +12,12 @@ use crate::{
     window::{self, Phase},
 };
 
+const TITLE: &'static str = "Host";
 const WIDTH: u16 = 32;
 const HEIGHT: u16 = 9;
+const PLAYER_COUNT_LABEL: &'static str = "Player Count";
+const MODE_LABEL: &'static str = "Mode";
+const MAP_LABEL: &'static str = "Map";
 const PLAYER_COUNT_LEGEND: &[[&'static str; 2]] = &[
     ["Enter", "Launch"],
     ["Esc", "Cancel"],
@@ -43,14 +49,19 @@ pub fn run(
     stage![
         terminal,
         |frame| {
+            let area = frame.area();
             let (window, mut window_area, indicator, indicator_area) =
-                window::new(WIDTH, HEIGHT, "Host", Color::LightMagenta, frame.area());
+                window::new(WIDTH, HEIGHT, TITLE, Color::LightMagenta, area);
             frame.render_widget(window, window_area);
             frame.render_widget(&indicator, indicator_area);
 
             window_area.y += 2;
             let player_count = player_count.to_string();
-            let line = window::new_input("Player Count: ", &player_count);
+            let line = window::new_input(PLAYER_COUNT_LABEL, &player_count);
+            let player_count_position = Position::new(
+                area.width / 2 + (PLAYER_COUNT_LABEL.len() + player_count.len()) as u16 / 2 + 1,
+                window_area.y,
+            );
             frame.render_widget(line, window_area);
 
             window_area.y += 2;
@@ -59,12 +70,27 @@ pub fn run(
             } else {
                 "Cooperative"
             };
-            let line = window::new_input("Mode: ", mode);
+            let line = window::new_input(MODE_LABEL, mode);
+            let mode_position = Position::new(
+                area.width / 2 + (MODE_LABEL.len() + mode.len()) as u16 / 2 + 1,
+                window_area.y,
+            );
             frame.render_widget(line, window_area);
 
             window_area.y += 2;
-            let line = window::new_input("Map: ", &map);
+            let line = window::new_input(MAP_LABEL, &map);
+            let map_position = Position::new(
+                area.width / 2 + (MAP_LABEL.len() + map.len()) as u16 / 2 + 1,
+                window_area.y,
+            );
             frame.render_widget(line, window_area);
+
+            let position = match input {
+                Input::PlayerCount => player_count_position,
+                Input::MatchType => mode_position,
+                Input::Map => map_position,
+            };
+            frame.set_cursor_position(position);
         },
         &mut |terminal, key_code| {
             match key_code {
