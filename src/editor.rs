@@ -1,11 +1,8 @@
-use std::io::Stdout;
-
 use ratatui::{
-    Frame, Terminal,
+    Frame,
     buffer::Buffer,
-    crossterm::event::{self},
+    crossterm::event::KeyCode,
     layout::{Alignment, Position, Rect},
-    prelude::CrosstermBackend,
     style::{Color, Style},
     text::ToLine,
     widgets::{Cell, Row, StatefulWidget, Table, TableState, Widget},
@@ -16,9 +13,10 @@ use crate::{
     error::Result,
     index, legend, present_with,
     profile::Profile,
-    window::{self, Phase},
+    utility::{self, Phase, Terminal},
 };
 
+const BORDER_COLOR: Color = Color::LightBlue;
 const WIDTH: u16 = 32;
 const HEIGHT: u16 = 12;
 const NAMING_LEGEND: &[[&'static str; 2]] = &[
@@ -35,9 +33,9 @@ const EDITING_LEGEND: &[[&'static str; 2]] = &[
     ["[/]", "Swap"],
 ];
 
-pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>, profile: Profile) -> Result<Profile> {
+pub fn run(terminal: &mut Terminal, name: String, profile: Profile) -> Result<(String, Profile)> {
     let mut state = TableState::new();
-    let mut editor = Editor::new(profile, &mut state);
+    let mut editor = Editor::new(name, profile, &mut state);
     present_with!(terminal, editor, &mut state, |frame: &mut Frame| {
         let area = frame.area();
         if !editor.editing_mods {
@@ -47,33 +45,39 @@ pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>, profile: Profile) 
     });
 }
 
+pub fn run_new(terminal: &mut Terminal) -> Result<(String, Profile)> {
+    run(terminal, String::new(), Profile::default())
+}
+
 #[derive(Default)]
 struct Editor {
+    name: String,
     profile: Profile,
     editing_mods: bool,
 }
 
 impl Editor {
-    fn new(profile: Profile, state: &mut TableState) -> Self {
+    fn new(name: String, profile: Profile, state: &mut TableState) -> Self {
         state.select(Some(0));
         Self {
-            editing_mods: !profile.name.is_empty(),
+            editing_mods: !name.is_empty(),
+            name,
             profile,
         }
     }
 
     fn prompt(
         &mut self,
-        terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+        terminal: &mut Terminal,
         state: &mut TableState,
-    ) -> Result<Phase<Profile>> {
-        window::process(terminal, &mut |terminal, key_code| {
+    ) -> Result<Phase<(String, Profile)>> {
+        utility::prompt(terminal, &mut |terminal, key_code| {
             let index = state.selected_mut().as_mut().unwrap();
             match key_code {
-                event::KeyCode::Esc | event::KeyCode::Enter => {
-                    Ok(Phase::Return(self.profile.clone()))
+                KeyCode::Esc | KeyCode::Enter => {
+                    Ok(Phase::Return((self.name.clone(), self.profile.clone())))
                 }
-                event::KeyCode::Char('?') => {
+                KeyCode::Char('?') => {
                     let legend = if self.editing_mods {
                         EDITING_LEGEND
                     } else {
@@ -82,39 +86,37 @@ impl Editor {
                     legend::run(terminal, legend)?;
                     Ok(Phase::Render)
                 }
-                event::KeyCode::Tab => {
+                KeyCode::Tab => {
                     self.editing_mods = !self.editing_mods;
                     Ok(Phase::Render)
                 }
-                event::KeyCode::Char(c @ 'a'..='z' | c @ 'A'..='Z' | c @ '0'..='9' | c @ '_')
+                KeyCode::Char(c @ 'a'..='z' | c @ 'A'..='Z' | c @ '0'..='9' | c @ '_')
                     if !self.editing_mods =>
                 {
-                    self.profile.name.push(c);
+                    self.name.push(c);
                     Ok(Phase::Render)
                 }
-                event::KeyCode::Backspace if !self.editing_mods => {
-                    self.profile.name.pop();
+                KeyCode::Backspace if !self.editing_mods => {
+                    self.name.pop();
                     Ok(Phase::Render)
                 }
-                event::KeyCode::Char('j') => {
+                KeyCode::Char('j') => {
                     if index::select_next(state.selected_mut(), self.profile.mods.len() + 1) {
                         Ok(Phase::Render)
                     } else {
                         Ok(Phase::Prompt)
                     }
                 }
-                event::KeyCode::Char('k') => {
+                KeyCode::Char('k') => {
                     if index::select_previous(state.selected_mut(), self.profile.mods.len() + 1) {
                         Ok(Phase::Render)
                     } else {
                         Ok(Phase::Prompt)
                     }
                 }
-                event::KeyCode::Char('d') => {
+                KeyCode::Char('d') => {
                     if *index != self.profile.mods.len() {
-                        let should_delete =
-                            dialogue::run(terminal, "Are you sure you want to delete?")?;
-                        if should_delete {
+                        if dialogue::should_delete(terminal)? {
                             self.profile.mods.remove(*index);
                             if *index == self.profile.mods.len() && *index != 0 {
                                 *index -= 1;
@@ -125,7 +127,7 @@ impl Editor {
                         Ok(Phase::Prompt)
                     }
                 }
-                event::KeyCode::Char(']') => {
+                KeyCode::Char(']') => {
                     if self.profile.mods.len() != 1 && *index != self.profile.mods.len() {
                         let next_index = index::next(*index, self.profile.mods.len());
                         self.profile.mods.swap(*index, next_index);
@@ -135,7 +137,7 @@ impl Editor {
                         Ok(Phase::Prompt)
                     }
                 }
-                event::KeyCode::Char('[') => {
+                KeyCode::Char('[') => {
                     if self.profile.mods.len() != 1 && *index != self.profile.mods.len() {
                         let previous_index = index::previous(*index, self.profile.mods.len());
                         self.profile.mods.swap(*index, previous_index);
@@ -145,7 +147,7 @@ impl Editor {
                         Ok(Phase::Prompt)
                     }
                 }
-                event::KeyCode::Char('a') => {
+                KeyCode::Char('a') => {
                     let new_mods = rfd::FileDialog::new()
                         .set_directory(std::env::current_dir().unwrap())
                         .add_filter("wads", &["wad", "pk3"])
@@ -167,7 +169,7 @@ impl Editor {
                     }
                     Ok(Phase::Render)
                 }
-                event::KeyCode::Char('f') => {
+                KeyCode::Char('f') => {
                     let folder = rfd::FileDialog::new()
                         .set_directory(std::env::current_dir().unwrap())
                         .pick_folder();
@@ -208,7 +210,7 @@ impl Editor {
 
     fn get_cursor_position(&self, area: Rect) -> Position {
         Position::new(
-            area.width / 2 + self.profile.name.len() as u16 / 2,
+            area.width / 2 + self.name.len() as u16 / 2,
             area.height / 2 - HEIGHT as u16 / 2,
         )
     }
@@ -226,16 +228,14 @@ impl StatefulWidget for &Editor {
                 Row::new([Cell::from(file.to_line().alignment(Alignment::Right))].into_iter())
             })
             .collect::<Vec<_>>();
-        rows.push(Row::new(
-            ["+".to_line().alignment(Alignment::Center)].into_iter(),
-        ));
+        rows.push(Row::new(["+".to_line().centered()].into_iter()));
         let (window, window_area, indicator, indicator_area) =
-            window::new(WIDTH, HEIGHT, &self.profile.name, Color::LightBlue, area);
+            utility::new_window(WIDTH, HEIGHT, &self.name, BORDER_COLOR, area);
         let table = Table::new(rows, [WIDTH]).block(window);
         let table = if self.editing_mods {
             table
                 .highlight_symbol("> ")
-                .row_highlight_style(Style::new().fg(Color::Black).bg(Color::White))
+                .row_highlight_style(Style::new().black().on_white())
         } else {
             table
         };

@@ -1,10 +1,12 @@
-use std::io::Stdout;
+use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
-use ratatui::{Terminal, buffer::Buffer, layout::Rect, prelude::CrosstermBackend, widgets::Widget};
+use crate::{
+    error::Result,
+    present,
+    window::{self, Phase, Terminal},
+};
 
-use crate::{error::Result, present, window::Phase};
-
-pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
+pub fn run(terminal: &mut Terminal) -> Result<()> {
     let mut window = Window::new();
     present![terminal, window];
 }
@@ -16,7 +18,7 @@ impl Window {
         Self {}
     }
 
-    fn prompt(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<Step<()>> {
+    fn prompt(&mut self, terminal: &mut Terminal) -> Result<Phase<()>> {
         window::process(terminal, &mut |_, _| Ok(Phase::Return(())))
     }
 }

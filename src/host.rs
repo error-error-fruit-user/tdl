@@ -1,23 +1,22 @@
-use std::{io::Stdout, path::Path};
-
-use ratatui::{
-    Terminal, crossterm::event, layout::Position, prelude::CrosstermBackend, style::Color,
-};
+use ratatui::{crossterm::event::KeyCode, style::Color};
 
 use crate::{
     error::Result,
     execute, legend,
     profile::Profile,
     stage,
-    window::{self, Phase},
+    utility::{self, Phase, Terminal},
+    warning,
 };
 
 const TITLE: &'static str = "Host";
+const BORDER_COLOR: Color = Color::LightMagenta;
 const WIDTH: u16 = 32;
 const HEIGHT: u16 = 9;
 const PLAYER_COUNT_LABEL: &'static str = "Player Count";
 const MODE_LABEL: &'static str = "Mode";
 const MAP_LABEL: &'static str = "Map";
+const UZDOOM_WARNING: &'static str = "UZDoom path not set in settings!";
 const PLAYER_COUNT_LEGEND: &[[&'static str; 2]] = &[
     ["Enter", "Launch"],
     ["Esc", "Cancel"],
@@ -37,32 +36,25 @@ const MAP_LEGEND: &[[&'static str; 2]] = &[
     ["A-Z/_", "Input"],
 ];
 
-pub fn run(
-    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    uzdoom: &Path,
-    profile: &Profile,
-) -> Result<()> {
-    let mut input = Input::PlayerCount;
+pub fn run(terminal: &mut Terminal, uzdoom: &str, profile: &Profile) -> Result<()> {
+    let mut index = Index::PlayerCount;
     let mut player_count = String::new();
-    let mut is_deathmatch = false;
+    let mut is_deathmatch = true;
     let mut map = String::new();
     stage![
         terminal,
         |frame| {
             let area = frame.area();
             let (window, mut window_area, indicator, indicator_area) =
-                window::new(WIDTH, HEIGHT, TITLE, Color::LightMagenta, area);
+                utility::new_window(WIDTH, HEIGHT, TITLE, BORDER_COLOR, area);
             frame.render_widget(window, window_area);
             frame.render_widget(&indicator, indicator_area);
 
             window_area.y += 2;
             let player_count = player_count.to_string();
-            let line = window::new_input(PLAYER_COUNT_LABEL, &player_count);
-            let player_count_position = Position::new(
-                area.width / 2 + (PLAYER_COUNT_LABEL.len() + player_count.len()) as u16 / 2 + 1,
-                window_area.y,
-            );
-            frame.render_widget(line, window_area);
+            let (player_count, player_count_position) =
+                utility::new_query(PLAYER_COUNT_LABEL, &player_count, area.width, window_area.y);
+            frame.render_widget(player_count, window_area);
 
             window_area.y += 2;
             let mode = if is_deathmatch {
@@ -70,81 +62,79 @@ pub fn run(
             } else {
                 "Cooperative"
             };
-            let line = window::new_input(MODE_LABEL, mode);
-            let mode_position = Position::new(
-                area.width / 2 + (MODE_LABEL.len() + mode.len()) as u16 / 2 + 1,
-                window_area.y,
-            );
-            frame.render_widget(line, window_area);
+            let (mode, mode_position) =
+                utility::new_query(MODE_LABEL, mode, area.width, window_area.y);
+            frame.render_widget(mode, window_area);
 
             window_area.y += 2;
-            let line = window::new_input(MAP_LABEL, &map);
-            let map_position = Position::new(
-                area.width / 2 + (MAP_LABEL.len() + map.len()) as u16 / 2 + 1,
-                window_area.y,
-            );
-            frame.render_widget(line, window_area);
+            let (map, map_position) =
+                utility::new_query(MAP_LABEL, &map, area.width, window_area.y);
+            frame.render_widget(map, window_area);
 
-            let position = match input {
-                Input::PlayerCount => player_count_position,
-                Input::MatchType => mode_position,
-                Input::Map => map_position,
+            let position = match index {
+                Index::PlayerCount => player_count_position,
+                Index::Mode => mode_position,
+                Index::Map => map_position,
             };
             frame.set_cursor_position(position);
         },
         &mut |terminal, key_code| {
             match key_code {
-                event::KeyCode::Enter => {
-                    execute::host(
+                KeyCode::Enter => {
+                    if !execute::host(
                         uzdoom,
                         profile,
                         &player_count.parse().unwrap_or(2).to_string(),
                         is_deathmatch,
                         &map,
-                    )?;
-                    Ok(Phase::Prompt)
+                    )? {
+                        warning::run(terminal, UZDOOM_WARNING)?;
+                        Ok(Phase::Render)
+                    } else {
+                        Ok(Phase::Prompt)
+                    }
                 }
-                event::KeyCode::Esc => Ok(Phase::Return(())),
-                event::KeyCode::Char('?') => {
+                KeyCode::Esc => Ok(Phase::Return(())),
+                KeyCode::Char('?') => {
                     legend::run(
                         terminal,
-                        match input {
-                            Input::PlayerCount => PLAYER_COUNT_LEGEND,
-                            Input::MatchType => MODE_LEGEND,
-                            Input::Map => MAP_LEGEND,
+                        match index {
+                            Index::PlayerCount => PLAYER_COUNT_LEGEND,
+                            Index::Mode => MODE_LEGEND,
+                            Index::Map => MAP_LEGEND,
                         },
                     )?;
                     Ok(Phase::Render)
                 }
-                event::KeyCode::Tab => {
-                    input.select_next();
+                KeyCode::Tab => {
+                    index.select_next();
                     Ok(Phase::Render)
                 }
-                event::KeyCode::BackTab => {
-                    input.select_previous();
+                KeyCode::BackTab => {
+                    index.select_previous();
                     Ok(Phase::Render)
                 }
-                event::KeyCode::Char(c @ '2'..='8')
-                    if input == Input::PlayerCount && player_count.is_empty() =>
+                KeyCode::Char(c @ '2'..='8')
+                    if index == Index::PlayerCount && player_count.is_empty() =>
                 {
                     player_count.push(c);
                     Ok(Phase::Render)
                 }
-                event::KeyCode::Backspace if input == Input::PlayerCount => {
+                KeyCode::Backspace if index == Index::PlayerCount => {
                     player_count.pop();
                     Ok(Phase::Render)
                 }
-                event::KeyCode::Char('j' | 'k') if input == Input::MatchType => {
+                KeyCode::Char('j' | 'k') if index == Index::Mode => {
                     is_deathmatch = !is_deathmatch;
                     Ok(Phase::Render)
                 }
-                event::KeyCode::Char(c @ 'a'..='z' | c @ 'A'..='Z' | c @ '0'..='9')
-                    if input == Input::Map =>
+                KeyCode::Char(c @ 'a'..='z' | c @ 'A'..='Z' | c @ '0'..='9')
+                    if index == Index::Map =>
                 {
                     map.push(c);
                     Ok(Phase::Render)
                 }
-                event::KeyCode::Backspace if input == Input::Map => {
+                KeyCode::Backspace if index == Index::Map => {
                     map.pop();
                     Ok(Phase::Render)
                 }
@@ -155,17 +145,17 @@ pub fn run(
 }
 
 #[derive(Eq, PartialEq)]
-enum Input {
+enum Index {
     PlayerCount,
-    MatchType,
+    Mode,
     Map,
 }
 
-impl Input {
+impl Index {
     fn select_next(&mut self) {
         *self = match self {
-            Self::PlayerCount => Self::MatchType,
-            Self::MatchType => Self::Map,
+            Self::PlayerCount => Self::Mode,
+            Self::Mode => Self::Map,
             Self::Map => Self::PlayerCount,
         };
     }
@@ -173,8 +163,8 @@ impl Input {
     fn select_previous(&mut self) {
         *self = match self {
             Self::PlayerCount => Self::Map,
-            Self::MatchType => Self::PlayerCount,
-            Self::Map => Self::MatchType,
+            Self::Mode => Self::PlayerCount,
+            Self::Map => Self::Mode,
         };
     }
 }

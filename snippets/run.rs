@@ -1,9 +1,11 @@
-use std::io::Stdout;
+use crate::{
+    error::Result,
+    stage,
+    window::{Phase, Terminal},
+};
 
-use ratatui::{Terminal, prelude::CrosstermBackend};
-
-use crate::{error::Result, stage, window::Phase};
-
-pub fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
-    stage![terminal, |frame| {}, &mut |_, _| Ok(Phase::Return(()))];
+pub fn run(terminal: &mut Terminal) -> Result<()> {
+    stage![terminal, |frame| {}, &mut |_, key_code| match key_code {
+        _ => Ok(Phase::Return(())),
+    }];
 }

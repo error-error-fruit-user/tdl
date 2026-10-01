@@ -1,13 +1,15 @@
 use std::{
     io::{BufRead, BufReader, BufWriter, Write},
-    path::Path,
     process::{Command, Stdio},
 };
 
 use crate::{error::Result, profile::Profile};
 
-fn execute(uzdoom: &Path, profile: &Profile, args: &[&str]) -> Result<()> {
-    let mut doom = if profile.mods.is_empty() {
+fn execute(uzdoom: &str, profile: &Profile, args: &[&str]) -> Result<bool> {
+    if uzdoom.is_empty() {
+        return Ok(false);
+    }
+    let mut doom = if !profile.mods.is_empty() {
         Command::new(uzdoom)
             .args(args)
             .arg("-file")
@@ -37,20 +39,20 @@ fn execute(uzdoom: &Path, profile: &Profile, args: &[&str]) -> Result<()> {
         }
         writer.flush()?;
     }
-    Ok(())
+    Ok(true)
 }
 
-pub fn launch(uzdoom: &Path, profile: &Profile) -> Result<()> {
+pub fn launch(uzdoom: &str, profile: &Profile) -> Result<bool> {
     execute(uzdoom, profile, &[])
 }
 
 pub fn host(
-    uzdoom: &Path,
+    uzdoom: &str,
     profile: &Profile,
     player_count: &str,
     is_deathmatch: bool,
     map: &str,
-) -> Result<()> {
+) -> Result<bool> {
     let mut args = vec!["-host", player_count];
     if is_deathmatch {
         args.push("-deathmatch");
@@ -61,6 +63,6 @@ pub fn host(
     execute(uzdoom, profile, &args)
 }
 
-pub fn join(uzdoom: &Path, profile: &Profile, ip: &str) -> Result<()> {
+pub fn join(uzdoom: &str, profile: &Profile, ip: &str) -> Result<bool> {
     execute(uzdoom, profile, &["-join", ip])
 }

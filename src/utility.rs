@@ -1,9 +1,8 @@
 use std::io::Stdout;
 
 use ratatui::{
-    Terminal,
-    crossterm::event::{self, KeyModifiers},
-    layout::{Alignment, Rect},
+    crossterm::event::{self, KeyCode, KeyModifiers},
+    layout::{Alignment, Position, Rect},
     prelude::CrosstermBackend,
     style::{Color, Style},
     text::{Line, Span, ToLine},
@@ -15,9 +14,10 @@ use crate::{
     resize,
 };
 
+pub type Terminal = ratatui::Terminal<CrosstermBackend<Stdout>>;
 pub const TITLE_COLOR: Color = Color::LightYellow;
 
-pub fn new<'a>(
+pub fn new_window<'a>(
     width: u16,
     height: u16,
     title: &'a str,
@@ -35,8 +35,8 @@ pub fn new<'a>(
         .border_style(Style::new().fg(border_color))
         .title(title)
         .title_alignment(Alignment::Center);
-    let window_area = new_area(width, height, area);
-    let indicator = "[?]".to_line().alignment(Alignment::Center);
+    let window_area = new_window_area(width, height, area);
+    let indicator = "[?]".to_line().centered();
     let indicator_area = Rect::new(
         window_area.x,
         window_area.bottom() + 1,
@@ -46,7 +46,7 @@ pub fn new<'a>(
     (window, window_area, indicator, indicator_area)
 }
 
-pub fn new_area(width: u16, height: u16, area: Rect) -> Rect {
+pub fn new_window_area(width: u16, height: u16, area: Rect) -> Rect {
     Rect::new(
         area.width / 2 - width / 2,
         area.height / 2 - height / 2,
@@ -55,13 +55,25 @@ pub fn new_area(width: u16, height: u16, area: Rect) -> Rect {
     )
 }
 
-pub fn new_input<'a>(message: &'a str, input: &'a str) -> Line<'a> {
-    Line::from(vec![
-        Span::from(message).style(Style::new().fg(Color::LightYellow)),
+pub fn new_query<'a>(
+    label: &'a str,
+    input: &'a str,
+    frame_width: u16,
+    y: u16,
+) -> (Line<'a>, Position) {
+    let line = Line::from(vec![
+        Span::from(label).style(Style::new().fg(Color::LightYellow)),
         Span::from(": "),
         Span::from(input),
     ])
-    .alignment(Alignment::Center)
+    .centered();
+
+    let position = Position::new(
+        (frame_width + (label.len() + input.len()) as u16 + 1) / 2,
+        y,
+    );
+
+    (line, position)
 }
 
 #[must_use]
@@ -72,9 +84,9 @@ pub enum Phase<T> {
     Return(T),
 }
 
-pub fn process<T>(
-    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    prompt: &mut impl FnMut(&mut Terminal<CrosstermBackend<Stdout>>, event::KeyCode) -> Result<Phase<T>>,
+pub fn prompt<T>(
+    terminal: &mut Terminal,
+    prompt: &mut impl FnMut(&mut Terminal, KeyCode) -> Result<Phase<T>>,
 ) -> Result<Phase<T>> {
     let event = event::read()?;
     if let event::Event::Resize(width, height) = event {
@@ -85,7 +97,7 @@ pub fn process<T>(
     } else if let event::Event::Key(key) = event
         && key.is_press()
     {
-        if key.code == event::KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
             Err(Error::Exit)
         } else {
             prompt(terminal, key.code)
@@ -170,11 +182,11 @@ macro_rules! present_with {
 
 #[macro_export]
 macro_rules! stage {
-    [$terminal:expr, $renderer:expr, $prompt:expr] => {
+    [$terminal:expr, $render:expr, $prompt:expr] => {
         loop {
-            $terminal.draw($renderer)?;
+            $terminal.draw($render)?;
             loop {
-                crate::dispatch![crate::window::process($terminal, $prompt)?];
+                crate::dispatch![crate::utility::prompt($terminal, $prompt)?];
             }
         }
     };
