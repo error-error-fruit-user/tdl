@@ -7,6 +7,6 @@ nacht.pk3
 engine.txt
 profiles.json
 token.txt
+build_release.sh
 commit.sh
 push.sh
-build_release.sh
