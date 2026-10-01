@@ -1,0 +1,1 @@
+flatpak run --file-forwarding org.zdoom.UZDoom -config @@ /home/tyler_wojo/.local/share/tdl/brutal_doom/uzdoom.ini @@ -savedir @@ /home/tyler_wojo/.local/share/tdl/brutal_doom/saves @@ -file @@ /home/tyler_wojo/Documents/projects/tuis/tdl/brutal_doom.pk3 @@

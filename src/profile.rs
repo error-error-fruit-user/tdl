@@ -10,9 +10,9 @@ pub struct Profile {
 }
 
 impl Profile {
-    pub fn read(directory: &Path, profile_name: &str) -> Profile {
+    pub fn read(config_dir: &Path, profile_name: &str) -> Profile {
         let Ok(profile) = std::fs::read_to_string(
-            directory
+            config_dir
                 .join(SUBDIRECTORY)
                 .join(profile_name.to_string() + ".toml"),
         ) else {
@@ -21,17 +21,21 @@ impl Profile {
         toml::from_str(&profile).unwrap_or_default()
     }
 
-    pub fn write(&self, directory: &Path, profile_name: &str) {
+    pub fn write(&self, config_dir: &Path, data_dir: &Path, profile_name: &str) {
         std::fs::write(
-            directory
+            config_dir
                 .join(SUBDIRECTORY)
                 .join(profile_name.to_string() + ".toml"),
             toml::to_string_pretty(self).unwrap(),
         )
         .unwrap();
+        let subdir = data_dir.join(profile_name);
+        std::fs::create_dir_all(subdir.join("saves")).unwrap();
+        std::fs::write(subdir.join("uzdoom.ini"), "").unwrap();
     }
 
-    pub fn remove(&self, directory: &Path, profile_name: String) {
-        std::fs::remove_file(directory.join(SUBDIRECTORY).join(profile_name + ".toml")).unwrap();
+    pub fn remove(&self, config_dir: &Path, data_dir: &Path, profile_name: String) {
+        std::fs::remove_dir_all(data_dir.join(&profile_name)).unwrap();
+        std::fs::remove_file(config_dir.join(SUBDIRECTORY).join(profile_name + ".toml")).unwrap();
     }
 }

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use ratatui::{crossterm::event::KeyCode, style::Color};
 
 use crate::{
@@ -16,7 +18,12 @@ const HEIGHT: u16 = 5;
 const IP_LABEL: &'static str = "Ip Address";
 const LEGEND: &[[&'static str; 2]] = &[["Enter", "Launch"], ["Esc", "Cancel"], ["0-9/.", "Input"]];
 
-pub fn run(terminal: &mut Terminal, uzdoom: &str, profile: &Profile) -> Result<()> {
+pub fn run(
+    terminal: &mut Terminal,
+    uzdoom: &str,
+    profile: &Profile,
+    data_subdir: &Path,
+) -> Result<()> {
     let mut ip = String::new();
     stage![
         terminal,
@@ -35,7 +42,7 @@ pub fn run(terminal: &mut Terminal, uzdoom: &str, profile: &Profile) -> Result<(
         &mut |terminal, key_code| {
             match key_code {
                 KeyCode::Enter => {
-                    if !execute::join(uzdoom, profile, &ip)? {
+                    if !execute::join(uzdoom, profile, &ip, data_subdir)? {
                         warning::uzdoom_not_set(terminal)?;
                     }
                     Ok(Phase::Prompt)

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use ratatui::{crossterm::event::KeyCode, style::Color};
 
 use crate::{
@@ -36,7 +38,12 @@ const MAP_LEGEND: &[[&'static str; 2]] = &[
     ["A-Z/_", "Input"],
 ];
 
-pub fn run(terminal: &mut Terminal, uzdoom: &str, profile: &Profile) -> Result<()> {
+pub fn run(
+    terminal: &mut Terminal,
+    uzdoom: &str,
+    profile: &Profile,
+    data_subdir: &Path,
+) -> Result<()> {
     let mut index = Index::PlayerCount;
     let mut player_count = String::new();
     let mut is_deathmatch = true;
@@ -87,6 +94,7 @@ pub fn run(terminal: &mut Terminal, uzdoom: &str, profile: &Profile) -> Result<(
                         &player_count.parse().unwrap_or(2).to_string(),
                         is_deathmatch,
                         &map,
+                        data_subdir,
                     )? {
                         warning::run(terminal, UZDOOM_WARNING)?;
                         Ok(Phase::Render)

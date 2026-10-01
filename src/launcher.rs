@@ -53,7 +53,7 @@ pub fn run(terminal: &mut Terminal) -> Result<()> {
 
 struct Launcher {
     config_dir: PathBuf,
-    // data_dir: PathBuf,
+    data_dir: PathBuf,
     config: Config,
     profiles: Vec<Profile>,
 }
@@ -63,7 +63,7 @@ impl Launcher {
         let project_dirs = ProjectDirs::from("error.error.fruit", "eef", "tdl")
             .expect("Could not find home directory!");
         let config_dir = project_dirs.config_dir();
-        // let data_dir = project_dirs.data_dir();
+        let data_dir = project_dirs.data_dir();
         let config = Config::read(config_dir);
         let mut profiles = Vec::new();
         profiles.reserve(config.profiles.len());
@@ -71,12 +71,11 @@ impl Launcher {
             profiles.push(Profile::read(config_dir, profile));
         }
         std::fs::create_dir_all(config_dir.join("profiles")).unwrap();
-        // std::fs::create_dir_all(data_dir).unwrap();
 
         state.select(Some(0));
         Self {
             config_dir: config_dir.into(),
-            // data_dir: data_dir.into(),
+            data_dir: data_dir.into(),
             config,
             profiles,
         }
@@ -96,7 +95,11 @@ impl Launcher {
                 }
                 KeyCode::Enter => {
                     if *index != self.profiles.len() {
-                        if execute::launch(&self.config.uzdoom, &self.profiles[*index])? {
+                        if execute::launch(
+                            &self.config.uzdoom,
+                            &self.profiles[*index],
+                            &self.data_dir.join(&self.config.profiles[*index]),
+                        )? {
                             Ok(Phase::Prompt)
                         } else {
                             warning::uzdoom_not_set(terminal)?;
@@ -105,7 +108,7 @@ impl Launcher {
                     } else {
                         let (name, profile) =
                             editor::run(terminal, String::new(), Profile::default())?;
-                        profile.write(&self.config_dir, &name);
+                        profile.write(&self.config_dir, &self.data_dir, &name);
                         self.config.profiles.push(name);
                         self.config.write(&self.config_dir);
                         self.profiles.push(profile);
@@ -119,7 +122,7 @@ impl Launcher {
                 }
                 KeyCode::Char('a') => {
                     let (name, profile) = editor::run_new(terminal)?;
-                    profile.write(&self.config_dir, &name);
+                    profile.write(&self.config_dir, &self.data_dir, &name);
                     self.config.profiles.push(name);
                     self.config.write(&self.config_dir);
                     self.profiles.insert(*index, profile);
@@ -135,7 +138,7 @@ impl Launcher {
                             self.config.profiles.remove(*index),
                             self.profiles.remove(*index),
                         )?;
-                        profile.write(&self.config_dir, &name);
+                        profile.write(&self.config_dir, &self.data_dir, &name);
                         self.config.profiles.push(name);
                         self.config.write(&self.config_dir);
                         self.profiles.insert(*index, profile);
@@ -149,7 +152,7 @@ impl Launcher {
                         if dialogue::should_delete(terminal)? {
                             let name = self.config.profiles.remove(*index);
                             self.config.write(&self.config_dir);
-                            self.profiles[*index].remove(&self.config_dir, name);
+                            self.profiles[*index].remove(&self.config_dir, &self.data_dir, name);
                             self.profiles.remove(*index);
                             if *index == self.profiles.len() {
                                 if *index != 0 {
@@ -198,7 +201,12 @@ impl Launcher {
                 }
                 KeyCode::Char('h') => {
                     if *index != self.profiles.len() {
-                        host::run(terminal, &self.config.uzdoom, &self.profiles[*index])?;
+                        host::run(
+                            terminal,
+                            &self.config.uzdoom,
+                            &self.profiles[*index],
+                            &self.data_dir.join(&self.config.profiles[*index]),
+                        )?;
                         Ok(Phase::Render)
                     } else {
                         Ok(Phase::Prompt)
@@ -206,7 +214,12 @@ impl Launcher {
                 }
                 KeyCode::Char('n') => {
                     if *index != self.profiles.len() {
-                        join::run(terminal, &self.config.uzdoom, &self.profiles[*index])?;
+                        join::run(
+                            terminal,
+                            &self.config.uzdoom,
+                            &self.profiles[*index],
+                            &self.data_dir.join(&self.config.profiles[*index]),
+                        )?;
                         Ok(Phase::Render)
                     } else {
                         Ok(Phase::Prompt)
