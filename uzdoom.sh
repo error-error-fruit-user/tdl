@@ -5,7 +5,7 @@ FS_ARGS=()
 FILES=()
 
 while [[ $# -gt 0 ]]; do
-    if [[ "$1" == -* ]]; then
+    if [[ "$1" == -* || "$1" == +* ]]; then
         FLAGS+=("$1")
         if [[ "$1" == "-config" ]]; then
             FLAGS+=(@@ "$2" @@)  
@@ -14,7 +14,7 @@ while [[ $# -gt 0 ]]; do
             FLAGS+=("$2")
             FS_ARGS+=(--filesystem="$2")
             shift
-        elif [[ "$1" != "-file" && "$1" != "-deathmatch" && $# -gt 1 && "$2" != -* && ! "$2" =~ \.(pk3|wad|ipk3|deh)$ ]]; then
+        elif [[ "$1" != "-file" && "$1" != "-deathmatch" ]]; then
             FLAGS+=("$2")
             shift
         fi

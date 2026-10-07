@@ -4,11 +4,10 @@ use ratatui::{crossterm::event::KeyCode, style::Color};
 
 use crate::{
     error::Result,
-    execute, legend,
+    joining, legend,
     profile::Profile,
     stage,
     utility::{self, Phase, Terminal},
-    warning,
 };
 
 const TITLE: &'static str = "Join";
@@ -21,7 +20,7 @@ const LEGEND: &[[&'static str; 2]] = &[["Enter", "Launch"], ["Esc", "Cancel"], [
 pub fn run(
     terminal: &mut Terminal,
     uzdoom: &str,
-    profile: &Profile,
+    profiles: &Vec<Profile>,
     data_subdir: &Path,
 ) -> Result<()> {
     let mut ip = String::new();
@@ -42,10 +41,8 @@ pub fn run(
         &mut |terminal, key_code| {
             match key_code {
                 KeyCode::Enter => {
-                    if !execute::join(uzdoom, profile, &ip, data_subdir)? {
-                        warning::uzdoom_not_set(terminal)?;
-                    }
-                    Ok(Phase::Prompt)
+                    joining::run(terminal, uzdoom, profiles, &ip, data_subdir)?;
+                    Ok(Phase::Render)
                 }
                 KeyCode::Esc => Ok(Phase::Return(())),
                 KeyCode::Char('?') => {

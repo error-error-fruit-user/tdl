@@ -1,7 +1,7 @@
 use crate::{
     error::Result,
     stage,
-    window::{Phase, Terminal},
+    utility::{Phase, Terminal},
 };
 
 pub fn run(terminal: &mut Terminal) -> Result<()> {

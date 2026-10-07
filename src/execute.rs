@@ -6,15 +6,12 @@ use std::{
 
 use crate::{error::Result, profile::Profile};
 
-fn execute(uzdoom: &str, profile: &Profile, args: &[&str]) -> Result<bool> {
-    if uzdoom.is_empty() {
-        return Ok(false);
-    }
+fn execute(uzdoom: &str, profile: &Profile, args: &[&str]) -> Result<()> {
     let mut doom = if !profile.mods.is_empty() {
         Command::new(uzdoom)
             .args(args)
             .arg("-file")
-            .args(profile.mods.iter())
+            .args(profile.mods.iter().map(|r#mod| &r#mod.path))
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -40,10 +37,10 @@ fn execute(uzdoom: &str, profile: &Profile, args: &[&str]) -> Result<bool> {
         }
         writer.flush()?;
     }
-    Ok(true)
+    Ok(())
 }
 
-pub fn launch(uzdoom: &str, profile: &Profile, data_subdir: &Path) -> Result<bool> {
+pub fn launch(uzdoom: &str, profile: &Profile, data_subdir: &Path) -> Result<()> {
     execute(
         uzdoom,
         profile,
@@ -63,7 +60,7 @@ pub fn host(
     is_deathmatch: bool,
     map: &str,
     data_subdir: &Path,
-) -> Result<bool> {
+) -> Result<()> {
     let ini_path = data_subdir.join("uzdoom.ini");
     let saves_path = data_subdir.join("saves");
     let mut args = vec![
@@ -78,12 +75,12 @@ pub fn host(
         args.push("-deathmatch");
     }
     if !map.is_empty() {
-        args.extend(["-warp", map]);
+        args.extend(["+map", map]);
     }
     execute(uzdoom, profile, &args)
 }
 
-pub fn join(uzdoom: &str, profile: &Profile, ip: &str, data_subdir: &Path) -> Result<bool> {
+pub fn join(uzdoom: &str, profile: &Profile, ip: &str, data_subdir: &Path) -> Result<()> {
     execute(
         uzdoom,
         profile,

@@ -3,7 +3,7 @@ use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 use crate::{
     error::Result,
     present,
-    window::{self, Phase, Terminal},
+    utility::{self, Phase, Terminal},
 };
 
 pub fn run(terminal: &mut Terminal) -> Result<()> {

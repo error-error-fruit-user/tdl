@@ -4,11 +4,10 @@ use ratatui::{crossterm::event::KeyCode, style::Color};
 
 use crate::{
     error::Result,
-    execute, legend,
+    hosting, legend,
     profile::Profile,
     stage,
     utility::{self, Phase, Terminal},
-    warning,
 };
 
 const TITLE: &'static str = "Host";
@@ -18,7 +17,6 @@ const HEIGHT: u16 = 9;
 const PLAYER_COUNT_LABEL: &'static str = "Player Count";
 const MODE_LABEL: &'static str = "Mode";
 const MAP_LABEL: &'static str = "Map";
-const UZDOOM_WARNING: &'static str = "UZDoom path not set in settings!";
 const PLAYER_COUNT_LEGEND: &[[&'static str; 2]] = &[
     ["Enter", "Launch"],
     ["Esc", "Cancel"],
@@ -58,7 +56,6 @@ pub fn run(
             frame.render_widget(&indicator, indicator_area);
 
             window_area.y += 2;
-            let player_count = player_count.to_string();
             let (player_count, player_count_position) =
                 utility::new_query(PLAYER_COUNT_LABEL, &player_count, area.width, window_area.y);
             frame.render_widget(player_count, window_area);
@@ -88,19 +85,19 @@ pub fn run(
         &mut |terminal, key_code| {
             match key_code {
                 KeyCode::Enter => {
-                    if !execute::host(
+                    if player_count.is_empty() {
+                        player_count = 2.to_string();
+                    }
+                    hosting::run(
+                        terminal,
                         uzdoom,
                         profile,
                         &player_count.parse().unwrap_or(2).to_string(),
                         is_deathmatch,
                         &map,
                         data_subdir,
-                    )? {
-                        warning::run(terminal, UZDOOM_WARNING)?;
-                        Ok(Phase::Render)
-                    } else {
-                        Ok(Phase::Prompt)
-                    }
+                    )?;
+                    Ok(Phase::Render)
                 }
                 KeyCode::Esc => Ok(Phase::Return(())),
                 KeyCode::Char('?') => {

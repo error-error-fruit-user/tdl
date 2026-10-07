@@ -1,11 +1,10 @@
 /target
-/saves
+/temp
 session.log
 brutal_doom.pk3
 myhouse.pk3
 nacht.pk3
 engine.txt
-profiles.json
 token.txt
 build_release.sh
 commit.sh

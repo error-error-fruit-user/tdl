@@ -12,7 +12,7 @@ use crate::{
     dialogue,
     error::Result,
     index, legend, present_with,
-    profile::Profile,
+    profile::{Mod, Profile},
     utility::{self, Phase, Terminal},
 };
 
@@ -29,13 +29,12 @@ const EDITING_LEGEND: &[[&'static str; 2]] = &[
     ["Tab", "Switch Mode"],
     ["A", "Add"],
     ["D", "Delete"],
-    ["F", "Import"],
     ["[/]", "Swap"],
 ];
 
-pub fn run(terminal: &mut Terminal, name: String, profile: Profile) -> Result<(String, Profile)> {
+pub fn run(terminal: &mut Terminal, profile: Profile) -> Result<Profile> {
     let mut state = TableState::new();
-    let mut editor = Editor::new(name, profile, &mut state);
+    let mut editor = Editor::new(profile, &mut state);
     present_with!(terminal, editor, &mut state, |frame: &mut Frame| {
         let area = frame.area();
         if !editor.editing_mods {
@@ -45,23 +44,21 @@ pub fn run(terminal: &mut Terminal, name: String, profile: Profile) -> Result<(S
     });
 }
 
-pub fn run_new(terminal: &mut Terminal) -> Result<(String, Profile)> {
-    run(terminal, String::new(), Profile::default())
+pub fn run_new(terminal: &mut Terminal) -> Result<Profile> {
+    run(terminal, Profile::default())
 }
 
 #[derive(Default)]
 struct Editor {
-    name: String,
     profile: Profile,
     editing_mods: bool,
 }
 
 impl Editor {
-    fn new(name: String, profile: Profile, state: &mut TableState) -> Self {
+    fn new(profile: Profile, state: &mut TableState) -> Self {
         state.select(Some(0));
         Self {
-            editing_mods: !name.is_empty(),
-            name,
+            editing_mods: !profile.name.is_empty(),
             profile,
         }
     }
@@ -70,13 +67,11 @@ impl Editor {
         &mut self,
         terminal: &mut Terminal,
         state: &mut TableState,
-    ) -> Result<Phase<(String, Profile)>> {
+    ) -> Result<Phase<Profile>> {
         utility::prompt(terminal, &mut |terminal, key_code| {
             let index = state.selected_mut().as_mut().unwrap();
             match key_code {
-                KeyCode::Esc | KeyCode::Enter => {
-                    Ok(Phase::Return((self.name.clone(), self.profile.clone())))
-                }
+                KeyCode::Esc | KeyCode::Enter => Ok(Phase::Return(self.profile.clone())),
                 KeyCode::Char('?') => {
                     let legend = if self.editing_mods {
                         EDITING_LEGEND
@@ -93,11 +88,11 @@ impl Editor {
                 KeyCode::Char(c @ 'a'..='z' | c @ 'A'..='Z' | c @ '0'..='9' | c @ '_')
                     if !self.editing_mods =>
                 {
-                    self.name.push(c);
+                    self.profile.name.push(c);
                     Ok(Phase::Render)
                 }
                 KeyCode::Backspace if !self.editing_mods => {
-                    self.name.pop();
+                    self.profile.name.pop();
                     Ok(Phase::Render)
                 }
                 KeyCode::Char('j') => {
@@ -158,48 +153,14 @@ impl Editor {
                     if new_mods.is_empty() {
                         return Ok(Phase::Prompt);
                     }
-                    let new_mods = new_mods.iter().map(|f| f.to_string_lossy().to_string());
-                    let length = new_mods.len();
+                    let paths = new_mods.iter().map(|f| f.to_string_lossy().to_string());
+                    let length = paths.len();
                     let should_add = *index == self.profile.mods.len();
-                    for (index, r#mod) in (*index..*index + new_mods.len()).zip(new_mods) {
-                        self.profile.mods.insert(index, r#mod);
+                    for (index, path) in (*index..*index + paths.len()).zip(paths) {
+                        self.profile.mods.insert(index, Mod::from_path(path)?);
                     }
                     if should_add {
                         *index += length
-                    }
-                    Ok(Phase::Render)
-                }
-                KeyCode::Char('f') => {
-                    let folder = rfd::FileDialog::new()
-                        .set_directory(std::env::current_dir().unwrap())
-                        .pick_folder();
-                    let Some(folder) = folder else {
-                        return Ok(Phase::Prompt);
-                    };
-                    let new_mods = std::fs::read_dir(folder)
-                        .into_iter()
-                        .flatten()
-                        .map(|entry| entry.unwrap().path())
-                        .filter(|path| {
-                            path.is_file()
-                                && matches!(
-                                    path.extension()
-                                        .map(|extension| extension.to_str().unwrap()),
-                                    Some("wad" | "pk3")
-                                )
-                        })
-                        .map(|path| path.to_string_lossy().to_string())
-                        .collect::<Vec<_>>();
-                    if new_mods.is_empty() {
-                        return Ok(Phase::Prompt);
-                    }
-                    let length = new_mods.len();
-                    let should_add = *index == self.profile.mods.len();
-                    for (index, r#mod) in (*index..*index + new_mods.len()).zip(new_mods) {
-                        self.profile.mods.insert(index, r#mod);
-                    }
-                    if should_add {
-                        *index += length;
                     }
                     Ok(Phase::Render)
                 }
@@ -210,7 +171,7 @@ impl Editor {
 
     fn get_cursor_position(&self, area: Rect) -> Position {
         Position::new(
-            area.width / 2 + self.name.len() as u16 / 2,
+            area.width / 2 + self.profile.name.len() as u16 / 2,
             area.height / 2 - HEIGHT as u16 / 2,
         )
     }
@@ -224,13 +185,13 @@ impl StatefulWidget for &Editor {
             .profile
             .mods
             .iter()
-            .map(|file| {
-                Row::new([Cell::from(file.to_line().alignment(Alignment::Right))].into_iter())
+            .map(|r#mod| {
+                Row::new([Cell::from(r#mod.path.to_line().alignment(Alignment::Right))].into_iter())
             })
             .collect::<Vec<_>>();
         rows.push(Row::new(["+".to_line().centered()].into_iter()));
         let (window, window_area, indicator, indicator_area) =
-            utility::new_window(WIDTH, HEIGHT, &self.name, BORDER_COLOR, area);
+            utility::new_window(WIDTH, HEIGHT, &self.profile.name, BORDER_COLOR, area);
         let table = Table::new(rows, [WIDTH]).block(window);
         let table = if self.editing_mods {
             table

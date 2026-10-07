@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use directories::ProjectDirs;
 use ratatui::{
@@ -41,13 +41,13 @@ const LEGEND: &[[&'static str; 2]] = &[
     ["[/]", "Swap"],
 ];
 
-pub fn run(terminal: &mut Terminal) -> Result<()> {
+pub fn run(terminal: &mut Terminal, pass: Option<String>) -> Result<()> {
     let area = terminal.get_frame().area();
     if resize::should_resize(area.width, area.height) {
         resize::run(terminal)?;
     }
     let mut state = TableState::new();
-    let mut launcher = Launcher::new(&mut state);
+    let mut launcher = Launcher::new(&mut state, pass);
     present![terminal, launcher, &mut state];
 }
 
@@ -59,16 +59,23 @@ struct Launcher {
 }
 
 impl Launcher {
-    fn new(state: &mut TableState) -> Self {
-        let project_dirs = ProjectDirs::from("error.error.fruit", "eef", "tdl")
-            .expect("Could not find home directory!");
-        let config_dir = project_dirs.config_dir();
-        let data_dir = project_dirs.data_dir();
-        let config = Config::read(config_dir);
+    fn new(state: &mut TableState, pass: Option<String>) -> Self {
+        let (config_dir, data_dir) = if let Some(pass) = pass {
+            let pass = Path::new(&pass);
+            (pass.join("config"), pass.join("data"))
+        } else {
+            let project_dirs = ProjectDirs::from("error.error.fruit", "eef", "tdl")
+                .expect("Could not find home directory!");
+            (
+                project_dirs.config_dir().to_path_buf(),
+                project_dirs.data_dir().to_path_buf(),
+            )
+        };
+        let config = Config::read(&config_dir);
         let mut profiles = Vec::new();
         profiles.reserve(config.profiles.len());
         for profile in &config.profiles {
-            profiles.push(Profile::read(config_dir, profile));
+            profiles.push(Profile::read(&config_dir, profile));
         }
         std::fs::create_dir_all(config_dir.join("profiles")).unwrap();
 
@@ -95,21 +102,21 @@ impl Launcher {
                 }
                 KeyCode::Enter => {
                     if *index != self.profiles.len() {
-                        if execute::launch(
-                            &self.config.uzdoom,
-                            &self.profiles[*index],
-                            &self.data_dir.join(&self.config.profiles[*index]),
-                        )? {
-                            Ok(Phase::Prompt)
-                        } else {
+                        if self.config.uzdoom.is_empty() {
                             warning::uzdoom_not_set(terminal)?;
                             Ok(Phase::Render)
+                        } else {
+                            execute::launch(
+                                &self.config.uzdoom,
+                                &self.profiles[*index],
+                                &self.data_dir.join(&self.config.profiles[*index]),
+                            )?;
+                            Ok(Phase::Prompt)
                         }
                     } else {
-                        let (name, profile) =
-                            editor::run(terminal, String::new(), Profile::default())?;
-                        profile.write(&self.config_dir, &self.data_dir, &name);
-                        self.config.profiles.push(name);
+                        let profile = editor::run_new(terminal)?;
+                        profile.write(&self.config_dir, &self.data_dir);
+                        self.config.profiles.push(profile.name.clone());
                         self.config.write(&self.config_dir);
                         self.profiles.push(profile);
                         *index += 1;
@@ -121,9 +128,9 @@ impl Launcher {
                     Ok(Phase::Render)
                 }
                 KeyCode::Char('a') => {
-                    let (name, profile) = editor::run_new(terminal)?;
-                    profile.write(&self.config_dir, &self.data_dir, &name);
-                    self.config.profiles.push(name);
+                    let profile = editor::run_new(terminal)?;
+                    profile.write(&self.config_dir, &self.data_dir);
+                    self.config.profiles.push(profile.name.clone());
                     self.config.write(&self.config_dir);
                     self.profiles.insert(*index, profile);
                     if *index == self.profiles.len() - 1 {
@@ -133,13 +140,10 @@ impl Launcher {
                 }
                 KeyCode::Char('e') => {
                     if *index != self.profiles.len() {
-                        let (name, profile) = editor::run(
-                            terminal,
-                            self.config.profiles.remove(*index),
-                            self.profiles.remove(*index),
-                        )?;
-                        profile.write(&self.config_dir, &self.data_dir, &name);
-                        self.config.profiles.push(name);
+                        self.config.profiles.remove(*index);
+                        let profile = editor::run(terminal, self.profiles.remove(*index))?;
+                        profile.write(&self.config_dir, &self.data_dir);
+                        self.config.profiles.push(profile.name.clone());
                         self.config.write(&self.config_dir);
                         self.profiles.insert(*index, profile);
                         Ok(Phase::Render)
@@ -201,29 +205,33 @@ impl Launcher {
                 }
                 KeyCode::Char('h') => {
                     if *index != self.profiles.len() {
-                        host::run(
-                            terminal,
-                            &self.config.uzdoom,
-                            &self.profiles[*index],
-                            &self.data_dir.join(&self.config.profiles[*index]),
-                        )?;
+                        if self.config.uzdoom.is_empty() {
+                            warning::uzdoom_not_set(terminal)?;
+                        } else {
+                            host::run(
+                                terminal,
+                                &self.config.uzdoom,
+                                &self.profiles[*index],
+                                &self.data_dir.join(&self.config.profiles[*index]),
+                            )?;
+                        }
                         Ok(Phase::Render)
                     } else {
                         Ok(Phase::Prompt)
                     }
                 }
                 KeyCode::Char('n') => {
-                    if *index != self.profiles.len() {
+                    if self.config.uzdoom.is_empty() {
+                        warning::uzdoom_not_set(terminal)?;
+                    } else {
                         join::run(
                             terminal,
                             &self.config.uzdoom,
-                            &self.profiles[*index],
+                            &self.profiles,
                             &self.data_dir.join(&self.config.profiles[*index]),
                         )?;
-                        Ok(Phase::Render)
-                    } else {
-                        Ok(Phase::Prompt)
                     }
+                    Ok(Phase::Render)
                 }
                 KeyCode::Char('u') => {
                     if let Some(uzdoom) = rfd::FileDialog::new()
