@@ -12,7 +12,7 @@ while [[ $# -gt 0 ]]; do
             shift
         elif [[ "$1" == "-savedir" ]]; then
             FLAGS+=("$2")
-            FS_ARGS+=(--filesystem="$2")
+            FS_ARGS+=(--filesystem=/"$2")
             shift
         elif [[ "$1" != "-file" && "$1" != "-deathmatch" ]]; then
             FLAGS+=("$2")
@@ -30,4 +30,5 @@ if [ ${#FILES[@]} -gt 0 ]; then
     CMD+=(@@ "${FILES[@]}" @@)
 fi
 
+echo "${CMD[@]}"
 "${CMD[@]}"

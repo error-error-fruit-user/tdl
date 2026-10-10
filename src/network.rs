@@ -1,4 +1,5 @@
 use std::{
+    ffi::OsString,
     io::{Read, Write},
     path::Path,
     sync::{
@@ -27,15 +28,17 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    pub fn build(mods: &Vec<Mod>) -> Result<Self> {
-        let mut entries = Vec::new();
-        for r#mod in mods {
-            let path = Path::new(&r#mod.path);
-            let name = path.file_name().unwrap().to_string_lossy().to_string();
-            let size = std::fs::metadata(path)?.len();
-            let hash = r#mod.hash.clone();
-            entries.push(Entry::new(name, size, hash));
-        }
+    pub fn build(mods: &[Mod]) -> Result<Self> {
+        let entries = mods
+            .iter()
+            .map(|m| {
+                let path = Path::new(&m.path);
+                let name = path.file_name().unwrap().to_os_string();
+                let size = std::fs::metadata(path).unwrap().len();
+                let hash = m.hash.clone();
+                Entry::new(name, size, hash)
+            })
+            .collect();
         Ok(Self { entries })
     }
 
@@ -45,20 +48,20 @@ impl Manifest {
             .get(&format!("{}/manifest", base_url(ip)))
             .call()
             .unwrap();
-        let mut body = String::new();
+        let mut body = Vec::new();
         response
             .into_body()
             .into_reader()
-            .read_to_string(&mut body)
+            .read_to_end(&mut body)
             .unwrap();
-        let manifest: Manifest = toml::from_str(&body).unwrap();
+        let manifest: Manifest = rmp_serde::from_slice(&body).unwrap();
         if manifest.entries.len() > MAX_FILES {
             panic!("Too many files trying to be downloaded");
         }
         Ok(manifest)
     }
 
-    pub fn serve(self, port: u16, paths: Vec<String>) -> Result<ServerGuard> {
+    pub fn serve(self, port: u16, paths: Vec<OsString>) -> Result<ServerGuard> {
         let server = tiny_http::Server::http(("0.0.0.0", port)).unwrap();
         let should_quit = Arc::new(AtomicBool::new(false));
         let flag = should_quit.clone();
@@ -69,8 +72,8 @@ impl Manifest {
 
                     if url == "/manifest" {
                         request
-                            .respond(tiny_http::Response::from_string(
-                                &toml::to_string(&self).unwrap(),
+                            .respond(tiny_http::Response::from_data(
+                                rmp_serde::to_vec(&self).unwrap(),
                             ))
                             .unwrap();
                     } else if let Some(hash) = url.strip_prefix("/file/") {
@@ -113,24 +116,24 @@ impl Manifest {
         if self.entries.len() != profile.mods.len() {
             return false;
         }
-        for (entry, r#mod) in self.entries.iter().zip(profile.mods.iter()) {
-            if entry.hash != r#mod.hash {
-                return false;
-            }
-        }
-        true
+
+        !self
+            .entries
+            .iter()
+            .zip(profile.mods.iter())
+            .any(|(e, m)| e.hash != m.hash)
     }
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct Entry {
-    pub name: String,
+    pub name: OsString,
     pub size: u64,
     pub hash: String,
 }
 
 impl Entry {
-    fn new(name: String, size: u64, hash: String) -> Self {
+    fn new(name: OsString, size: u64, hash: String) -> Self {
         Self { name, size, hash }
     }
 }
@@ -153,14 +156,14 @@ pub fn download_profile(
     entries: &[Entry],
     cache: &Path,
 ) -> Result<Profile> {
+    const TITLE: &str = "Downloading";
     const WIDTH: u16 = 32;
     const HEIGHT: u16 = 5;
-    const TITLE: &'static str = "Downloading";
     const BORDER_COLOR: Color = Color::Magenta;
 
     terminal.draw(|frame| {
         let (window, mut window_area, ..) =
-            utility::new_window(WIDTH, HEIGHT, TITLE, BORDER_COLOR, frame.area());
+            utility::new_window(TITLE, WIDTH, HEIGHT, BORDER_COLOR, frame.area());
         frame.render_widget(window, window_area);
         window_area.y += 2;
         frame.render_widget("Downloading...".to_line().centered(), window_area);
@@ -171,14 +174,15 @@ pub fn download_profile(
     for entry in entries {
         let dir = cache.join(&entry.hash);
         if dir.exists() {
-            mods.push(Mod::new(
-                dir.join(entry.name.clone()).to_string_lossy().to_string(),
-                entry.hash.clone(),
-            ));
+            mods.push(Mod::new(dir.join(&entry.name).into(), entry.hash.clone()));
             continue;
         }
         std::fs::create_dir_all(&dir)?;
-        let part = dir.join(format!("{}.part", entry.name));
+        let part = dir.join({
+            let mut part = entry.name.clone();
+            part.push(".part");
+            part
+        });
         let url = format!("{}/file/{}", base_url(ip), entry.hash);
         let mut reader = agent.get(&url).call().unwrap().into_body().into_reader();
         let mut file = std::fs::File::create(&part)?;
@@ -209,10 +213,7 @@ pub fn download_profile(
 
         std::fs::rename(&part, dir.join(&entry.name))?;
 
-        mods.push(Mod::new(
-            dir.join(entry.name.clone()).to_string_lossy().to_string(),
-            entry.hash.clone(),
-        ));
+        mods.push(Mod::new(dir.join(&entry.name).into(), entry.hash.clone()));
     }
     Ok(Profile::new(mods))
 }

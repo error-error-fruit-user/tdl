@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{ffi::OsStr, path::Path};
 
 use ratatui::{crossterm::event::KeyCode, style::Color};
 
@@ -10,40 +10,40 @@ use crate::{
     utility::{self, Phase, Terminal},
 };
 
-const TITLE: &'static str = "Host";
+const TITLE: &str = "Host";
 const BORDER_COLOR: Color = Color::LightMagenta;
 const WIDTH: u16 = 32;
 const HEIGHT: u16 = 9;
-const PLAYER_COUNT_LABEL: &'static str = "Player Count";
-const MODE_LABEL: &'static str = "Mode";
-const MAP_LABEL: &'static str = "Map";
-const PLAYER_COUNT_LEGEND: &[[&'static str; 2]] = &[
+const PLAYER_COUNT_LABEL: &str = "Player Count";
+const MODE_LABEL: &str = "Mode";
+const MAP_LABEL: &str = "Map";
+const PLAYER_COUNT_LEGEND: &[[&str; 2]] = &[
     ["Enter", "Launch"],
-    ["Esc", "Cancel"],
     ["Tab/Backtab", "Traverse"],
     ["2-8", "Input"],
-];
-const MODE_LEGEND: &[[&'static str; 2]] = &[
-    ["Enter", "Launch"],
     ["Esc", "Cancel"],
+];
+const MODE_LEGEND: &[[&str; 2]] = &[
+    ["Enter", "Launch"],
     ["Tab/Backtab", "Traverse"],
     ["J/K", "Switch Mode"],
-];
-const MAP_LEGEND: &[[&'static str; 2]] = &[
-    ["Enter", "Launch"],
     ["Esc", "Cancel"],
+];
+const MAP_LEGEND: &[[&str; 2]] = &[
+    ["Enter", "Launch"],
     ["Tab/Backtab", "Traverse"],
     ["A-Z/_", "Input"],
+    ["Esc", "Cancel"],
 ];
 
 pub fn run(
     terminal: &mut Terminal,
-    uzdoom: &str,
+    uzdoom: &OsStr,
     profile: &Profile,
     data_subdir: &Path,
 ) -> Result<()> {
     let mut index = Index::PlayerCount;
-    let mut player_count = String::new();
+    let mut player_count = 2.to_string();
     let mut is_deathmatch = true;
     let mut map = String::new();
     stage![
@@ -51,7 +51,7 @@ pub fn run(
         |frame| {
             let area = frame.area();
             let (window, mut window_area, indicator, indicator_area) =
-                utility::new_window(WIDTH, HEIGHT, TITLE, BORDER_COLOR, area);
+                utility::new_window(TITLE, WIDTH, HEIGHT, BORDER_COLOR, area);
             frame.render_widget(window, window_area);
             frame.render_widget(&indicator, indicator_area);
 
@@ -85,9 +85,6 @@ pub fn run(
         &mut |terminal, key_code| {
             match key_code {
                 KeyCode::Enter => {
-                    if player_count.is_empty() {
-                        player_count = 2.to_string();
-                    }
                     hosting::run(
                         terminal,
                         uzdoom,
@@ -99,18 +96,6 @@ pub fn run(
                     )?;
                     Ok(Phase::Render)
                 }
-                KeyCode::Esc => Ok(Phase::Return(())),
-                KeyCode::Char('?') => {
-                    legend::run(
-                        terminal,
-                        match index {
-                            Index::PlayerCount => PLAYER_COUNT_LEGEND,
-                            Index::Mode => MODE_LEGEND,
-                            Index::Map => MAP_LEGEND,
-                        },
-                    )?;
-                    Ok(Phase::Render)
-                }
                 KeyCode::Tab => {
                     index.select_next();
                     Ok(Phase::Render)
@@ -119,14 +104,9 @@ pub fn run(
                     index.select_previous();
                     Ok(Phase::Render)
                 }
-                KeyCode::Char(c @ '2'..='8')
-                    if index == Index::PlayerCount && player_count.is_empty() =>
-                {
-                    player_count.push(c);
-                    Ok(Phase::Render)
-                }
-                KeyCode::Backspace if index == Index::PlayerCount => {
+                KeyCode::Char(c @ '2'..='8') if index == Index::PlayerCount => {
                     player_count.pop();
+                    player_count.push(c);
                     Ok(Phase::Render)
                 }
                 KeyCode::Char('j' | 'k') if index == Index::Mode => {
@@ -141,6 +121,18 @@ pub fn run(
                 }
                 KeyCode::Backspace if index == Index::Map => {
                     map.pop();
+                    Ok(Phase::Render)
+                }
+                KeyCode::Esc => Ok(Phase::Return(())),
+                KeyCode::Char('?') => {
+                    legend::run(
+                        terminal,
+                        match index {
+                            Index::PlayerCount => PLAYER_COUNT_LEGEND,
+                            Index::Mode => MODE_LEGEND,
+                            Index::Map => MAP_LEGEND,
+                        },
+                    )?;
                     Ok(Phase::Render)
                 }
                 _ => Ok(Phase::Prompt),

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{ffi::OsStr, path::Path};
 
 use ratatui::{style::Color, text::ToLine};
 
@@ -9,14 +9,14 @@ use crate::{
     utility::{self, Terminal},
 };
 
-const TITLE: &'static str = "Hosting";
+const TITLE: &str = "Hosting";
 const BORDER_COLOR: Color = Color::LightMagenta;
 const WIDTH: u16 = 32;
 const HEIGHT: u16 = 5;
 
 pub fn run(
     terminal: &mut Terminal,
-    uzdoom: &str,
+    uzdoom: &OsStr,
     profile: &Profile,
     player_count: &str,
     is_deathmatch: bool,
@@ -25,7 +25,7 @@ pub fn run(
 ) -> Result<()> {
     terminal.draw(|frame| {
         let (window, mut window_area, ..) =
-            utility::new_window(WIDTH, HEIGHT, TITLE, BORDER_COLOR, frame.area());
+            utility::new_window(TITLE, WIDTH, HEIGHT, BORDER_COLOR, frame.area());
 
         frame.render_widget(window, window_area);
         window_area.y += 2;

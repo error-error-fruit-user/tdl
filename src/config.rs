@@ -1,24 +1,24 @@
-use std::path::Path;
+use std::{ffi::OsString, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-const FILE: &'static str = "config.toml";
+const FILE: &str = "config.doom";
 
 #[derive(Default, Deserialize, Serialize)]
 pub struct Config {
-    pub uzdoom: String,
+    pub uzdoom: Option<OsString>,
     pub profiles: Vec<String>,
 }
 
 impl Config {
     pub fn read(directory: &Path) -> Self {
-        let Ok(toml) = std::fs::read_to_string(directory.join(FILE)) else {
+        let Ok(config_data) = std::fs::read(directory.join(FILE)) else {
             return Self::default();
         };
-        toml::from_str(&toml).unwrap_or_default()
+        rmp_serde::from_slice(&config_data).unwrap_or_default()
     }
 
     pub fn write(&self, directory: &Path) {
-        std::fs::write(directory.join(FILE), toml::to_string_pretty(self).unwrap()).unwrap();
+        std::fs::write(directory.join(FILE), rmp_serde::to_vec(self).unwrap()).unwrap();
     }
 }
