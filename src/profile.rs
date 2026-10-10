@@ -14,9 +14,9 @@ pub struct Profile {
 }
 
 impl Profile {
-    pub fn new(mods: Vec<Mod>) -> Self {
+    pub fn new(name: String, mods: Vec<Mod>) -> Self {
         Self {
-            name: String::new(),
+            name,
             mods,
             uzdoom: None,
         }

@@ -1,4 +1,4 @@
-use std::{ffi::OsString, path::Path};
+use std::path::Path;
 
 use ratatui::{
     crossterm::event::KeyCode,
@@ -8,6 +8,7 @@ use ratatui::{
 };
 
 use crate::{
+    config::Config,
     dialogue,
     error::Result,
     execute, index, legend, network,
@@ -21,10 +22,12 @@ const BORDER_COLOR: Color = Color::LightMagenta;
 
 pub fn run(
     terminal: &mut Terminal,
-    uzdoom: &Option<OsString>,
-    profiles: &Vec<Profile>,
+    config: &mut Config,
+    profiles: &mut Vec<Profile>,
+    index: usize,
     ip: &str,
-    data_subdir: &Path,
+    config_dir: &Path,
+    data_dir: &Path,
 ) -> Result<()> {
     const TITLE: &str = "Joining";
     const WIDTH: u16 = 32;
@@ -39,12 +42,14 @@ pub fn run(
         frame.render_widget("Joining...".to_line().centered(), window_area);
     })?;
 
-    let Some(profile) = resolve_profile(terminal, profiles, ip, data_subdir)? else {
+    let Some(profile) =
+        resolve_profile(terminal, config, profiles, index, ip, config_dir, data_dir)?
+    else {
         return Ok(());
     };
 
-    if let Some(uzdoom) = profile.uzdoom.as_ref().or(uzdoom.as_ref()) {
-        execute::join(uzdoom, &profile, ip, data_subdir)
+    if let Some(uzdoom) = profile.uzdoom.as_ref().or(config.uzdoom.as_ref()) {
+        execute::join(uzdoom, &profile, ip, &data_dir.join(&profile.name))
     } else {
         warning::uzdoom_not_selected(terminal)
     }
@@ -52,30 +57,39 @@ pub fn run(
 
 fn resolve_profile(
     terminal: &mut Terminal,
-    profiles: &Vec<Profile>,
+    config: &mut Config,
+    profiles: &mut Vec<Profile>,
+    index: usize,
     ip: &str,
-    data_subdir: &Path,
+    config_dir: &Path,
+    data_dir: &Path,
 ) -> Result<Option<Profile>> {
     let manifest = network::Manifest::fetch(ip)?;
     let mut compatible_profiles = Vec::new();
 
-    for profile in profiles {
+    for profile in profiles.iter() {
         if manifest.is_compatible_with(profile) {
             compatible_profiles.push(profile.clone());
         }
     }
 
     if compatible_profiles.is_empty() {
+        drop(compatible_profiles);
         if dialogue::run(
             terminal,
             "You don't have the profile, would you like to download?",
         )? {
-            let cache = data_subdir.join("downloads");
+            let downloads_dir = data_dir.join("downloads");
             Ok(Some(network::download_profile(
                 terminal,
+                config,
+                profiles,
+                index,
                 ip,
                 &manifest.entries,
-                &cache,
+                config_dir,
+                data_dir,
+                &downloads_dir,
             )?))
         } else {
             Ok(None)

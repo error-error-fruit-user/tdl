@@ -14,6 +14,7 @@ use ratatui::{style::Color, text::ToLine};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    config::Config,
     error::Result,
     profile::{Mod, Profile},
     utility::{self, Terminal},
@@ -43,8 +44,7 @@ impl Manifest {
     }
 
     pub fn fetch(ip: &str) -> Result<Self> {
-        let response = config()
-            .new_agent()
+        let response = new_agent()
             .get(&format!("{}/manifest", base_url(ip)))
             .call()
             .unwrap();
@@ -138,11 +138,12 @@ impl Entry {
     }
 }
 
-fn config() -> ureq::config::Config {
+fn new_agent() -> ureq::Agent {
     ureq::Agent::config_builder()
         .timeout_connect(Some(Duration::from_secs(3)))
         .timeout_recv_response(Some(Duration::from_secs(10)))
         .build()
+        .new_agent()
 }
 
 fn base_url(ip: &str) -> String {
@@ -152,9 +153,14 @@ fn base_url(ip: &str) -> String {
 
 pub fn download_profile(
     terminal: &mut Terminal,
+    config: &mut Config,
+    profiles: &mut Vec<Profile>,
+    index: usize,
     ip: &str,
     entries: &[Entry],
-    cache: &Path,
+    config_dir: &Path,
+    data_dir: &Path,
+    downloads_dir: &Path,
 ) -> Result<Profile> {
     const TITLE: &str = "Downloading";
     const WIDTH: u16 = 32;
@@ -169,16 +175,19 @@ pub fn download_profile(
         frame.render_widget("Downloading...".to_line().centered(), window_area);
     })?;
 
-    let agent = config().new_agent();
+    let agent = new_agent();
     let mut mods = Vec::new();
     for entry in entries {
-        let dir = cache.join(&entry.hash);
-        if dir.exists() {
-            mods.push(Mod::new(dir.join(&entry.name).into(), entry.hash.clone()));
+        let downloads_subdir = downloads_dir.join(&entry.hash);
+        if downloads_subdir.exists() {
+            mods.push(Mod::new(
+                downloads_subdir.join(&entry.name).into(),
+                entry.hash.clone(),
+            ));
             continue;
         }
-        std::fs::create_dir_all(&dir)?;
-        let part = dir.join({
+        std::fs::create_dir_all(&downloads_subdir)?;
+        let part = downloads_subdir.join({
             let mut part = entry.name.clone();
             part.push(".part");
             part
@@ -211,11 +220,19 @@ pub fn download_profile(
             panic!("downloade file does not have matching hash!");
         }
 
-        std::fs::rename(&part, dir.join(&entry.name))?;
+        std::fs::rename(&part, downloads_subdir.join(&entry.name))?;
 
-        mods.push(Mod::new(dir.join(&entry.name).into(), entry.hash.clone()));
+        mods.push(Mod::new(
+            downloads_subdir.join(&entry.name).into(),
+            entry.hash.clone(),
+        ));
     }
-    Ok(Profile::new(mods))
+    let profile = Profile::new("downloaded".into(), mods);
+    profile.write(config_dir, data_dir);
+    config.profiles.insert(index, "downloaded".into());
+    config.write(config_dir);
+    profiles.insert(index, profile.clone());
+    Ok(profile.clone())
 }
 
 pub struct ServerGuard {

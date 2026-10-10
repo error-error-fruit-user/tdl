@@ -142,9 +142,11 @@ impl Launcher {
                 KeyCode::Char('n') => {
                     join::run(
                         terminal,
-                        &self.config.uzdoom,
-                        &self.profiles,
-                        &self.data_dir.join(&self.config.profiles[*index]),
+                        &mut self.config,
+                        &mut self.profiles,
+                        *index,
+                        &self.config_dir,
+                        &self.data_dir,
                     )?;
                     Ok(Phase::Render)
                 }

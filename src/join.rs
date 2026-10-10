@@ -1,8 +1,9 @@
-use std::{ffi::OsString, path::Path};
+use std::path::Path;
 
 use ratatui::{crossterm::event::KeyCode, style::Color};
 
 use crate::{
+    config::Config,
     error::Result,
     joining, legend,
     profile::Profile,
@@ -19,9 +20,11 @@ const LEGEND: &[[&str; 2]] = &[["Enter", "Launch"], ["Esc", "Cancel"], ["0-9/.",
 
 pub fn run(
     terminal: &mut Terminal,
-    uzdoom: &Option<OsString>,
-    profiles: &Vec<Profile>,
-    data_subdir: &Path,
+    config: &mut Config,
+    profiles: &mut Vec<Profile>,
+    index: usize,
+    config_dir: &Path,
+    data_dir: &Path,
 ) -> Result<()> {
     let mut ip = String::new();
     stage![
@@ -41,7 +44,7 @@ pub fn run(
         &mut |terminal, key_code| {
             match key_code {
                 KeyCode::Enter => {
-                    joining::run(terminal, uzdoom, profiles, &ip, data_subdir)?;
+                    joining::run(terminal, config, profiles, index, &ip, config_dir, data_dir)?;
                     Ok(Phase::Render)
                 }
                 KeyCode::Esc => Ok(Phase::Return(())),
