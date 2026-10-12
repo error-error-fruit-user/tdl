@@ -12,6 +12,7 @@ pub struct Profile {
     pub mods: Vec<Mod>,
     pub uzdoom: Option<OsString>,
     pub base_wad: Option<OsString>,
+    pub ini: Option<OsString>,
 }
 
 impl Profile {
@@ -21,6 +22,7 @@ impl Profile {
             mods,
             uzdoom: None,
             base_wad: None,
+            ini: None,
         }
     }
 
@@ -44,7 +46,6 @@ impl Profile {
         .unwrap();
         let subdir = data_dir.join(&self.name);
         std::fs::create_dir_all(subdir.join("saves")).unwrap();
-        std::fs::write(subdir.join("uzdoom.ini"), "").unwrap();
     }
 
     pub fn remove(&self, config_dir: &Path, data_dir: &Path, profile_name: String) {

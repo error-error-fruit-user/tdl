@@ -49,7 +49,7 @@ pub fn run(terminal: &mut Terminal, message: &str) -> Result<bool> {
 pub fn should_delete(terminal: &mut Terminal, element: &str) -> Result<bool> {
     run(
         terminal,
-        &format!("Are you sure you want to delete, '{element}'?"),
+        &format!("Are you sure you want to delete '{element}'?"),
     )
 }
 

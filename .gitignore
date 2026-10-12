@@ -1,4 +1,5 @@
 /target
+/mods
 /temp
 session.log
 brutal_doom.pk3
@@ -11,3 +12,4 @@ commit.sh
 push.sh
 DOOM2.WAD
 freedoom2.wad
+config.ini

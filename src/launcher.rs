@@ -72,11 +72,11 @@ impl Launcher {
             )
         };
         let config = Config::read(&config_dir);
-        let mut profiles = Vec::new();
-        profiles.reserve(config.profiles.len());
-        for profile in &config.profiles {
-            profiles.push(Profile::read(&config_dir, profile));
-        }
+        let profiles = config
+            .profiles
+            .iter()
+            .map(|p| Profile::read(&config_dir, p))
+            .collect();
         std::fs::create_dir_all(config_dir.join("profiles")).unwrap();
 
         state.select(Some(0));
@@ -252,6 +252,7 @@ impl Launcher {
                 KeyCode::Char('w') => {
                     self.config.base_wad = rfd::FileDialog::new()
                         .set_directory(std::env::current_dir().unwrap())
+                        .add_filter("base wad", &["wad", "WAD", "pk3"])
                         .pick_file()
                         .map(PathBuf::into);
                     Ok(Phase::Prompt)

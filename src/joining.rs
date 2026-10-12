@@ -54,7 +54,6 @@ pub fn run(
             profile.base_wad.as_deref().or(config.base_wad.as_deref()),
             &profile,
             ip,
-            &data_dir.join(&profile.name),
         )
     } else {
         warning::uzdoom_not_selected(terminal)

@@ -8,22 +8,20 @@ use std::{
 use crate::{error::Result, profile::Profile};
 
 fn execute(uzdoom: &OsStr, profile: &Profile, args: &[&OsStr]) -> Result<()> {
+    let mut command = Command::new(uzdoom);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
     let mut doom = if !profile.mods.is_empty() {
-        Command::new(uzdoom)
+        command
             .args(args)
             .arg("-file")
             .args(profile.mods.iter().map(|m| &m.path))
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
             .spawn()?
     } else {
-        Command::new(uzdoom)
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()?
+        command.spawn()?
     };
     if let Some(stdout) = doom.stdout.take() {
         let reader = BufReader::new(stdout);
@@ -47,16 +45,13 @@ pub fn launch(
     profile: &Profile,
     data_subdir: &Path,
 ) -> Result<()> {
-    let ini_path = data_subdir.join("uzdoom.ini");
     let saves_path = data_subdir.join("saves");
-    let mut args = vec![
-        OsStr::new("-config"),
-        ini_path.as_os_str(),
-        OsStr::new("-savedir"),
-        saves_path.as_os_str(),
-    ];
+    let mut args = vec![OsStr::new("-savedir"), saves_path.as_os_str()];
     if let Some(base_wad) = base_wad {
         args.extend([OsStr::new("-iwad"), base_wad]);
+    }
+    if let Some(ini) = profile.ini.as_ref() {
+        args.extend([OsStr::new("-config"), ini])
     }
     execute(uzdoom, profile, &args)
 }
@@ -70,18 +65,18 @@ pub fn host(
     map: &str,
     data_subdir: &Path,
 ) -> Result<()> {
-    let ini_path = data_subdir.join("uzdoom.ini");
     let saves_path = data_subdir.join("saves");
     let mut args = vec![
         OsStr::new("-host"),
         OsStr::new(player_count),
-        OsStr::new("-config"),
-        ini_path.as_os_str(),
         OsStr::new("-savedir"),
         saves_path.as_os_str(),
     ];
     if let Some(base_wad) = base_wad {
         args.extend([OsStr::new("-iwad"), base_wad]);
+    }
+    if let Some(ini) = profile.ini.as_ref() {
+        args.extend([OsStr::new("-config"), ini]);
     }
     if is_deathmatch {
         args.push(OsStr::new("-deathmatch"));
@@ -92,22 +87,13 @@ pub fn host(
     execute(uzdoom, profile, &args)
 }
 
-pub fn join(
-    uzdoom: &OsStr,
-    base_wad: Option<&OsStr>,
-    profile: &Profile,
-    ip: &str,
-    data_subdir: &Path,
-) -> Result<()> {
-    let ini_path = data_subdir.join("uzdoom.ini");
-    let mut args = vec![
-        OsStr::new("-join"),
-        OsStr::new(ip),
-        OsStr::new("-config"),
-        ini_path.as_os_str(),
-    ];
+pub fn join(uzdoom: &OsStr, base_wad: Option<&OsStr>, profile: &Profile, ip: &str) -> Result<()> {
+    let mut args = vec![OsStr::new("-join"), OsStr::new(ip)];
     if let Some(base_wad) = base_wad {
         args.extend([OsStr::new("-iwad"), base_wad]);
+    }
+    if let Some(ini) = profile.ini.as_ref() {
+        args.extend([OsStr::new("-config"), ini]);
     }
     execute(uzdoom, profile, &args)
 }

@@ -35,9 +35,11 @@ const EDITING_LEGEND: &[[&str; 2]] = &[
     ["J↓/K↑", "Traverse"],
     ["}/{", "Swap"],
     ["A", "Add"],
+    ["F", "Import from Folder"],
     ["D", "Delete"],
     ["U", "Select UZDoom"],
     ["W", "Select Base Wad"],
+    ["I", "Select Ini"],
 ];
 
 pub fn run(
@@ -158,7 +160,7 @@ impl<'a> Editor<'a> {
                 KeyCode::Char('a') => {
                     let mod_paths = rfd::FileDialog::new()
                         .set_directory(std::env::current_dir().unwrap())
-                        .add_filter("wads", &["wad", "pk3"])
+                        .add_filter("wads", &["wad", "WAD", "pk3"])
                         .pick_files();
                     let Some(mod_paths) = mod_paths else {
                         return Ok(Phase::Prompt);
@@ -177,6 +179,40 @@ impl<'a> Editor<'a> {
                         *index += length
                     }
                     Ok(Phase::Render)
+                }
+                KeyCode::Char('f') => {
+                    if let Some(folder) = rfd::FileDialog::new()
+                        .set_directory(std::env::current_dir()?)
+                        .pick_folder()
+                    {
+                        let mut mod_paths = Vec::new();
+                        for entry in std::fs::read_dir(folder)? {
+                            let path = entry?.path();
+                            if path.is_file()
+                                && matches!(
+                                    path.extension().and_then(|e| e.to_str()),
+                                    Some("wad" | "WAD" | "pk3")
+                                )
+                            {
+                                mod_paths.push(path.to_path_buf());
+                            }
+                        }
+                        let length = mod_paths.len();
+                        let should_add = *index == self.profile.mods.len();
+                        for (index, path) in (*index..*index + length).zip(mod_paths) {
+                            self.profile
+                                .mods
+                                .insert(index, Mod::from_path(path.into())?);
+                        }
+                        if should_add {
+                            *index += length;
+                            Ok(Phase::Render)
+                        } else {
+                            Ok(Phase::Prompt)
+                        }
+                    } else {
+                        Ok(Phase::Prompt)
+                    }
                 }
                 KeyCode::Char('d') => {
                     if *index != self.profile.mods.len() {
@@ -207,6 +243,15 @@ impl<'a> Editor<'a> {
                 KeyCode::Char('w') => {
                     self.profile.base_wad = rfd::FileDialog::new()
                         .set_directory(std::env::current_dir().unwrap())
+                        .add_filter("base wad", &["wad", "WAD", "pk3"])
+                        .pick_file()
+                        .map(PathBuf::into);
+                    Ok(Phase::Prompt)
+                }
+                KeyCode::Char('i') => {
+                    self.profile.ini = rfd::FileDialog::new()
+                        .set_directory(std::env::current_dir().unwrap())
+                        .add_filter("config", &["ini"])
                         .pick_file()
                         .map(PathBuf::into);
                     Ok(Phase::Prompt)
