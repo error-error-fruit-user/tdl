@@ -17,6 +17,7 @@ mod network;
 mod profile;
 mod resize;
 mod utility;
+mod wad;
 mod warning;
 
 fn main() {

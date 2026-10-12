@@ -15,6 +15,7 @@ use crate::{
     profile::Profile,
     stage,
     utility::{self, Phase, Terminal},
+    wad::Wad,
     warning,
 };
 
@@ -42,21 +43,26 @@ pub fn run(
         frame.render_widget("Joining...".to_line().centered(), window_area);
     })?;
 
-    let Some(profile) =
+    let Some((profile, joining_base_wad, hosting_base_wad_hash)) =
         resolve_profile(terminal, config, profiles, index, ip, config_dir, data_dir)?
     else {
         return Ok(());
     };
-
-    if let Some(uzdoom) = profile.uzdoom.as_ref().or(config.uzdoom.as_ref()) {
-        execute::join(
-            uzdoom,
-            profile.base_wad.as_deref().or(config.base_wad.as_deref()),
-            &profile,
-            ip,
-        )
+    let Some(uzdoom) = profile.uzdoom.as_ref().or(config.uzdoom.as_ref()) else {
+        return warning::uzdoom_not_selected(terminal);
+    };
+    if hosting_base_wad_hash.is_empty()
+        || joining_base_wad
+            .as_ref()
+            .is_none_or(|w| w.hash == hosting_base_wad_hash)
+        || dialogue::run(
+            terminal,
+            "Selected base wad does not match, do you want to contiue?",
+        )?
+    {
+        execute::join(uzdoom, joining_base_wad.as_deref(), &profile, ip)
     } else {
-        warning::uzdoom_not_selected(terminal)
+        Ok(())
     }
 }
 
@@ -68,45 +74,60 @@ fn resolve_profile(
     ip: &str,
     config_dir: &Path,
     data_dir: &Path,
-) -> Result<Option<Profile>> {
+) -> Result<Option<(Profile, Option<Wad>, String)>> {
     let manifest = network::Manifest::fetch(ip)?;
-    let mut compatible_profiles = Vec::new();
-
-    for profile in profiles.iter() {
-        if manifest.is_compatible_with(profile) {
-            compatible_profiles.push(profile.clone());
-        }
-    }
+    let compatible_profiles: Vec<_> = profiles
+        .iter()
+        .filter(|p| manifest.is_compatible_with(p))
+        .collect();
 
     if compatible_profiles.is_empty() {
-        drop(compatible_profiles);
         if dialogue::run(
             terminal,
             "You don't have the profile, would you like to download?",
-        )? {
-            let downloads_dir = data_dir.join("downloads");
-            Ok(Some(network::download_profile(
-                terminal,
-                config,
-                profiles,
-                index,
-                ip,
-                &manifest.entries,
-                config_dir,
-                data_dir,
-                &downloads_dir,
-            )?))
+        )? && let Some(profile_name) = name_profile(terminal, profiles)?
+        {
+            let downloads_dir = data_dir.join(".downloads");
+            Ok(Some((
+                network::download_profile(
+                    terminal,
+                    profile_name,
+                    config,
+                    profiles,
+                    index,
+                    ip,
+                    &manifest.entries,
+                    config_dir,
+                    data_dir,
+                    &downloads_dir,
+                )?,
+                config.base_wad.clone(),
+                manifest.base_wad_hash,
+            )))
         } else {
             Ok(None)
         }
     } else if compatible_profiles.len() == 1 {
-        Ok(Some(profiles[0].clone()))
+        Ok(Some((
+            compatible_profiles[0].clone(),
+            compatible_profiles[0]
+                .base_wad
+                .clone()
+                .or(config.base_wad.clone()),
+            manifest.base_wad_hash.clone(),
+        )))
+    } else if let Some(profile) = select_profile(terminal, &compatible_profiles)? {
+        Ok(Some((
+            profile.clone(),
+            profile.base_wad.clone().or(config.base_wad.clone()),
+            manifest.base_wad_hash.clone(),
+        )))
     } else {
-        select_profile(terminal, compatible_profiles)
+        Ok(None)
     }
 }
 
-fn select_profile(terminal: &mut Terminal, profiles: Vec<Profile>) -> Result<Option<Profile>> {
+fn select_profile(terminal: &mut Terminal, profiles: &[&Profile]) -> Result<Option<Profile>> {
     const TITLE: &str = "Select Profile";
     const WIDTH: u16 = 32;
     const HEIGHT: u16 = 12;
@@ -154,4 +175,63 @@ fn select_profile(terminal: &mut Terminal, profiles: Vec<Profile>) -> Result<Opt
             }
         }
     ]
+}
+
+fn name_profile(terminal: &mut Terminal, profiles: &[Profile]) -> Result<Option<String>> {
+    const TITLE: &str = "Name Profile";
+    const WIDTH: u16 = 32;
+    const HEIGHT: u16 = 5;
+    const LEGEND: &[[&str; 2]] = &[
+        ["Enter", "Save Profile"],
+        ["A-Z/0-9/_", "Input"],
+        ["Esc", "Cancel"],
+    ];
+
+    let mut name = String::new();
+    stage![
+        terminal,
+        |frame| {
+            let area = frame.area();
+            let (window, mut window_area, indicator, indicator_area) =
+                utility::new_window(TITLE, WIDTH, HEIGHT, BORDER_COLOR, area);
+            frame.render_widget(window, window_area);
+            frame.render_widget(indicator, indicator_area);
+            window_area.y += 2;
+
+            let (line, cursor_position) =
+                utility::new_query("Name", &name, area.width, window_area.y);
+
+            frame.render_widget(line, window_area);
+            frame.set_cursor_position(cursor_position);
+        },
+        &mut |terminal, key_code| {
+            match key_code {
+                KeyCode::Enter => {
+                    if name.is_empty() {
+                        warning::empty_profile_name(terminal)?;
+                        Ok(Phase::Render)
+                    } else if profiles.iter().find(|p| p.name == name).is_some() {
+                        warning::profile_already_exists(terminal)?;
+                        Ok(Phase::Render)
+                    } else {
+                        Ok(Phase::Return(Some(name.clone())))
+                    }
+                }
+                KeyCode::Char(c @ 'a'..='z' | c @ 'A'..='Z' | c @ '0'..='9' | c @ '_') => {
+                    name.push(c);
+                    Ok(Phase::Render)
+                }
+                KeyCode::Backspace => {
+                    name.pop();
+                    Ok(Phase::Render)
+                }
+                KeyCode::Esc => Ok(Phase::Return(None)),
+                KeyCode::Char('?') => {
+                    legend::run(terminal, LEGEND)?;
+                    Ok(Phase::Render)
+                }
+                _ => Ok(Phase::Prompt),
+            }
+        }
+    ];
 }

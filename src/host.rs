@@ -8,6 +8,7 @@ use crate::{
     profile::Profile,
     stage,
     utility::{self, Phase, Terminal},
+    wad::Wad,
 };
 
 const TITLE: &str = "Host";
@@ -39,7 +40,7 @@ const MAP_LEGEND: &[[&str; 2]] = &[
 pub fn run(
     terminal: &mut Terminal,
     uzdoom: &OsStr,
-    base_wad: Option<&OsStr>,
+    base_wad: Option<&Wad>,
     profile: &Profile,
     data_subdir: &Path,
 ) -> Result<()> {
@@ -54,7 +55,7 @@ pub fn run(
             let (window, mut window_area, indicator, indicator_area) =
                 utility::new_window(TITLE, WIDTH, HEIGHT, BORDER_COLOR, area);
             frame.render_widget(window, window_area);
-            frame.render_widget(&indicator, indicator_area);
+            frame.render_widget(indicator, indicator_area);
 
             window_area.y += 2;
             let (player_count, player_count_position) =
@@ -91,7 +92,7 @@ pub fn run(
                         uzdoom,
                         base_wad,
                         profile,
-                        &player_count.parse().unwrap_or(2).to_string(),
+                        &player_count,
                         is_deathmatch,
                         &map,
                         data_subdir,

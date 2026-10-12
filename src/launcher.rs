@@ -18,6 +18,7 @@ use crate::{
     profile::Profile,
     resize,
     utility::{self, Phase, Terminal},
+    wad::Wad,
     warning,
 };
 
@@ -25,14 +26,14 @@ const TITLE: &str = "Launcher";
 const BORDER_COLOR: Color = Color::LightRed;
 const WIDTH: u16 = CONSTRAINTS[0] + CONSTRAINTS[1] + 2;
 const HEIGHT: u16 = 12;
-const HEADER: [&str; 2] = ["Profile", "Mods"];
+const HEADER: [&str; 2] = ["Profile", "Wads"];
 const CONSTRAINTS: [u16; 2] = [24, 6];
 const LEGEND: &[[&str; 2]] = &[
     ["Enter", "Launch"],
     ["H", "Host"],
     ["N", "Join"],
     ["J↓/K↑", "Traverse"],
-    ["}/{", "Move"],
+    ["}/{", "Swap"],
     ["A", "Add"],
     ["E", "Edit"],
     ["D", "Delete"],
@@ -136,8 +137,8 @@ impl Launcher {
                                 uzdoom,
                                 self.profiles[*index]
                                     .base_wad
-                                    .as_deref()
-                                    .or(self.config.base_wad.as_deref()),
+                                    .as_ref()
+                                    .or(self.config.base_wad.as_ref()),
                                 &self.profiles[*index],
                                 &self.data_dir.join(&self.config.profiles[*index]),
                             )?;
@@ -227,14 +228,12 @@ impl Launcher {
                 KeyCode::Char('d') => {
                     if *index != self.profiles.len() {
                         if dialogue::should_delete(terminal, &self.config.profiles[*index])? {
-                            let name = self.config.profiles.remove(*index);
+                            self.config.profiles.remove(*index);
                             self.config.write(&self.config_dir);
-                            self.profiles[*index].remove(&self.config_dir, &self.data_dir, name);
+                            self.profiles[*index].remove(&self.config_dir, &self.data_dir);
                             self.profiles.remove(*index);
-                            if *index == self.profiles.len() {
-                                if *index != 0 {
-                                    *index -= 1;
-                                }
+                            if *index == self.profiles.len() && *index != 0 {
+                                *index -= 1;
                             }
                         }
                         Ok(Phase::Render)
@@ -250,11 +249,15 @@ impl Launcher {
                     Ok(Phase::Prompt)
                 }
                 KeyCode::Char('w') => {
-                    self.config.base_wad = rfd::FileDialog::new()
+                    let base_wad_path = rfd::FileDialog::new()
                         .set_directory(std::env::current_dir().unwrap())
-                        .add_filter("base wad", &["wad", "WAD", "pk3"])
-                        .pick_file()
-                        .map(PathBuf::into);
+                        .add_filter("base wad", Wad::EXTENSIONS)
+                        .pick_file();
+                    self.config.base_wad = if let Some(base_wad_path) = base_wad_path {
+                        Some(Wad::from_path(&base_wad_path)?)
+                    } else {
+                        None
+                    };
                     Ok(Phase::Prompt)
                 }
                 KeyCode::Esc => {
@@ -279,17 +282,16 @@ impl StatefulWidget for &Launcher {
     type State = TableState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let header =
-            Row::new(HEADER.iter().map(|header| header.to_line().centered())).on_dark_gray();
+        let header = Row::new(HEADER.iter().map(|h| h.to_line().centered())).on_dark_gray();
         let rows = self
             .config
             .profiles
             .iter()
             .zip(&self.profiles)
-            .map(|(name, profile)| {
+            .map(|(n, p)| {
                 Row::new([
-                    name.to_line().centered(),
-                    Line::from(profile.mods.len().to_string()).centered(),
+                    n.to_line().centered(),
+                    Line::from(p.wads.len().to_string()).centered(),
                 ])
             })
             .chain(std::iter::once(Row::new(std::iter::once(

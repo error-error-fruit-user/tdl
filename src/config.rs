@@ -2,12 +2,14 @@ use std::{ffi::OsString, path::Path};
 
 use serde::{Deserialize, Serialize};
 
+use crate::wad::Wad;
+
 const FILE: &str = "config.doom";
 
 #[derive(Default, Deserialize, Serialize)]
 pub struct Config {
     pub uzdoom: Option<OsString>,
-    pub base_wad: Option<OsString>,
+    pub base_wad: Option<Wad>,
     pub profiles: Vec<String>,
 }
 

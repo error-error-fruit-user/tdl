@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, path::Path};
+use std::{ffi::OsStr, ops::Deref, path::Path};
 
 use ratatui::{style::Color, text::ToLine};
 
@@ -7,6 +7,7 @@ use crate::{
     execute, network,
     profile::Profile,
     utility::{self, Terminal},
+    wad::Wad,
 };
 
 const TITLE: &str = "Hosting";
@@ -17,7 +18,7 @@ const HEIGHT: u16 = 5;
 pub fn run(
     terminal: &mut Terminal,
     uzdoom: &OsStr,
-    base_wad: Option<&OsStr>,
+    base_wad: Option<&Wad>,
     profile: &Profile,
     player_count: &str,
     is_deathmatch: bool,
@@ -34,16 +35,19 @@ pub fn run(
     })?;
 
     let _server = {
-        let manifest = network::Manifest::build(&profile.mods)?;
+        let manifest = network::Manifest::build(
+            &profile.wads,
+            base_wad.map(|w| w.hash.clone()).unwrap_or(String::new()),
+        )?;
         Some(manifest.serve(
             network::DEFAULT_PORT,
-            profile.mods.iter().map(|m| m.path.clone()).collect(),
+            profile.wads.iter().map(|w| w.path.clone()).collect(),
         )?)
     };
 
     execute::host(
         uzdoom,
-        base_wad,
+        base_wad.map(Wad::deref),
         profile,
         player_count,
         is_deathmatch,

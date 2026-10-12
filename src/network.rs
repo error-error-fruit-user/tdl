@@ -16,8 +16,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     config::Config,
     error::Result,
-    profile::{Mod, Profile},
+    profile::Profile,
     utility::{self, Terminal},
+    wad::Wad,
 };
 
 pub const DEFAULT_PORT: u16 = 8080;
@@ -26,21 +27,25 @@ pub const MAX_FILES: usize = 255;
 #[derive(Deserialize, Serialize)]
 pub struct Manifest {
     pub entries: Vec<Entry>,
+    pub base_wad_hash: String,
 }
 
 impl Manifest {
-    pub fn build(mods: &[Mod]) -> Result<Self> {
-        let entries = mods
+    pub fn build(wads: &[Wad], base_wad_hash: String) -> Result<Self> {
+        let entries = wads
             .iter()
-            .map(|m| {
-                let path = Path::new(&m.path);
+            .map(|w| {
+                let path = Path::new(&w.path);
                 let name = path.file_name().unwrap().to_os_string();
                 let size = std::fs::metadata(path).unwrap().len();
-                let hash = m.hash.clone();
+                let hash = w.hash.clone();
                 Entry::new(name, size, hash)
             })
             .collect();
-        Ok(Self { entries })
+        Ok(Self {
+            entries,
+            base_wad_hash,
+        })
     }
 
     pub fn fetch(ip: &str) -> Result<Self> {
@@ -113,14 +118,14 @@ impl Manifest {
     }
 
     pub fn is_compatible_with(&self, profile: &Profile) -> bool {
-        if self.entries.len() != profile.mods.len() {
+        if self.entries.len() != profile.wads.len() {
             return false;
         }
 
         !self
             .entries
             .iter()
-            .zip(profile.mods.iter())
+            .zip(profile.wads.iter())
             .any(|(e, m)| e.hash != m.hash)
     }
 }
@@ -153,6 +158,7 @@ fn base_url(ip: &str) -> String {
 
 pub fn download_profile(
     terminal: &mut Terminal,
+    profile_name: String,
     config: &mut Config,
     profiles: &mut Vec<Profile>,
     index: usize,
@@ -165,7 +171,7 @@ pub fn download_profile(
     const TITLE: &str = "Downloading";
     const WIDTH: u16 = 32;
     const HEIGHT: u16 = 5;
-    const BORDER_COLOR: Color = Color::Magenta;
+    const BORDER_COLOR: Color = Color::LightMagenta;
 
     terminal.draw(|frame| {
         let (window, mut window_area, ..) =
@@ -176,11 +182,11 @@ pub fn download_profile(
     })?;
 
     let agent = new_agent();
-    let mut mods = Vec::new();
+    let mut wads = Vec::new();
     for entry in entries {
         let downloads_subdir = downloads_dir.join(&entry.hash);
         if downloads_subdir.exists() {
-            mods.push(Mod::new(
+            wads.push(Wad::new(
                 downloads_subdir.join(&entry.name).into(),
                 entry.hash.clone(),
             ));
@@ -217,19 +223,16 @@ pub fn download_profile(
         drop(file);
         if hasher.finalize().to_hex().to_string() != entry.hash {
             let _ = std::fs::remove_file(&part);
-            panic!("downloade file does not have matching hash!");
+            panic!("Downloaded file does not have matching hash!");
         }
 
-        std::fs::rename(&part, downloads_subdir.join(&entry.name))?;
-
-        mods.push(Mod::new(
-            downloads_subdir.join(&entry.name).into(),
-            entry.hash.clone(),
-        ));
+        let wad_path = downloads_subdir.join(&entry.name);
+        std::fs::rename(&part, &wad_path)?;
+        wads.push(Wad::new(wad_path.into(), entry.hash.clone()));
     }
-    let profile = Profile::new("downloaded".into(), mods);
+    let profile = Profile::new(profile_name.clone(), wads);
     profile.write(config_dir, data_dir);
-    config.profiles.insert(index, "downloaded".into());
+    config.profiles.insert(index, profile_name);
     config.write(config_dir);
     profiles.insert(index, profile.clone());
     Ok(profile.clone())

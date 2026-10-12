@@ -14,8 +14,9 @@ use crate::{
     dialogue,
     error::Result,
     index, legend, present_with,
-    profile::{Mod, Profile},
+    profile::Profile,
     utility::{self, Phase, Terminal},
+    wad::Wad,
     warning,
 };
 
@@ -23,15 +24,15 @@ const BORDER_COLOR: Color = Color::LightBlue;
 const WIDTH: u16 = CONSTRAINTS[0] + CONSTRAINTS[1];
 const HEIGHT: u16 = 12;
 const CONSTRAINTS: [u16; 2] = [5, 27];
-const HEADER: [&str; 2] = ["Order", "Mod"];
+const HEADER: [&str; 2] = ["Order", "Wad"];
 const NAMING_LEGEND: &[[&str; 2]] = &[
     ["Enter/Esc", "Save and Quit"],
-    ["Tab", "Switch Mode"],
+    ["Tab", "Edit Wads"],
     ["A-Z/0-9/_", "Input"],
 ];
 const EDITING_LEGEND: &[[&str; 2]] = &[
     ["Enter/Esc", "Save and Quit"],
-    ["Tab", "Switch Mode"],
+    ["Tab", "Edit Name"],
     ["J↓/K↑", "Traverse"],
     ["}/{", "Swap"],
     ["A", "Add"],
@@ -51,7 +52,7 @@ pub fn run(
     let mut editor = Editor::new(profile, profiles, &mut state);
     present_with!(terminal, editor, &mut state, |frame: &mut Frame| {
         let area = frame.area();
-        if !editor.editing_mods {
+        if !editor.editing_wads {
             frame.set_cursor_position(editor.get_cursor_position(area));
         }
         frame.render_stateful_widget(&editor, area, &mut state);
@@ -65,14 +66,14 @@ pub fn run_new(terminal: &mut Terminal, profiles: &Vec<Profile>) -> Result<Optio
 struct Editor<'a> {
     profile: Profile,
     profiles: &'a Vec<Profile>,
-    editing_mods: bool,
+    editing_wads: bool,
 }
 
 impl<'a> Editor<'a> {
     fn new(profile: Profile, profiles: &'a Vec<Profile>, state: &mut TableState) -> Self {
         state.select(Some(0));
         Self {
-            editing_mods: !profile.name.is_empty(),
+            editing_wads: !profile.name.is_empty(),
             profile,
             profiles,
         }
@@ -88,7 +89,7 @@ impl<'a> Editor<'a> {
             match key_code {
                 KeyCode::Esc | KeyCode::Enter => {
                     if self.profile.name.is_empty() {
-                        if self.profile.mods.is_empty()
+                        if self.profile.wads.is_empty()
                             && self.profile.uzdoom.is_none()
                             && self.profile.base_wad.is_none()
                         {
@@ -110,37 +111,37 @@ impl<'a> Editor<'a> {
                     }
                 }
                 KeyCode::Tab => {
-                    self.editing_mods = !self.editing_mods;
+                    self.editing_wads = !self.editing_wads;
                     Ok(Phase::Render)
                 }
                 KeyCode::Char(c @ 'a'..='z' | c @ 'A'..='Z' | c @ '0'..='9' | c @ '_')
-                    if !self.editing_mods =>
+                    if !self.editing_wads =>
                 {
                     self.profile.name.push(c);
                     Ok(Phase::Render)
                 }
-                KeyCode::Backspace if !self.editing_mods => {
+                KeyCode::Backspace if !self.editing_wads => {
                     self.profile.name.pop();
                     Ok(Phase::Render)
                 }
                 KeyCode::Char('j') | KeyCode::Down => {
-                    if index::select_next(state.selected_mut(), self.profile.mods.len() + 1) {
+                    if index::select_next(state.selected_mut(), self.profile.wads.len() + 1) {
                         Ok(Phase::Render)
                     } else {
                         Ok(Phase::Prompt)
                     }
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
-                    if index::select_previous(state.selected_mut(), self.profile.mods.len() + 1) {
+                    if index::select_previous(state.selected_mut(), self.profile.wads.len() + 1) {
                         Ok(Phase::Render)
                     } else {
                         Ok(Phase::Prompt)
                     }
                 }
                 KeyCode::Char('}') => {
-                    if self.profile.mods.len() != 1 && *index != self.profile.mods.len() {
-                        let next_index = index::next(*index, self.profile.mods.len());
-                        self.profile.mods.swap(*index, next_index);
+                    if self.profile.wads.len() != 1 && *index != self.profile.wads.len() {
+                        let next_index = index::next(*index, self.profile.wads.len());
+                        self.profile.wads.swap(*index, next_index);
                         *index = next_index;
                         Ok(Phase::Render)
                     } else {
@@ -148,9 +149,9 @@ impl<'a> Editor<'a> {
                     }
                 }
                 KeyCode::Char('{') => {
-                    if self.profile.mods.len() != 1 && *index != self.profile.mods.len() {
-                        let previous_index = index::previous(*index, self.profile.mods.len());
-                        self.profile.mods.swap(*index, previous_index);
+                    if self.profile.wads.len() != 1 && *index != self.profile.wads.len() {
+                        let previous_index = index::previous(*index, self.profile.wads.len());
+                        self.profile.wads.swap(*index, previous_index);
                         *index = previous_index;
                         Ok(Phase::Render)
                     } else {
@@ -160,7 +161,7 @@ impl<'a> Editor<'a> {
                 KeyCode::Char('a') => {
                     let mod_paths = rfd::FileDialog::new()
                         .set_directory(std::env::current_dir().unwrap())
-                        .add_filter("wads", &["wad", "WAD", "pk3"])
+                        .add_filter("wads", Wad::EXTENSIONS)
                         .pick_files();
                     let Some(mod_paths) = mod_paths else {
                         return Ok(Phase::Prompt);
@@ -169,11 +170,9 @@ impl<'a> Editor<'a> {
                         return Ok(Phase::Prompt);
                     }
                     let length = mod_paths.len();
-                    let should_add = *index == self.profile.mods.len();
+                    let should_add = *index == self.profile.wads.len();
                     for (index, path) in (*index..*index + length).zip(mod_paths) {
-                        self.profile
-                            .mods
-                            .insert(index, Mod::from_path(path.into())?);
+                        self.profile.wads.insert(index, Wad::from_path(&path)?);
                     }
                     if should_add {
                         *index += length
@@ -185,7 +184,7 @@ impl<'a> Editor<'a> {
                         .set_directory(std::env::current_dir()?)
                         .pick_folder()
                     {
-                        let mut mod_paths = Vec::new();
+                        let mut wad_paths = Vec::new();
                         for entry in std::fs::read_dir(folder)? {
                             let path = entry?.path();
                             if path.is_file()
@@ -194,15 +193,13 @@ impl<'a> Editor<'a> {
                                     Some("wad" | "WAD" | "pk3")
                                 )
                             {
-                                mod_paths.push(path.to_path_buf());
+                                wad_paths.push(path.to_path_buf());
                             }
                         }
-                        let length = mod_paths.len();
-                        let should_add = *index == self.profile.mods.len();
-                        for (index, path) in (*index..*index + length).zip(mod_paths) {
-                            self.profile
-                                .mods
-                                .insert(index, Mod::from_path(path.into())?);
+                        let length = wad_paths.len();
+                        let should_add = *index == self.profile.wads.len();
+                        for (index, path) in (*index..*index + length).zip(wad_paths) {
+                            self.profile.wads.insert(index, Wad::from_path(&path)?);
                         }
                         if should_add {
                             *index += length;
@@ -215,16 +212,16 @@ impl<'a> Editor<'a> {
                     }
                 }
                 KeyCode::Char('d') => {
-                    if *index != self.profile.mods.len() {
+                    if *index != self.profile.wads.len() {
                         if dialogue::should_delete(
                             terminal,
-                            &Path::new(&self.profile.mods[*index].path)
+                            &Path::new(&self.profile.wads[*index].path)
                                 .file_name()
                                 .unwrap()
                                 .to_string_lossy(),
                         )? {
-                            self.profile.mods.remove(*index);
-                            if *index == self.profile.mods.len() && *index != 0 {
+                            self.profile.wads.remove(*index);
+                            if *index == self.profile.wads.len() && *index != 0 {
                                 *index -= 1;
                             }
                         }
@@ -241,11 +238,15 @@ impl<'a> Editor<'a> {
                     Ok(Phase::Prompt)
                 }
                 KeyCode::Char('w') => {
-                    self.profile.base_wad = rfd::FileDialog::new()
+                    let base_wad_path = rfd::FileDialog::new()
                         .set_directory(std::env::current_dir().unwrap())
-                        .add_filter("base wad", &["wad", "WAD", "pk3"])
-                        .pick_file()
-                        .map(PathBuf::into);
+                        .add_filter("base wad", Wad::EXTENSIONS)
+                        .pick_file();
+                    self.profile.base_wad = if let Some(base_wad_path) = base_wad_path {
+                        Some(Wad::from_path(&base_wad_path)?)
+                    } else {
+                        None
+                    };
                     Ok(Phase::Prompt)
                 }
                 KeyCode::Char('i') => {
@@ -257,7 +258,7 @@ impl<'a> Editor<'a> {
                     Ok(Phase::Prompt)
                 }
                 KeyCode::Char('?') => {
-                    let legend = if self.editing_mods {
+                    let legend = if self.editing_wads {
                         EDITING_LEGEND
                     } else {
                         NAMING_LEGEND
@@ -284,7 +285,7 @@ impl StatefulWidget for &Editor<'_> {
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut TableState) {
         let paths: Vec<_> = self
             .profile
-            .mods
+            .wads
             .iter()
             .map(|m| Path::new(&m.path).file_name().unwrap().to_string_lossy())
             .collect();
@@ -308,7 +309,7 @@ impl StatefulWidget for &Editor<'_> {
         let table = Table::new(rows, [CONSTRAINTS[0], CONSTRAINTS[1]])
             .block(window)
             .header(header);
-        let table = if self.editing_mods {
+        let table = if self.editing_wads {
             table.row_highlight_style(Style::new().black().bg(BORDER_COLOR))
         } else {
             table

@@ -1,11 +1,12 @@
 use std::{
     ffi::OsStr,
     io::{BufRead, BufReader, BufWriter, Write},
+    ops::Deref,
     path::Path,
     process::{Command, Stdio},
 };
 
-use crate::{error::Result, profile::Profile};
+use crate::{error::Result, profile::Profile, wad::Wad};
 
 fn execute(uzdoom: &OsStr, profile: &Profile, args: &[&OsStr]) -> Result<()> {
     let mut command = Command::new(uzdoom);
@@ -14,11 +15,10 @@ fn execute(uzdoom: &OsStr, profile: &Profile, args: &[&OsStr]) -> Result<()> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    let mut doom = if !profile.mods.is_empty() {
+    let mut doom = if !profile.wads.is_empty() {
         command
-            .args(args)
             .arg("-file")
-            .args(profile.mods.iter().map(|m| &m.path))
+            .args(profile.wads.iter().map(Wad::deref))
             .spawn()?
     } else {
         command.spawn()?

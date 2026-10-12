@@ -2,26 +2,26 @@ use std::{ffi::OsString, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{error::Result, hash};
+use crate::wad::Wad;
 
 const SUBDIRECTORY: &str = "profiles";
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub struct Profile {
     pub name: String,
-    pub mods: Vec<Mod>,
+    pub wads: Vec<Wad>,
+    pub base_wad: Option<Wad>,
     pub uzdoom: Option<OsString>,
-    pub base_wad: Option<OsString>,
     pub ini: Option<OsString>,
 }
 
 impl Profile {
-    pub fn new(name: String, mods: Vec<Mod>) -> Self {
+    pub fn new(name: String, wads: Vec<Wad>) -> Self {
         Self {
             name,
-            mods,
-            uzdoom: None,
+            wads,
             base_wad: None,
+            uzdoom: None,
             ini: None,
         }
     }
@@ -48,25 +48,13 @@ impl Profile {
         std::fs::create_dir_all(subdir.join("saves")).unwrap();
     }
 
-    pub fn remove(&self, config_dir: &Path, data_dir: &Path, profile_name: String) {
-        std::fs::remove_dir_all(data_dir.join(&profile_name)).unwrap();
-        std::fs::remove_file(config_dir.join(SUBDIRECTORY).join(profile_name + ".doom")).unwrap();
-    }
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
-pub struct Mod {
-    pub path: OsString,
-    pub hash: String,
-}
-
-impl Mod {
-    pub fn new(path: OsString, hash: String) -> Self {
-        Self { path, hash }
-    }
-
-    pub fn from_path(path: OsString) -> Result<Self> {
-        let hash = hash::hash(Path::new(&path))?;
-        Ok(Self { path, hash })
+    pub fn remove(&self, config_dir: &Path, data_dir: &Path) {
+        std::fs::remove_dir_all(data_dir.join(&self.name)).unwrap();
+        std::fs::remove_file(
+            config_dir
+                .join(SUBDIRECTORY)
+                .join(self.name.clone() + ".doom"),
+        )
+        .unwrap();
     }
 }
