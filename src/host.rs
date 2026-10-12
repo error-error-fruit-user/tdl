@@ -39,6 +39,7 @@ const MAP_LEGEND: &[[&str; 2]] = &[
 pub fn run(
     terminal: &mut Terminal,
     uzdoom: &OsStr,
+    base_wad: Option<&OsStr>,
     profile: &Profile,
     data_subdir: &Path,
 ) -> Result<()> {
@@ -88,6 +89,7 @@ pub fn run(
                     hosting::run(
                         terminal,
                         uzdoom,
+                        base_wad,
                         profile,
                         &player_count.parse().unwrap_or(2).to_string(),
                         is_deathmatch,

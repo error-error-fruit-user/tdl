@@ -41,21 +41,29 @@ fn execute(uzdoom: &OsStr, profile: &Profile, args: &[&OsStr]) -> Result<()> {
     Ok(())
 }
 
-pub fn launch(uzdoom: &OsStr, profile: &Profile, data_subdir: &Path) -> Result<()> {
-    execute(
-        uzdoom,
-        profile,
-        &[
-            OsStr::new("-config"),
-            data_subdir.join("uzdoom.ini").as_os_str(),
-            OsStr::new("-savedir"),
-            data_subdir.join("saves").as_os_str(),
-        ],
-    )
+pub fn launch(
+    uzdoom: &OsStr,
+    base_wad: Option<&OsStr>,
+    profile: &Profile,
+    data_subdir: &Path,
+) -> Result<()> {
+    let ini_path = data_subdir.join("uzdoom.ini");
+    let saves_path = data_subdir.join("saves");
+    let mut args = vec![
+        OsStr::new("-config"),
+        ini_path.as_os_str(),
+        OsStr::new("-savedir"),
+        saves_path.as_os_str(),
+    ];
+    if let Some(base_wad) = base_wad {
+        args.extend([OsStr::new("-iwad"), base_wad]);
+    }
+    execute(uzdoom, profile, &args)
 }
 
 pub fn host(
     uzdoom: &OsStr,
+    base_wad: Option<&OsStr>,
     profile: &Profile,
     player_count: &str,
     is_deathmatch: bool,
@@ -72,6 +80,9 @@ pub fn host(
         OsStr::new("-savedir"),
         saves_path.as_os_str(),
     ];
+    if let Some(base_wad) = base_wad {
+        args.extend([OsStr::new("-iwad"), base_wad]);
+    }
     if is_deathmatch {
         args.push(OsStr::new("-deathmatch"));
     }
@@ -81,15 +92,22 @@ pub fn host(
     execute(uzdoom, profile, &args)
 }
 
-pub fn join(uzdoom: &OsStr, profile: &Profile, ip: &str, data_subdir: &Path) -> Result<()> {
-    execute(
-        uzdoom,
-        profile,
-        &[
-            OsStr::new("-join"),
-            OsStr::new(ip),
-            OsStr::new("-config"),
-            data_subdir.join("uzdoom.ini").as_os_str(),
-        ],
-    )
+pub fn join(
+    uzdoom: &OsStr,
+    base_wad: Option<&OsStr>,
+    profile: &Profile,
+    ip: &str,
+    data_subdir: &Path,
+) -> Result<()> {
+    let ini_path = data_subdir.join("uzdoom.ini");
+    let mut args = vec![
+        OsStr::new("-join"),
+        OsStr::new(ip),
+        OsStr::new("-config"),
+        ini_path.as_os_str(),
+    ];
+    if let Some(base_wad) = base_wad {
+        args.extend([OsStr::new("-iwad"), base_wad]);
+    }
+    execute(uzdoom, profile, &args)
 }

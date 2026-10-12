@@ -17,6 +17,7 @@ const HEIGHT: u16 = 5;
 pub fn run(
     terminal: &mut Terminal,
     uzdoom: &OsStr,
+    base_wad: Option<&OsStr>,
     profile: &Profile,
     player_count: &str,
     is_deathmatch: bool,
@@ -42,6 +43,7 @@ pub fn run(
 
     execute::host(
         uzdoom,
+        base_wad,
         profile,
         player_count,
         is_deathmatch,

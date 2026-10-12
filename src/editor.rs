@@ -16,6 +16,7 @@ use crate::{
     index, legend, present_with,
     profile::{Mod, Profile},
     utility::{self, Phase, Terminal},
+    warning,
 };
 
 const BORDER_COLOR: Color = Color::LightBlue;
@@ -36,11 +37,16 @@ const EDITING_LEGEND: &[[&str; 2]] = &[
     ["A", "Add"],
     ["D", "Delete"],
     ["U", "Select UZDoom"],
+    ["W", "Select Base Wad"],
 ];
 
-pub fn run(terminal: &mut Terminal, profile: Profile) -> Result<Profile> {
+pub fn run(
+    terminal: &mut Terminal,
+    profile: Profile,
+    profiles: &Vec<Profile>,
+) -> Result<Option<Profile>> {
     let mut state = TableState::new();
-    let mut editor = Editor::new(profile, &mut state);
+    let mut editor = Editor::new(profile, profiles, &mut state);
     present_with!(terminal, editor, &mut state, |frame: &mut Frame| {
         let area = frame.area();
         if !editor.editing_mods {
@@ -50,22 +56,23 @@ pub fn run(terminal: &mut Terminal, profile: Profile) -> Result<Profile> {
     });
 }
 
-pub fn run_new(terminal: &mut Terminal) -> Result<Profile> {
-    run(terminal, Profile::default())
+pub fn run_new(terminal: &mut Terminal, profiles: &Vec<Profile>) -> Result<Option<Profile>> {
+    run(terminal, Profile::default(), profiles)
 }
 
-#[derive(Default)]
-struct Editor {
+struct Editor<'a> {
     profile: Profile,
+    profiles: &'a Vec<Profile>,
     editing_mods: bool,
 }
 
-impl Editor {
-    fn new(profile: Profile, state: &mut TableState) -> Self {
+impl<'a> Editor<'a> {
+    fn new(profile: Profile, profiles: &'a Vec<Profile>, state: &mut TableState) -> Self {
         state.select(Some(0));
         Self {
             editing_mods: !profile.name.is_empty(),
             profile,
+            profiles,
         }
     }
 
@@ -73,11 +80,33 @@ impl Editor {
         &mut self,
         terminal: &mut Terminal,
         state: &mut TableState,
-    ) -> Result<Phase<Profile>> {
+    ) -> Result<Phase<Option<Profile>>> {
         utility::prompt(terminal, &mut |terminal, key_code| {
             let index = state.selected_mut().as_mut().unwrap();
             match key_code {
-                KeyCode::Esc | KeyCode::Enter => Ok(Phase::Return(self.profile.clone())),
+                KeyCode::Esc | KeyCode::Enter => {
+                    if self.profile.name.is_empty() {
+                        if self.profile.mods.is_empty()
+                            && self.profile.uzdoom.is_none()
+                            && self.profile.base_wad.is_none()
+                        {
+                            Ok(Phase::Return(None))
+                        } else {
+                            warning::empty_profile_name(terminal)?;
+                            Ok(Phase::Render)
+                        }
+                    } else if self
+                        .profiles
+                        .iter()
+                        .find(|p| p.name == self.profile.name)
+                        .is_some()
+                    {
+                        warning::profile_already_exists(terminal)?;
+                        Ok(Phase::Render)
+                    } else {
+                        Ok(Phase::Return(Some(self.profile.clone())))
+                    }
+                }
                 KeyCode::Tab => {
                     self.editing_mods = !self.editing_mods;
                     Ok(Phase::Render)
@@ -175,6 +204,13 @@ impl Editor {
                         .map(PathBuf::into);
                     Ok(Phase::Prompt)
                 }
+                KeyCode::Char('w') => {
+                    self.profile.base_wad = rfd::FileDialog::new()
+                        .set_directory(std::env::current_dir().unwrap())
+                        .pick_file()
+                        .map(PathBuf::into);
+                    Ok(Phase::Prompt)
+                }
                 KeyCode::Char('?') => {
                     let legend = if self.editing_mods {
                         EDITING_LEGEND
@@ -197,7 +233,7 @@ impl Editor {
     }
 }
 
-impl StatefulWidget for &Editor {
+impl StatefulWidget for &Editor<'_> {
     type State = TableState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut TableState) {

@@ -37,6 +37,7 @@ const LEGEND: &[[&str; 2]] = &[
     ["E", "Edit"],
     ["D", "Delete"],
     ["U", "Select UZDoom"],
+    ["W", "Select Base Wad"],
     ["Esc", "Save and Quit"],
 ];
 
@@ -100,6 +101,10 @@ impl Launcher {
                         {
                             execute::launch(
                                 uzdoom,
+                                self.profiles[*index]
+                                    .base_wad
+                                    .as_deref()
+                                    .or(self.config.base_wad.as_deref()),
                                 &self.profiles[*index],
                                 &self.data_dir.join(&self.config.profiles[*index]),
                             )?;
@@ -109,12 +114,13 @@ impl Launcher {
                             Ok(Phase::Render)
                         }
                     } else {
-                        let profile = editor::run_new(terminal)?;
-                        profile.write(&self.config_dir, &self.data_dir);
-                        self.config.profiles.push(profile.name.clone());
-                        self.config.write(&self.config_dir);
-                        self.profiles.push(profile);
-                        *index += 1;
+                        if let Some(profile) = editor::run_new(terminal, &self.profiles)? {
+                            profile.write(&self.config_dir, &self.data_dir);
+                            self.config.profiles.push(profile.name.clone());
+                            self.config.write(&self.config_dir);
+                            self.profiles.push(profile);
+                            *index += 1;
+                        }
                         Ok(Phase::Render)
                     }
                 }
@@ -128,6 +134,10 @@ impl Launcher {
                             host::run(
                                 terminal,
                                 uzdoom,
+                                self.profiles[*index]
+                                    .base_wad
+                                    .as_deref()
+                                    .or(self.config.base_wad.as_deref()),
                                 &self.profiles[*index],
                                 &self.data_dir.join(&self.config.profiles[*index]),
                             )?;
@@ -187,24 +197,28 @@ impl Launcher {
                     }
                 }
                 KeyCode::Char('a') => {
-                    let profile = editor::run_new(terminal)?;
-                    profile.write(&self.config_dir, &self.data_dir);
-                    self.config.profiles.insert(*index, profile.name.clone());
-                    self.config.write(&self.config_dir);
-                    self.profiles.insert(*index, profile);
-                    if *index == self.profiles.len() - 1 {
-                        *index += 1;
+                    if let Some(profile) = editor::run_new(terminal, &self.profiles)? {
+                        profile.write(&self.config_dir, &self.data_dir);
+                        self.config.profiles.insert(*index, profile.name.clone());
+                        self.config.write(&self.config_dir);
+                        self.profiles.insert(*index, profile);
+                        if *index == self.profiles.len() - 1 {
+                            *index += 1;
+                        }
                     }
                     Ok(Phase::Render)
                 }
                 KeyCode::Char('e') => {
                     if *index != self.profiles.len() {
                         self.config.profiles.remove(*index);
-                        let profile = editor::run(terminal, self.profiles.remove(*index))?;
-                        profile.write(&self.config_dir, &self.data_dir);
-                        self.config.profiles.insert(*index, profile.name.clone());
-                        self.config.write(&self.config_dir);
-                        self.profiles.insert(*index, profile);
+                        if let Some(profile) =
+                            editor::run(terminal, self.profiles.remove(*index), &self.profiles)?
+                        {
+                            profile.write(&self.config_dir, &self.data_dir);
+                            self.config.profiles.insert(*index, profile.name.clone());
+                            self.config.write(&self.config_dir);
+                            self.profiles.insert(*index, profile);
+                        }
                         Ok(Phase::Render)
                     } else {
                         Ok(Phase::Prompt)
@@ -230,6 +244,13 @@ impl Launcher {
                 }
                 KeyCode::Char('u') => {
                     self.config.uzdoom = rfd::FileDialog::new()
+                        .set_directory(std::env::current_dir().unwrap())
+                        .pick_file()
+                        .map(PathBuf::into);
+                    Ok(Phase::Prompt)
+                }
+                KeyCode::Char('w') => {
+                    self.config.base_wad = rfd::FileDialog::new()
                         .set_directory(std::env::current_dir().unwrap())
                         .pick_file()
                         .map(PathBuf::into);

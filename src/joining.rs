@@ -49,7 +49,13 @@ pub fn run(
     };
 
     if let Some(uzdoom) = profile.uzdoom.as_ref().or(config.uzdoom.as_ref()) {
-        execute::join(uzdoom, &profile, ip, &data_dir.join(&profile.name))
+        execute::join(
+            uzdoom,
+            profile.base_wad.as_deref().or(config.base_wad.as_deref()),
+            &profile,
+            ip,
+            &data_dir.join(&profile.name),
+        )
     } else {
         warning::uzdoom_not_selected(terminal)
     }

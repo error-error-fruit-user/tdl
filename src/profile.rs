@@ -11,6 +11,7 @@ pub struct Profile {
     pub name: String,
     pub mods: Vec<Mod>,
     pub uzdoom: Option<OsString>,
+    pub base_wad: Option<OsString>,
 }
 
 impl Profile {
@@ -19,6 +20,7 @@ impl Profile {
             name,
             mods,
             uzdoom: None,
+            base_wad: None,
         }
     }
 

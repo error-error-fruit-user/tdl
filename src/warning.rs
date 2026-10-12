@@ -34,3 +34,11 @@ pub fn run(terminal: &mut Terminal, message: &str) -> Result<()> {
 pub fn uzdoom_not_selected(terminal: &mut Terminal) -> Result<()> {
     run(terminal, "No UZDoom path selected!")
 }
+
+pub fn empty_profile_name(terminal: &mut Terminal) -> Result<()> {
+    run(terminal, "Profile name cannot be empty")
+}
+
+pub fn profile_already_exists(terminal: &mut Terminal) -> Result<()> {
+    run(terminal, "Profile name already exists")
+}

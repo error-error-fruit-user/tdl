@@ -7,6 +7,7 @@ const FILE: &str = "config.doom";
 #[derive(Default, Deserialize, Serialize)]
 pub struct Config {
     pub uzdoom: Option<OsString>,
+    pub base_wad: Option<OsString>,
     pub profiles: Vec<String>,
 }
 

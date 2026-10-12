@@ -7,12 +7,16 @@ FILES=()
 while [[ $# -gt 0 ]]; do
     if [[ "$1" == -* || "$1" == +* ]]; then
         FLAGS+=("$1")
-        if [[ "$1" == "-config" ]]; then
+        if [[ "$1" == "-config" || "$1" == "-iwad" ]]; then
             FLAGS+=(@@ "$2" @@)  
             shift
         elif [[ "$1" == "-savedir" ]]; then
             FLAGS+=("$2")
-            FS_ARGS+=(--filesystem=/"$2")
+            if [[ "$2" == /* ]]; then
+                FS_ARGS+=(--filesystem="$2")
+            else
+                FS_ARGS+=(--filesystem=/"$2")
+            fi
             shift
         elif [[ "$1" != "-file" && "$1" != "-deathmatch" ]]; then
             FLAGS+=("$2")
