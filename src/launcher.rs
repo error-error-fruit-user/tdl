@@ -11,7 +11,7 @@ use ratatui::{
 use crate::{
     dialog::Dialog,
     editor::Editor,
-    error::Result,
+    error::{Error, Result},
     execute,
     host::Host,
     hosting, index,
@@ -21,6 +21,7 @@ use crate::{
     library::Library,
     resize,
     ritual::{self, Grimoire, Haunted, Page, Phase, Ritual},
+    scribe,
     wad::Wad,
     warning::Warning,
 };
@@ -82,11 +83,29 @@ impl Launcher {
 impl Ritual for Launcher {
     type Return = ();
 
-    /// Shows the "Text too big!" screen first if the terminal starts out too small.
+    /// Shows the "Text too big!" screen first if the terminal starts out too small, then deals with
+    /// files saved by other editions: newer ones end the session untouched, older ones are
+    /// upgraded if the user agrees, and the originals are deleted only if they agree to that too.
     fn attach(&mut self, grimoire: &mut Grimoire) -> Result<()> {
         let area = grimoire.consult().area();
         if resize::should_resize(area.width, area.height) {
             resize::summon(grimoire)?;
+        }
+        if self.library.is_too_new() {
+            Warning::files_too_new(grimoire)?;
+            return Err(Error::Exit);
+        }
+        if self.library.is_outdated() {
+            if !Dialog::should_upgrade(grimoire)? {
+                return Err(Error::Exit);
+            }
+            let Ok(upgraded) = self.library.upgrade() else {
+                Warning::upgrade_failed(grimoire)?;
+                return Err(Error::Exit);
+            };
+            if Dialog::should_delete_originals(grimoire)? {
+                upgraded.iter().for_each(|path| scribe::retire(path));
+            }
         }
         Ok(())
     }

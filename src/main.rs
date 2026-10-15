@@ -6,6 +6,7 @@ use crate::launcher::Launcher;
 
 mod config;
 mod dialog;
+mod edition;
 mod editor;
 mod error;
 mod execute;
@@ -23,6 +24,7 @@ mod profile;
 mod progress;
 mod resize;
 mod ritual;
+mod scribe;
 mod status;
 mod wad;
 mod warning;

@@ -19,4 +19,7 @@ pub enum Error {
 
     #[error("Download Error: {0}!")]
     Download(&'static str),
+
+    #[error("Upgrade Error: {0}!")]
+    Upgrade(&'static str),
 }

@@ -79,6 +79,14 @@ impl Dialog<'_> {
         )
     }
 
+    pub fn should_upgrade(grimoire: &mut Grimoire) -> Result<bool> {
+        Self::summon(grimoire, "Older files found, upgrade them? (backed up)")
+    }
+
+    pub fn should_delete_originals(grimoire: &mut Grimoire) -> Result<bool> {
+        Self::summon(grimoire, "Upgraded! Delete the original files?")
+    }
+
     pub fn should_quit(grimoire: &mut Grimoire) -> Result<bool> {
         Self::summon(grimoire, "Are you sure you want to quit?")
     }

@@ -58,6 +58,14 @@ impl Warning<'_> {
         Self::summon(grimoire, "Could not start the host server!")
     }
 
+    pub fn files_too_new(grimoire: &mut Grimoire) -> Result<()> {
+        Self::summon(grimoire, "Files are from a newer version, please update!")
+    }
+
+    pub fn upgrade_failed(grimoire: &mut Grimoire) -> Result<()> {
+        Self::summon(grimoire, "Upgrade failed, your original files were kept!")
+    }
+
     pub fn download_failed(grimoire: &mut Grimoire) -> Result<()> {
         Self::summon(grimoire, "Download failed!")
     }
