@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Alignment, Position, Rect},
     prelude::CrosstermBackend,
     style::{Color, Style, Stylize},
-    text::{Line, Span, ToSpan},
+    text::{Line, Span, ToLine, ToSpan},
     widgets::{Block, BorderType, Borders},
 };
 
@@ -16,6 +16,8 @@ use crate::{
 
 pub type Terminal = ratatui::Terminal<CrosstermBackend<Stdout>>;
 const TITLE_COLOR: Color = Color::LightYellow;
+const STATUS_WIDTH: u16 = 32;
+const STATUS_HEIGHT: u16 = 5;
 
 pub fn new_window<'a>(
     title: &'a str,
@@ -53,12 +55,35 @@ pub fn new_window<'a>(
 }
 
 pub fn new_window_area(width: u16, height: u16, area: Rect) -> Rect {
+    let width = width.min(area.width);
+    let height = height.min(area.height);
     Rect::new(
         (area.width - width) / 2,
         (area.height - height) / 2,
         width,
         height,
     )
+}
+
+pub fn show_status(
+    terminal: &mut Terminal,
+    title: &str,
+    message: &str,
+    border_color: Color,
+) -> Result<()> {
+    terminal.draw(|frame| {
+        let (window, mut window_area, ..) = new_window(
+            title,
+            STATUS_WIDTH,
+            STATUS_HEIGHT,
+            border_color,
+            frame.area(),
+        );
+        frame.render_widget(window, window_area);
+        window_area.y += 2;
+        frame.render_widget(message.to_line().centered(), window_area);
+    })?;
+    Ok(())
 }
 
 pub fn new_query<'a>(
@@ -77,7 +102,7 @@ pub fn new_query<'a>(
     .centered();
 
     let position = Position::new(
-        (frame_width + (label.len() + input.len()) as u16 + 1) / 2,
+        (frame_width + (label.len() + input.len()) as u16).div_ceil(2),
         y,
     );
 
@@ -113,89 +138,4 @@ pub fn prompt<T>(
     } else {
         Ok(Phase::Prompt)
     }
-}
-
-#[macro_export]
-macro_rules! dispatch {
-    [$expr:expr] => {
-        match $expr {
-            Phase::Render => break,
-            Phase::Prompt => (),
-            Phase::Return(x) => return Ok(x),
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! render {
-    [$terminal:expr, $widget:expr] => {
-        $terminal.draw(|frame| frame.render_widget($widget, frame.area()))?;
-    };
-    [$terminal:expr, $widget:expr, $state:expr] => {
-        $terminal.draw(|frame| frame.render_stateful_widget($widget, frame.area(), $state))?;
-    };
-}
-
-#[macro_export]
-macro_rules! resolve {
-    [$terminal:expr, $window:expr] => {
-        loop {
-            crate::dispatch![$window.prompt($terminal)?];
-        }
-    };
-    [$terminal:expr, $window:expr, $state:expr] => {
-        loop {
-            crate::dispatch![$window.prompt($terminal, $state)?]
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! present {
-    [$terminal:expr, $window:expr] => {
-        loop {
-            crate::render![$terminal, &$window];
-            crate::resolve![$terminal, $window];
-        }
-    };
-    [$terminal:expr, $window:expr, $state:expr] => {
-        loop {
-            crate::render![$terminal, &$window, $state];
-            crate::resolve![$terminal, $window, $state];
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! present_with {
-    [$terminal:expr, $window:expr, $renderer:expr] => {
-        loop {
-            $terminal.draw(|frame| {
-                $renderer(frame);
-                frame.render_widget(&$window);
-            })?;
-            crate::resolve![$terminal, $window];
-        }
-    };
-    [$terminal:expr, $window:expr, $state:expr, $renderer:expr] => {
-        loop {
-            $terminal.draw(|frame| {
-                $renderer(frame);
-                frame.render_stateful_widget(&$window, frame.area(), $state);
-            })?;
-            crate::resolve![$terminal, $window, $state];
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! stage {
-    [$terminal:expr, $render:expr, $prompt:expr] => {
-        loop {
-            $terminal.draw($render)?;
-            loop {
-                crate::dispatch![crate::utility::prompt($terminal, $prompt)?];
-            }
-        }
-    };
 }

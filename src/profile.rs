@@ -2,7 +2,7 @@ use std::{ffi::OsString, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-use crate::wad::Wad;
+use crate::{config::Config, wad::Wad};
 
 const SUBDIRECTORY: &str = "profiles";
 
@@ -24,6 +24,14 @@ impl Profile {
             uzdoom: None,
             ini: None,
         }
+    }
+
+    pub fn uzdoom<'a>(&'a self, config: &'a Config) -> Option<&'a OsString> {
+        self.uzdoom.as_ref().or(config.uzdoom.as_ref())
+    }
+
+    pub fn base_wad<'a>(&'a self, config: &'a Config) -> Option<&'a Wad> {
+        self.base_wad.as_ref().or(config.base_wad.as_ref())
     }
 
     pub fn read(config_dir: &Path, profile_name: &str) -> Profile {
@@ -49,12 +57,26 @@ impl Profile {
     }
 
     pub fn remove(&self, config_dir: &Path, data_dir: &Path) {
-        std::fs::remove_dir_all(data_dir.join(&self.name)).unwrap();
-        std::fs::remove_file(
+        if self.name.is_empty() {
+            return;
+        }
+        let _ = std::fs::remove_dir_all(data_dir.join(&self.name));
+        let _ = std::fs::remove_file(
             config_dir
                 .join(SUBDIRECTORY)
                 .join(self.name.clone() + ".doom"),
-        )
-        .unwrap();
+        );
+    }
+
+    pub fn rename(&self, new_name: &str, config_dir: &Path, data_dir: &Path) {
+        if self.name.is_empty() {
+            return;
+        }
+        let _ = std::fs::rename(data_dir.join(&self.name), data_dir.join(new_name));
+        let _ = std::fs::remove_file(
+            config_dir
+                .join(SUBDIRECTORY)
+                .join(self.name.clone() + ".doom"),
+        );
     }
 }

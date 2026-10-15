@@ -10,14 +10,11 @@ use std::{
     time::Duration,
 };
 
-use ratatui::{style::Color, text::ToLine};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::Config,
-    error::Result,
+    error::{Error, Result},
     profile::Profile,
-    utility::{self, Terminal},
     wad::Wad,
 };
 
@@ -36,12 +33,15 @@ impl Manifest {
             .iter()
             .map(|w| {
                 let path = Path::new(&w.path);
-                let name = path.file_name().unwrap().to_os_string();
-                let size = std::fs::metadata(path).unwrap().len();
+                let name = path
+                    .file_name()
+                    .ok_or(Error::Download("Invalid wad path"))?
+                    .to_os_string();
+                let size = std::fs::metadata(path)?.len();
                 let hash = w.hash.clone();
-                Entry::new(name, size, hash)
+                Ok(Entry::new(name, size, hash))
             })
-            .collect();
+            .collect::<Result<_>>()?;
         Ok(Self {
             entries,
             base_wad_hash,
@@ -51,63 +51,56 @@ impl Manifest {
     pub fn fetch(ip: &str) -> Result<Self> {
         let response = new_agent()
             .get(&format!("{}/manifest", base_url(ip)))
-            .call()
-            .unwrap();
+            .call()?;
         let mut body = Vec::new();
-        response
-            .into_body()
-            .into_reader()
-            .read_to_end(&mut body)
-            .unwrap();
-        let manifest: Manifest = rmp_serde::from_slice(&body).unwrap();
+        response.into_body().into_reader().read_to_end(&mut body)?;
+        let manifest: Manifest = rmp_serde::from_slice(&body)?;
         if manifest.entries.len() > MAX_FILES {
-            panic!("Too many files trying to be downloaded");
+            return Err(Error::Download("Too many files trying to be downloaded"));
+        }
+        if !manifest.entries.iter().all(Entry::is_safe) {
+            return Err(Error::Download("Host sent an invalid file list"));
         }
         Ok(manifest)
     }
 
     pub fn serve(self, port: u16, paths: Vec<OsString>) -> Result<ServerGuard> {
-        let server = tiny_http::Server::http(("0.0.0.0", port)).unwrap();
+        let manifest =
+            rmp_serde::to_vec(&self).map_err(|_| Error::Download("Could not encode file list"))?;
+        let server = tiny_http::Server::http(("0.0.0.0", port))
+            .map_err(|_| Error::Download("Could not start the host server"))?;
         let should_quit = Arc::new(AtomicBool::new(false));
         let flag = should_quit.clone();
         let thread = thread::spawn(move || {
             while !flag.load(Ordering::SeqCst) {
-                if let Some(request) = server.recv_timeout(Duration::from_millis(250)).unwrap() {
-                    let url = request.url().to_string();
+                let request = match server.recv_timeout(Duration::from_millis(250)) {
+                    Ok(Some(request)) => request,
+                    Ok(None) => continue,
+                    Err(_) => break,
+                };
+                let url = request.url().to_string();
 
-                    if url == "/manifest" {
-                        request
-                            .respond(tiny_http::Response::from_data(
-                                rmp_serde::to_vec(&self).unwrap(),
-                            ))
-                            .unwrap();
-                    } else if let Some(hash) = url.strip_prefix("/file/") {
-                        let path = self
-                            .entries
-                            .iter()
-                            .position(|e| e.hash == hash)
-                            .map(|i| paths[i].clone());
+                if url == "/manifest" {
+                    let _ = request.respond(tiny_http::Response::from_data(manifest.clone()));
+                } else if let Some(hash) = url.strip_prefix("/file/") {
+                    let path = self
+                        .entries
+                        .iter()
+                        .position(|e| e.hash == hash)
+                        .map(|i| paths[i].clone());
 
-                        thread::spawn(move || {
-                            match path.and_then(|p| std::fs::File::open(p).ok()) {
-                                Some(file) => request
-                                    .respond(tiny_http::Response::from_file(file))
-                                    .unwrap(),
-                                None => request
-                                    .respond(
-                                        tiny_http::Response::from_string("not found")
-                                            .with_status_code(404),
-                                    )
-                                    .unwrap(),
-                            }
-                        });
-                    } else {
-                        request
-                            .respond(
+                    thread::spawn(move || {
+                        let _ = match path.and_then(|p| std::fs::File::open(p).ok()) {
+                            Some(file) => request.respond(tiny_http::Response::from_file(file)),
+                            None => request.respond(
                                 tiny_http::Response::from_string("not found").with_status_code(404),
-                            )
-                            .unwrap();
-                    }
+                            ),
+                        };
+                    });
+                } else {
+                    let _ = request.respond(
+                        tiny_http::Response::from_string("not found").with_status_code(404),
+                    );
                 }
             }
         });
@@ -115,6 +108,10 @@ impl Manifest {
             should_quit,
             thread: Some(thread),
         })
+    }
+
+    pub fn base_wad_matches(&self, base_wad: Option<&Wad>) -> bool {
+        self.base_wad_hash.is_empty() || base_wad.is_none_or(|w| w.hash == self.base_wad_hash)
     }
 
     pub fn is_compatible_with(&self, profile: &Profile) -> bool {
@@ -141,6 +138,13 @@ impl Entry {
     fn new(name: OsString, size: u64, hash: String) -> Self {
         Self { name, size, hash }
     }
+
+    // name and hash become path components when downloading, so a host must not choose them freely
+    fn is_safe(&self) -> bool {
+        Path::new(&self.name).file_name() == Some(&self.name)
+            && self.hash.len() == 64
+            && self.hash.bytes().all(|b| b.is_ascii_hexdigit())
+    }
 }
 
 fn new_agent() -> ureq::Agent {
@@ -156,86 +160,68 @@ fn base_url(ip: &str) -> String {
     format!("http://{host}:{DEFAULT_PORT}")
 }
 
-pub fn download_profile(
-    terminal: &mut Terminal,
-    profile_name: String,
-    config: &mut Config,
-    profiles: &mut Vec<Profile>,
-    index: usize,
-    ip: &str,
-    entries: &[Entry],
-    config_dir: &Path,
-    data_dir: &Path,
-    downloads_dir: &Path,
-) -> Result<Profile> {
-    const TITLE: &str = "Downloading";
-    const WIDTH: u16 = 32;
-    const HEIGHT: u16 = 5;
-    const BORDER_COLOR: Color = Color::LightMagenta;
-
-    terminal.draw(|frame| {
-        let (window, mut window_area, ..) =
-            utility::new_window(TITLE, WIDTH, HEIGHT, BORDER_COLOR, frame.area());
-        frame.render_widget(window, window_area);
-        window_area.y += 2;
-        frame.render_widget("Downloading...".to_line().centered(), window_area);
-    })?;
-
+pub fn download(ip: &str, entries: &[Entry], downloads_dir: &Path) -> Result<Vec<Wad>> {
     let agent = new_agent();
-    let mut wads = Vec::new();
-    for entry in entries {
-        let downloads_subdir = downloads_dir.join(&entry.hash);
-        if downloads_subdir.exists() {
-            wads.push(Wad::new(
-                downloads_subdir.join(&entry.name).into(),
-                entry.hash.clone(),
-            ));
-            continue;
-        }
-        std::fs::create_dir_all(&downloads_subdir)?;
-        let part = downloads_subdir.join({
-            let mut part = entry.name.clone();
-            part.push(".part");
-            part
-        });
-        let url = format!("{}/file/{}", base_url(ip), entry.hash);
-        let mut reader = agent.get(&url).call().unwrap().into_body().into_reader();
-        let mut file = std::fs::File::create(&part)?;
-        let mut hasher = blake3::Hasher::new();
-        let mut buf = [0; 64 * 1024];
-        let mut total = 0;
+    entries
+        .iter()
+        .map(|e| download_entry(&agent, ip, e, downloads_dir))
+        .collect()
+}
 
-        loop {
-            let size = reader.read(&mut buf)?;
-            if size == 0 {
-                break;
-            }
-            total += size;
-            if total as u64 > entry.size {
-                drop(file);
-                let _ = std::fs::remove_file(&part);
-                panic!("File downloading is bigger than it should be!");
-            }
-            hasher.update(&buf[..size]);
-            file.write_all(&buf[..size])?;
-        }
-        file.flush()?;
-        drop(file);
-        if hasher.finalize().to_hex().to_string() != entry.hash {
-            let _ = std::fs::remove_file(&part);
-            panic!("Downloaded file does not have matching hash!");
-        }
-
-        let wad_path = downloads_subdir.join(&entry.name);
-        std::fs::rename(&part, &wad_path)?;
-        wads.push(Wad::new(wad_path.into(), entry.hash.clone()));
+fn download_entry(
+    agent: &ureq::Agent,
+    ip: &str,
+    entry: &Entry,
+    downloads_dir: &Path,
+) -> Result<Wad> {
+    let downloads_subdir = downloads_dir.join(&entry.hash);
+    let wad_path = downloads_subdir.join(&entry.name);
+    if wad_path.exists() {
+        return Ok(Wad::new(wad_path.into(), entry.hash.clone()));
     }
-    let profile = Profile::new(profile_name.clone(), wads);
-    profile.write(config_dir, data_dir);
-    config.profiles.insert(index, profile_name);
-    config.write(config_dir);
-    profiles.insert(index, profile.clone());
-    Ok(profile.clone())
+    std::fs::create_dir_all(&downloads_subdir)?;
+    let part = downloads_subdir.join({
+        let mut part = entry.name.clone();
+        part.push(".part");
+        part
+    });
+    if let Err(error) = download_part(agent, ip, entry, &part) {
+        let _ = std::fs::remove_file(&part);
+        return Err(error);
+    }
+    std::fs::rename(&part, &wad_path)?;
+    Ok(Wad::new(wad_path.into(), entry.hash.clone()))
+}
+
+fn download_part(agent: &ureq::Agent, ip: &str, entry: &Entry, part: &Path) -> Result<()> {
+    let url = format!("{}/file/{}", base_url(ip), entry.hash);
+    let mut reader = agent.get(&url).call()?.into_body().into_reader();
+    let mut file = std::fs::File::create(part)?;
+    let mut hasher = blake3::Hasher::new();
+    let mut buf = [0; 64 * 1024];
+    let mut total = 0;
+
+    loop {
+        let size = reader.read(&mut buf)?;
+        if size == 0 {
+            break;
+        }
+        total += size;
+        if total as u64 > entry.size {
+            return Err(Error::Download(
+                "File downloading is bigger than it should be",
+            ));
+        }
+        hasher.update(&buf[..size]);
+        file.write_all(&buf[..size])?;
+    }
+    file.flush()?;
+    if hasher.finalize().to_hex().to_string() != entry.hash {
+        return Err(Error::Download(
+            "Downloaded file does not have matching hash",
+        ));
+    }
+    Ok(())
 }
 
 pub struct ServerGuard {

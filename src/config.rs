@@ -1,27 +1,30 @@
 use std::{ffi::OsString, path::Path};
 
-use serde::{Deserialize, Serialize};
-
-use crate::wad::Wad;
+use crate::{profile::Profile, wad::Wad};
 
 const FILE: &str = "config.doom";
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Default)]
 pub struct Config {
     pub uzdoom: Option<OsString>,
     pub base_wad: Option<Wad>,
-    pub profiles: Vec<String>,
 }
 
 impl Config {
-    pub fn read(directory: &Path) -> Self {
-        let Ok(config_data) = std::fs::read(directory.join(FILE)) else {
-            return Self::default();
-        };
-        rmp_serde::from_slice(&config_data).unwrap_or_default()
+    pub fn read(directory: &Path) -> (Self, Vec<String>) {
+        let (uzdoom, base_wad, profile_names) = std::fs::read(directory.join(FILE))
+            .ok()
+            .and_then(|data| rmp_serde::from_slice(&data).ok())
+            .unwrap_or_default();
+        (Self { uzdoom, base_wad }, profile_names)
     }
 
-    pub fn write(&self, directory: &Path) {
-        std::fs::write(directory.join(FILE), rmp_serde::to_vec(self).unwrap()).unwrap();
+    pub fn write(&self, directory: &Path, profiles: &[Profile]) {
+        let profile_names: Vec<_> = profiles.iter().map(|p| &p.name).collect();
+        std::fs::write(
+            directory.join(FILE),
+            rmp_serde::to_vec(&(&self.uzdoom, &self.base_wad, &profile_names)).unwrap(),
+        )
+        .unwrap();
     }
 }

@@ -1,7 +1,11 @@
+#![feature(associated_type_defaults)]
+
 use std::io::Write;
 
+use crate::launcher::Launcher;
+
 mod config;
-mod dialogue;
+mod dialog;
 mod editor;
 mod error;
 mod execute;
@@ -13,17 +17,18 @@ mod join;
 mod joining;
 mod launcher;
 mod legend;
+mod library;
 mod network;
 mod profile;
 mod resize;
+mod scene;
 mod utility;
 mod wad;
 mod warning;
 
 fn main() {
-    let args = std::env::args();
-    let pass = args.skip(1).next();
-    if let Err(error) = ratatui::run(|terminal| launcher::run(terminal, pass)) {
+    let passed_directory = std::env::args().nth(1);
+    if let Err(error) = ratatui::run(|terminal| Launcher::evoke(terminal, passed_directory)) {
         eprintln!("{error}");
         std::io::stderr().flush().unwrap();
     }

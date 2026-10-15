@@ -1,57 +1,54 @@
-use std::{ffi::OsStr, ops::Deref, path::Path};
+use std::ops::Deref;
 
-use ratatui::{style::Color, text::ToLine};
+use ratatui::style::Color;
 
 use crate::{
     error::Result,
-    execute, network,
-    profile::Profile,
+    execute,
+    host::Settings,
+    library::Library,
+    network,
     utility::{self, Terminal},
     wad::Wad,
+    warning::Warning,
 };
 
 const TITLE: &str = "Hosting";
 const BORDER_COLOR: Color = Color::LightMagenta;
-const WIDTH: u16 = 32;
-const HEIGHT: u16 = 5;
 
-pub fn run(
+pub fn host(
     terminal: &mut Terminal,
-    uzdoom: &OsStr,
-    base_wad: Option<&Wad>,
-    profile: &Profile,
-    player_count: &str,
-    is_deathmatch: bool,
-    map: &str,
-    data_subdir: &Path,
+    library: &Library,
+    index: usize,
+    settings: Settings,
 ) -> Result<()> {
-    terminal.draw(|frame| {
-        let (window, mut window_area, ..) =
-            utility::new_window(TITLE, WIDTH, HEIGHT, BORDER_COLOR, frame.area());
+    let profile = &library.profiles[index];
+    let Some(uzdoom) = profile.uzdoom(&library.config) else {
+        return Warning::uzdoom_not_selected(terminal);
+    };
+    let base_wad = profile.base_wad(&library.config);
+    utility::show_status(terminal, TITLE, "Hosting...", BORDER_COLOR)?;
 
-        frame.render_widget(window, window_area);
-        window_area.y += 2;
-        frame.render_widget("Hosting...".to_line().centered(), window_area);
-    })?;
-
-    let _server = {
-        let manifest = network::Manifest::build(
-            &profile.wads,
-            base_wad.map(|w| w.hash.clone()).unwrap_or(String::new()),
-        )?;
-        Some(manifest.serve(
-            network::DEFAULT_PORT,
-            profile.wads.iter().map(|w| w.path.clone()).collect(),
-        )?)
+    let Ok(manifest) = network::Manifest::build(
+        &profile.wads,
+        base_wad.map(|w| w.hash.clone()).unwrap_or_default(),
+    ) else {
+        return Warning::wad_unreadable(terminal);
+    };
+    let Ok(_server) = manifest.serve(
+        network::DEFAULT_PORT,
+        profile.wads.iter().map(|w| w.path.clone()).collect(),
+    ) else {
+        return Warning::host_failed(terminal);
     };
 
     execute::host(
         uzdoom,
         base_wad.map(Wad::deref),
         profile,
-        player_count,
-        is_deathmatch,
-        map,
-        data_subdir,
+        &settings.player_count,
+        settings.is_deathmatch,
+        &settings.map,
+        &library.data_dir.join(&profile.name),
     )
 }

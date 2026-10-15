@@ -1,6 +1,7 @@
 use std::{
     ffi::OsStr,
-    io::{BufRead, BufReader, BufWriter, Write},
+    fs::File,
+    io,
     ops::Deref,
     path::Path,
     process::{Command, Stdio},
@@ -8,7 +9,7 @@ use std::{
 
 use crate::{error::Result, profile::Profile, wad::Wad};
 
-fn execute(uzdoom: &OsStr, profile: &Profile, args: &[&OsStr]) -> Result<()> {
+fn execute(uzdoom: &OsStr, profile: &Profile, args: &[&OsStr], data_subdir: &Path) -> Result<()> {
     let mut command = Command::new(uzdoom);
     command
         .args(args)
@@ -23,19 +24,14 @@ fn execute(uzdoom: &OsStr, profile: &Profile, args: &[&OsStr]) -> Result<()> {
     } else {
         command.spawn()?
     };
-    if let Some(stdout) = doom.stdout.take() {
-        let reader = BufReader::new(stdout);
-        let log = std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open("session.log")?;
-        let mut writer = BufWriter::new(log);
-        for line in reader.lines() {
-            writeln!(&mut writer, "{}", line.unwrap())?;
-        }
-        writer.flush()?;
+    if let Some(mut stdout) = doom.stdout.take() {
+        // the log is best effort, but stdout must still be drained or the game blocks on a full pipe
+        let _ = match File::create(data_subdir.join("session.log")) {
+            Ok(mut log) => io::copy(&mut stdout, &mut log),
+            Err(_) => io::copy(&mut stdout, &mut io::sink()),
+        };
     }
+    doom.wait()?;
     Ok(())
 }
 
@@ -53,7 +49,7 @@ pub fn launch(
     if let Some(ini) = profile.ini.as_ref() {
         args.extend([OsStr::new("-config"), ini])
     }
-    execute(uzdoom, profile, &args)
+    execute(uzdoom, profile, &args, data_subdir)
 }
 
 pub fn host(
@@ -84,10 +80,16 @@ pub fn host(
     if !map.is_empty() {
         args.extend(["+map", map].map(OsStr::new));
     }
-    execute(uzdoom, profile, &args)
+    execute(uzdoom, profile, &args, data_subdir)
 }
 
-pub fn join(uzdoom: &OsStr, base_wad: Option<&OsStr>, profile: &Profile, ip: &str) -> Result<()> {
+pub fn join(
+    uzdoom: &OsStr,
+    base_wad: Option<&OsStr>,
+    profile: &Profile,
+    ip: &str,
+    data_subdir: &Path,
+) -> Result<()> {
     let mut args = vec![OsStr::new("-join"), OsStr::new(ip)];
     if let Some(base_wad) = base_wad {
         args.extend([OsStr::new("-iwad"), base_wad]);
@@ -95,5 +97,5 @@ pub fn join(uzdoom: &OsStr, base_wad: Option<&OsStr>, profile: &Profile, ip: &st
     if let Some(ini) = profile.ini.as_ref() {
         args.extend([OsStr::new("-config"), ini]);
     }
-    execute(uzdoom, profile, &args)
+    execute(uzdoom, profile, &args, data_subdir)
 }
