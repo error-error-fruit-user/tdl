@@ -15,6 +15,7 @@ use crate::{
     library::Library,
     network::{self, Manifest},
     profile::Profile,
+    progress::Progress,
     ritual::{self, Grimoire, Page, Phase, Ritual},
     status,
     wad::Wad,
@@ -103,7 +104,13 @@ fn download_profile(
         return Ok(None);
     };
     status::summon(grimoire, "Downloading", "Downloading...", BORDER_COLOR)?;
-    let Ok(wads) = network::download(ip, &manifest.entries, &library.downloads_dir()) else {
+    let mut progress = Progress::new(grimoire, manifest.entries.len() as u64);
+    let Ok(wads) = network::download(
+        ip,
+        &manifest.entries,
+        &library.downloads_dir(),
+        &mut progress,
+    ) else {
         Warning::download_failed(grimoire)?;
         return Ok(None);
     };

@@ -9,8 +9,8 @@ use crate::{
     ritual::{Grimoire, Haunted},
 };
 
-const MIN_WIDTH: u16 = 32;
-const MIN_HEIGHT: u16 = 20;
+const MIN_WIDTH: u16 = 40;
+const MIN_HEIGHT: u16 = 30;
 
 /// Whether the terminal is smaller than the UI can be drawn in.
 pub fn should_resize(width: u16, height: u16) -> bool {
@@ -27,7 +27,7 @@ pub fn summon(grimoire: &mut Grimoire) -> Result<()> {
                 Rect::new(0, area.height / 2, area.width, 1),
             );
         })?;
-        let event = event::read().unwrap();
+        let event = event::read()?;
         if let event::Event::Resize(width, height) = event {
             if !should_resize(width, height) {
                 return Ok(());

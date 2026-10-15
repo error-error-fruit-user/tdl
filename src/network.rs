@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error::{Error, Result},
     profile::Profile,
+    progress::Progress,
     wad::Wad,
 };
 
@@ -175,12 +176,20 @@ fn base_url(ip: &str) -> String {
 }
 
 /// Downloads every entry in order, returning the wads at their local paths.
-pub fn download(ip: &str, entries: &[Entry], downloads_dir: &Path) -> Result<Vec<Wad>> {
+/// `progress` is told about each file before it starts, so its size is always the current one.
+pub fn download(
+    ip: &str,
+    entries: &[Entry],
+    downloads_dir: &Path,
+    progress: &mut Progress,
+) -> Result<Vec<Wad>> {
     let agent = new_agent();
-    entries
-        .iter()
-        .map(|e| download_entry(&agent, ip, e, downloads_dir))
-        .collect()
+    let mut wads = Vec::with_capacity(entries.len());
+    for entry in entries {
+        progress.count_file(&entry.name, entry.size)?;
+        wads.push(download_entry(&agent, ip, entry, downloads_dir, progress)?);
+    }
+    Ok(wads)
 }
 
 /// Reuses a previous download if present. Otherwise downloads to `<name>.part` and renames it
@@ -190,10 +199,13 @@ fn download_entry(
     ip: &str,
     entry: &Entry,
     downloads_dir: &Path,
+    progress: &mut Progress,
 ) -> Result<Wad> {
     let downloads_subdir = downloads_dir.join(&entry.hash);
     let wad_path = downloads_subdir.join(&entry.name);
     if wad_path.exists() {
+        // already on disk, so the bar jumps to full instead of staying empty
+        progress.count_bytes(entry.size)?;
         return Ok(Wad::new(wad_path.into(), entry.hash.clone()));
     }
     std::fs::create_dir_all(&downloads_subdir)?;
@@ -202,7 +214,7 @@ fn download_entry(
         part.push(".part");
         part
     });
-    if let Err(error) = download_part(agent, ip, entry, &part) {
+    if let Err(error) = download_part(agent, ip, entry, &part, progress) {
         let _ = std::fs::remove_file(&part);
         return Err(error);
     }
@@ -211,7 +223,13 @@ fn download_entry(
 }
 
 /// Streams the file to `part`, failing if it grows past the manifest's size or its hash differs.
-fn download_part(agent: &ureq::Agent, ip: &str, entry: &Entry, part: &Path) -> Result<()> {
+fn download_part(
+    agent: &ureq::Agent,
+    ip: &str,
+    entry: &Entry,
+    part: &Path,
+    progress: &mut Progress,
+) -> Result<()> {
     let url = format!("{}/file/{}", base_url(ip), entry.hash);
     let mut reader = agent.get(&url).call()?.into_body().into_reader();
     let mut file = std::fs::File::create(part)?;
@@ -221,6 +239,7 @@ fn download_part(agent: &ureq::Agent, ip: &str, entry: &Entry, part: &Path) -> R
 
     loop {
         let size = reader.read(&mut buf)?;
+        progress.count_bytes(size as u64)?;
         if size == 0 {
             break;
         }

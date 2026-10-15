@@ -20,6 +20,7 @@ mod legend;
 mod library;
 mod network;
 mod profile;
+mod progress;
 mod resize;
 mod ritual;
 mod status;
