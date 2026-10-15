@@ -14,9 +14,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{Error, Result},
-    profile::Profile,
-    progress::Progress,
-    wad::Wad,
+    popups::progress::Progress,
+    vault::profile::Profile,
+    vault::wad::Wad,
 };
 
 pub const DEFAULT_PORT: u16 = 8080;

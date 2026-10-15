@@ -5,7 +5,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{edition::Edition, profile::Profile, wad::Wad};
+use crate::{vault::edition::Edition, vault::profile::Profile, vault::wad::Wad};
 
 const FILE: &str = "config.rite";
 

@@ -9,15 +9,15 @@ use ratatui::{
 };
 
 use crate::{
-    dialog::Dialog,
     error::Result,
-    index,
-    legend::Legend,
-    library::Library,
-    profile::Profile,
+    popups::dialog::Dialog,
+    popups::legend::Legend,
+    popups::warning::Warning,
     ritual::{self, Grimoire, Page, Phase, Ritual},
-    wad::Wad,
-    warning::Warning,
+    screens::wrap_around,
+    vault::Vault,
+    vault::profile::Profile,
+    vault::wad::Wad,
 };
 
 /// Creates or edits one profile; `Enter`/`Esc` both finish, and an empty untouched profile is discarded.
@@ -64,14 +64,10 @@ impl<'a> Editor<'a> {
         Self::new(profiles).invoke(grimoire)
     }
 
-    /// Edits `library.profiles[index]` and saves the result. Cancelling keeps the original.
-    pub fn summon_existing(
-        grimoire: &mut Grimoire,
-        library: &mut Library,
-        index: usize,
-    ) -> Result<()> {
-        if let Some(profile) = Editor::edit(&library.profiles, index).invoke(grimoire)? {
-            library.replace(index, profile);
+    /// Edits `vault.profiles[index]` and saves the result. Cancelling keeps the original.
+    pub fn summon_existing(grimoire: &mut Grimoire, vault: &mut Vault, index: usize) -> Result<()> {
+        if let Some(profile) = Editor::edit(&vault.profiles, index).invoke(grimoire)? {
+            vault.replace(index, profile);
         }
         Ok(())
     }
@@ -198,15 +194,17 @@ impl Ritual for Editor<'_> {
                 Ok(Phase::Render)
             }
             KeyCode::Char('j') | KeyCode::Down => {
-                if index::select_next(self.table_state.selected_mut(), self.profile.wads.len() + 1)
-                {
+                if wrap_around::select_next(
+                    self.table_state.selected_mut(),
+                    self.profile.wads.len() + 1,
+                ) {
                     Ok(Phase::Render)
                 } else {
                     Ok(Phase::Prompt)
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                if index::select_previous(
+                if wrap_around::select_previous(
                     self.table_state.selected_mut(),
                     self.profile.wads.len() + 1,
                 ) {
@@ -217,7 +215,7 @@ impl Ritual for Editor<'_> {
             }
             KeyCode::Char('}') => {
                 if self.profile.wads.len() != 1 && *index != self.profile.wads.len() {
-                    let next_index = index::next(*index, self.profile.wads.len());
+                    let next_index = wrap_around::next(*index, self.profile.wads.len());
                     self.profile.wads.swap(*index, next_index);
                     *index = next_index;
                     Ok(Phase::Render)
@@ -227,7 +225,7 @@ impl Ritual for Editor<'_> {
             }
             KeyCode::Char('{') => {
                 if self.profile.wads.len() != 1 && *index != self.profile.wads.len() {
-                    let previous_index = index::previous(*index, self.profile.wads.len());
+                    let previous_index = wrap_around::previous(*index, self.profile.wads.len());
                     self.profile.wads.swap(*index, previous_index);
                     *index = previous_index;
                     Ok(Phase::Render)

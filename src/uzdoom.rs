@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{error::Result, profile::Profile, wad::Wad};
+use crate::{error::Result, vault::profile::Profile, vault::wad::Wad};
 
 /// Runs UZDoom to completion, blocking the launcher. Output goes to `session.log` in `data_subdir`.
 fn execute(uzdoom: &OsStr, profile: &Profile, args: &[&OsStr], data_subdir: &Path) -> Result<()> {

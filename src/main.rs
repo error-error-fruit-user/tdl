@@ -2,38 +2,29 @@
 
 use std::io::Write;
 
-use crate::launcher::Launcher;
+use crate::{cli::Cli, screens::launcher::Launcher};
 
-mod config;
-mod dialog;
-mod edition;
-mod editor;
+mod cli;
 mod error;
-mod execute;
-mod hash;
-mod host;
-mod hosting;
-mod index;
-mod join;
-mod joining;
-mod launcher;
-mod legend;
-mod library;
-mod network;
-mod profile;
-mod progress;
-mod resize;
+mod net;
+mod popups;
 mod ritual;
-mod scribe;
-mod status;
-mod wad;
-mod warning;
+mod screens;
+mod slayer;
+mod uzdoom;
+mod vault;
 
-/// An optional first argument replaces the platform config/data directories with
-/// `<arg>/config` and `<arg>/data`.
 fn main() {
-    let passed_directory = std::env::args().nth(1);
-    if let Err(error) = ratatui::run(|grimoire| Launcher::summon(grimoire, passed_directory)) {
+    let args: Vec<_> = std::env::args().skip(1).collect();
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        println!("{}", cli::USAGE);
+        return;
+    }
+    let cli = Cli::parse(args).unwrap_or_else(|message| {
+        eprintln!("{message}\n\n{}", cli::USAGE);
+        std::process::exit(2);
+    });
+    if let Err(error) = ratatui::run(|grimoire| Launcher::summon(grimoire, cli.vault)) {
         eprintln!("{error}");
         std::io::stderr().flush().unwrap();
     }

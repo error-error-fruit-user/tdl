@@ -5,13 +5,15 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{config::Config, edition::Edition, scribe, wad::Wad};
+use crate::{vault::config::Config, vault::edition::Edition, vault::scribe, vault::wad::Wad};
 
-const SUBDIRECTORY: &str = "profiles";
+/// The profiles folder inside the config folder. The dot keeps it from ever matching a profile's
+/// name (names can't contain one), which matters where the config and data folders are the same.
+pub const SUBDIRECTORY: &str = ".profiles";
 
 /// A named, ordered list of wads (load order matters) plus optional per-profile overrides.
 ///
-/// Stored as `<config>/profiles/<name>.rite` (MessagePack); saves live in `<data>/<name>/saves`.
+/// Stored as `<config>/.profiles/<name>.rite` (MessagePack); saves live in `<data>/<name>/saves`.
 /// The name is also the file name, so it is restricted to `A-Z a-z 0-9 _`.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub struct Profile {

@@ -39,7 +39,7 @@ use ratatui::{
 use crate::{
     // 🔮 every Result is an omen: Ok is a good sign, Err is a bad one, and both are fate
     error::{Error as Curse, Result as Omen},
-    resize,
+    popups::resize,
 };
 
 // 📖 a terminal is a grimoire: dark, dusty, and written in Ink with a Quill (stdout) 🪶

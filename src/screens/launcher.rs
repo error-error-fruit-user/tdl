@@ -9,28 +9,29 @@ use ratatui::{
 };
 
 use crate::{
-    dialog::Dialog,
-    editor::Editor,
     error::{Error, Result},
-    execute,
-    host::Host,
-    hosting, index,
-    join::Join,
-    joining,
-    legend::Legend,
-    library::Library,
-    resize,
+    popups::dialog::Dialog,
+    popups::legend::Legend,
+    popups::resize,
+    popups::warning::Warning,
     ritual::{self, Grimoire, Haunted, Page, Phase, Ritual},
-    scribe,
-    wad::Wad,
-    warning::Warning,
+    screens::editor::Editor,
+    screens::host_settings::HostSettingsForm,
+    screens::join_address::JoinAddressForm,
+    screens::wrap_around,
+    slayer::host_game,
+    slayer::join_game,
+    uzdoom,
+    vault::Vault,
+    vault::scribe,
+    vault::wad::Wad,
 };
 
 /// The main screen: a table of profiles followed by a `+` row for creating a new one.
 ///
-/// Owns the [`Library`] and writes the config on quit.
+/// Owns the [`Vault`] and writes the config on quit.
 pub struct Launcher {
-    library: Library,
+    vault: Vault,
     table_state: TableState,
 }
 
@@ -55,9 +56,9 @@ impl Launcher {
         ["Esc", "Save and Quit"],
     ];
 
-    /// Uses `<passed_dir>/{config,data}` when given, otherwise the platform's standard directories.
-    pub fn new(passed_dir: Option<String>) -> Self {
-        let (config_dir, data_dir) = if let Some(pass) = passed_dir {
+    /// Uses `<vault_dir>/{config,data}` when given, otherwise the platform's standard directories.
+    pub fn new(vault_dir: Option<String>) -> Self {
+        let (config_dir, data_dir) = if let Some(pass) = vault_dir {
             let pass = Path::new(&pass);
             (pass.join("config"), pass.join("data"))
         } else {
@@ -69,14 +70,14 @@ impl Launcher {
             )
         };
         Self {
-            library: Library::new(config_dir, data_dir),
+            vault: Vault::new(config_dir, data_dir),
             table_state: TableState::new().with_selected(0),
         }
     }
 
     /// Builds the launcher and runs it until the user quits.
-    pub fn summon(grimoire: &mut Grimoire, passed_dir: Option<String>) -> Result<()> {
-        Self::new(passed_dir).invoke(grimoire)
+    pub fn summon(grimoire: &mut Grimoire, vault_dir: Option<String>) -> Result<()> {
+        Self::new(vault_dir).invoke(grimoire)
     }
 }
 
@@ -91,15 +92,15 @@ impl Ritual for Launcher {
         if resize::should_resize(area.width, area.height) {
             resize::summon(grimoire)?;
         }
-        if self.library.is_too_new() {
+        if self.vault.is_too_new() {
             Warning::files_too_new(grimoire)?;
             return Err(Error::Exit);
         }
-        if self.library.is_outdated() {
+        if self.vault.is_outdated() {
             if !Dialog::should_upgrade(grimoire)? {
                 return Err(Error::Exit);
             }
-            let Ok(upgraded) = self.library.upgrade() else {
+            let Ok(upgraded) = self.vault.upgrade() else {
                 Warning::upgrade_failed(grimoire)?;
                 return Err(Error::Exit);
             };
@@ -113,7 +114,7 @@ impl Ritual for Launcher {
     fn render(&mut self, page: &mut Page) {
         let header = Row::new(Self::HEADER.iter().map(|h| h.to_line().centered())).on_dark_gray();
         let rows = self
-            .library
+            .vault
             .profiles
             .iter()
             .map(|p| {
@@ -150,19 +151,15 @@ impl Ritual for Launcher {
         let index = self.table_state.selected_mut().as_mut().unwrap();
         match key_code {
             KeyCode::Enter => {
-                if *index != self.library.profiles.len() {
-                    if let Some(uzdoom) = self.library.profiles[*index].uzdoom(&self.library.config)
-                    {
-                        execute::launch(
+                if *index != self.vault.profiles.len() {
+                    if let Some(uzdoom) = self.vault.profiles[*index].uzdoom(&self.vault.config) {
+                        uzdoom::launch(
                             uzdoom,
-                            self.library.profiles[*index]
-                                .base_wad(&self.library.config)
+                            self.vault.profiles[*index]
+                                .base_wad(&self.vault.config)
                                 .map(Wad::deref),
-                            &self.library.profiles[*index],
-                            &self
-                                .library
-                                .data_dir
-                                .join(&self.library.profiles[*index].name),
+                            &self.vault.profiles[*index],
+                            &self.vault.data_dir.join(&self.vault.profiles[*index].name),
                         )?;
                         Ok(Phase::Prompt)
                     } else {
@@ -170,20 +167,20 @@ impl Ritual for Launcher {
                         Ok(Phase::Render)
                     }
                 } else {
-                    if let Some(profile) = Editor::summon_blank(grimoire, &self.library.profiles)? {
-                        self.library.insert(index, profile);
+                    if let Some(profile) = Editor::summon_blank(grimoire, &self.vault.profiles)? {
+                        self.vault.insert(index, profile);
                     }
                     Ok(Phase::Render)
                 }
             }
             KeyCode::Char('h') => {
-                if *index != self.library.profiles.len() {
-                    if self.library.profiles[*index]
-                        .uzdoom(&self.library.config)
+                if *index != self.vault.profiles.len() {
+                    if self.vault.profiles[*index]
+                        .uzdoom(&self.vault.config)
                         .is_some()
                     {
-                        if let Some(settings) = Host::summon(grimoire)? {
-                            hosting::summon(grimoire, &self.library, *index, settings)?;
+                        if let Some(settings) = HostSettingsForm::summon(grimoire)? {
+                            host_game::summon(grimoire, &self.vault, *index, settings)?;
                         }
                     } else {
                         Warning::uzdoom_not_selected(grimoire)?;
@@ -194,15 +191,15 @@ impl Ritual for Launcher {
                 }
             }
             KeyCode::Char('n') => {
-                if let Some(ip) = Join::summon(grimoire)? {
-                    joining::summon(grimoire, &mut self.library, index, &ip)?;
+                if let Some(ip) = JoinAddressForm::summon(grimoire)? {
+                    join_game::summon(grimoire, &mut self.vault, index, &ip)?;
                 }
                 Ok(Phase::Render)
             }
             KeyCode::Char('j') | KeyCode::Down => {
-                if index::select_next(
+                if wrap_around::select_next(
                     self.table_state.selected_mut(),
-                    self.library.profiles.len() + 1,
+                    self.vault.profiles.len() + 1,
                 ) {
                     Ok(Phase::Render)
                 } else {
@@ -210,9 +207,9 @@ impl Ritual for Launcher {
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                if index::select_previous(
+                if wrap_around::select_previous(
                     self.table_state.selected_mut(),
-                    self.library.profiles.len() + 1,
+                    self.vault.profiles.len() + 1,
                 ) {
                     Ok(Phase::Render)
                 } else {
@@ -220,9 +217,9 @@ impl Ritual for Launcher {
                 }
             }
             KeyCode::Char('}') => {
-                if self.library.profiles.len() != 1 && *index != self.library.profiles.len() {
-                    let next_index = index::next(*index, self.library.profiles.len());
-                    self.library.profiles.swap(*index, next_index);
+                if self.vault.profiles.len() != 1 && *index != self.vault.profiles.len() {
+                    let next_index = wrap_around::next(*index, self.vault.profiles.len());
+                    self.vault.profiles.swap(*index, next_index);
                     *index = next_index;
                     Ok(Phase::Render)
                 } else {
@@ -230,9 +227,9 @@ impl Ritual for Launcher {
                 }
             }
             KeyCode::Char('{') => {
-                if self.library.profiles.len() != 1 && *index != self.library.profiles.len() {
-                    let previous_index = index::previous(*index, self.library.profiles.len());
-                    self.library.profiles.swap(*index, previous_index);
+                if self.vault.profiles.len() != 1 && *index != self.vault.profiles.len() {
+                    let previous_index = wrap_around::previous(*index, self.vault.profiles.len());
+                    self.vault.profiles.swap(*index, previous_index);
                     *index = previous_index;
                     Ok(Phase::Render)
                 } else {
@@ -240,23 +237,23 @@ impl Ritual for Launcher {
                 }
             }
             KeyCode::Char('a') => {
-                if let Some(profile) = Editor::summon_blank(grimoire, &self.library.profiles)? {
-                    self.library.insert(index, profile);
+                if let Some(profile) = Editor::summon_blank(grimoire, &self.vault.profiles)? {
+                    self.vault.insert(index, profile);
                 }
                 Ok(Phase::Render)
             }
             KeyCode::Char('e') => {
-                if *index != self.library.profiles.len() {
-                    Editor::summon_existing(grimoire, &mut self.library, *index)?;
+                if *index != self.vault.profiles.len() {
+                    Editor::summon_existing(grimoire, &mut self.vault, *index)?;
                     Ok(Phase::Render)
                 } else {
                     Ok(Phase::Prompt)
                 }
             }
             KeyCode::Char('d') => {
-                if *index != self.library.profiles.len() {
-                    if Dialog::should_delete(grimoire, &self.library.profiles[*index].name)? {
-                        self.library.remove(index);
+                if *index != self.vault.profiles.len() {
+                    if Dialog::should_delete(grimoire, &self.vault.profiles[*index].name)? {
+                        self.vault.remove(index);
                     }
                     Ok(Phase::Render)
                 } else {
@@ -268,7 +265,7 @@ impl Ritual for Launcher {
                     .set_directory(std::env::current_dir().unwrap())
                     .pick_file()
                 {
-                    self.library.config.uzdoom = Some(path.into());
+                    self.vault.config.uzdoom = Some(path.into());
                 }
                 Ok(Phase::Prompt)
             }
@@ -278,15 +275,15 @@ impl Ritual for Launcher {
                     .add_filter("base wad", Wad::EXTENSIONS)
                     .pick_file()
                 {
-                    self.library.config.base_wad = Some(Wad::from_path(&path)?);
+                    self.vault.config.base_wad = Some(Wad::from_path(&path)?);
                 }
                 Ok(Phase::Prompt)
             }
             KeyCode::Esc => {
                 if Dialog::should_quit(grimoire)? {
-                    self.library
+                    self.vault
                         .config
-                        .write(&self.library.config_dir, &self.library.profiles);
+                        .write(&self.vault.config_dir, &self.vault.profiles);
                     Ok(Phase::Return(()))
                 } else {
                     Ok(Phase::Render)

@@ -1,22 +1,41 @@
+pub mod config;
+pub mod edition;
+pub mod hash;
+pub mod profile;
+pub mod scribe;
+pub mod wad;
+
 use std::path::PathBuf;
 
-use crate::{config::Config, edition::Edition, error::Result, profile::Profile};
+use crate::{
+    error::Result,
+    vault::{
+        config::Config,
+        edition::Edition,
+        profile::{Profile, SUBDIRECTORY},
+    },
+};
 
-/// The profiles and settings loaded from disk, kept in sync with it.
+/// The vault: the config and data folders on disk, and the settings and profiles loaded from them,
+/// kept in sync with it.
 ///
 /// Every mutating method writes through immediately, except reordering (done in the
 /// launcher), which is saved when the launcher quits.
-pub struct Library {
+pub struct Vault {
     pub config_dir: PathBuf,
     pub data_dir: PathBuf,
     pub config: Config,
     pub profiles: Vec<Profile>,
 }
 
-impl Library {
+impl Vault {
     /// Missing or corrupt profile files still yield a profile that keeps its name, so it can be
-    /// seen and deleted from the launcher.
+    /// seen and deleted from the launcher. A `profiles` folder from before the dot is renamed first.
     pub fn new(config_dir: PathBuf, data_dir: PathBuf) -> Self {
+        let profiles_dir = config_dir.join(SUBDIRECTORY);
+        if !profiles_dir.exists() {
+            let _ = std::fs::rename(config_dir.join("profiles"), &profiles_dir);
+        }
         let config = Config::open(&Config::path(&config_dir)).unwrap_or_default();
         let profiles = config
             .profile_names
@@ -28,7 +47,7 @@ impl Library {
                 profile
             })
             .collect();
-        std::fs::create_dir_all(config_dir.join("profiles")).unwrap();
+        std::fs::create_dir_all(&profiles_dir).unwrap();
         Self {
             config_dir,
             data_dir,
@@ -119,7 +138,7 @@ mod tests {
     use std::{ffi::OsString, fs};
 
     use super::*;
-    use crate::{scribe, scribe::tests::Altar, wad::Wad};
+    use crate::{vault::scribe, vault::scribe::tests::Altar, vault::wad::Wad};
 
     /// A config dir laid out exactly as the app saved it before editions existed.
     fn legacy_altar(name: &str) -> (Altar, Profile) {
@@ -152,53 +171,56 @@ mod tests {
         (altar, profile)
     }
 
-    fn library(altar: &Altar) -> Library {
-        Library::new(altar.file("config"), altar.file("data"))
+    fn vault(altar: &Altar) -> Vault {
+        Vault::new(altar.file("config"), altar.file("data"))
     }
 
     #[test]
     fn legacy_files_load_and_are_reported_as_outdated() {
-        let (altar, profile) = legacy_altar("library-legacy-load");
-        let library = library(&altar);
-        assert_eq!(library.profiles, [profile]);
-        assert_eq!(library.config.uzdoom, Some("/usr/bin/uzdoom".into()));
-        assert!(library.is_outdated());
-        assert!(!library.is_too_new());
+        let (altar, profile) = legacy_altar("vault-legacy-load");
+        let vault = vault(&altar);
+        assert_eq!(vault.profiles, [profile]);
+        assert_eq!(vault.config.uzdoom, Some("/usr/bin/uzdoom".into()));
+        assert!(vault.is_outdated());
+        assert!(!vault.is_too_new());
+        // the old folder was renamed, not copied
+        assert!(altar.file("config/.profiles").is_dir());
+        assert!(!altar.file("config/profiles").exists());
     }
 
     #[test]
     fn upgrading_converts_every_file_and_keeps_the_originals_until_retired() {
-        let (altar, profile) = legacy_altar("library-upgrade");
+        let (altar, profile) = legacy_altar("vault-upgrade");
         let config_dir = altar.file("config");
         let original = fs::read(config_dir.join("profiles/brutal.doom")).unwrap();
 
-        let upgraded = library(&altar).upgrade().unwrap();
+        let upgraded = vault(&altar).upgrade().unwrap();
         assert_eq!(upgraded.len(), 2);
         assert!(config_dir.join("config.rite").exists());
-        assert!(config_dir.join("profiles/brutal.rite").exists());
+        assert!(config_dir.join(".profiles/brutal.rite").exists());
         // originals are still there, because nobody has agreed to delete them
         assert_eq!(
-            fs::read(config_dir.join("profiles/brutal.doom")).unwrap(),
+            fs::read(config_dir.join(".profiles/brutal.doom")).unwrap(),
             original
         );
         assert!(config_dir.join("config.doom").exists());
 
-        let reloaded = library(&altar);
+        let reloaded = vault(&altar);
         assert!(!reloaded.is_outdated());
         assert_eq!(reloaded.profiles, [profile]);
         assert!(reloaded.upgrade().unwrap().is_empty());
 
         upgraded.iter().for_each(|path| scribe::retire(path));
         assert!(!config_dir.join("config.doom").exists());
-        assert!(!config_dir.join("profiles/brutal.doom").exists());
-        assert_eq!(library(&altar).profiles.len(), 1);
+        assert!(!config_dir.join(".profiles/brutal.doom").exists());
+        assert_eq!(vault(&altar).profiles.len(), 1);
     }
 
     #[test]
     fn a_newer_file_is_reported_and_left_alone() {
-        let (altar, _) = legacy_altar("library-too-new");
-        library(&altar).upgrade().unwrap();
-        let path = altar.file("config/profiles/brutal.rite");
+        let (altar, _) = legacy_altar("vault-too-new");
+        vault(&altar).upgrade().unwrap();
+        let path = altar.file("config/.profiles/brutal.rite");
         let newer = br#"placeholder"#;
         // replace the profile with a file from a "future" edition
         #[derive(serde::Serialize)]
@@ -212,17 +234,17 @@ mod tests {
         })
         .unwrap();
         fs::write(&path, &bytes).unwrap();
-        let library = library(&altar);
-        assert!(library.is_too_new());
-        assert!(library.upgrade().unwrap().is_empty());
+        let vault = vault(&altar);
+        assert!(vault.is_too_new());
+        assert!(vault.upgrade().unwrap().is_empty());
         assert_eq!(fs::read(&path).unwrap(), bytes);
     }
 
     #[test]
     fn a_fresh_install_has_nothing_to_upgrade() {
-        let altar = Altar::new("library-fresh");
-        let library = library(&altar);
-        assert!(!library.is_outdated());
-        assert!(!library.is_too_new());
+        let altar = Altar::new("vault-fresh");
+        let vault = vault(&altar);
+        assert!(!vault.is_outdated());
+        assert!(!vault.is_too_new());
     }
 }

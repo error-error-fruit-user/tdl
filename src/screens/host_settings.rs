@@ -2,17 +2,17 @@ use ratatui::{crossterm::event::KeyCode, style::Color};
 
 use crate::{
     error::Result,
-    legend::Legend,
+    popups::legend::Legend,
     ritual::{self, Grimoire, Page, Phase, Ritual},
 };
 
 /// Collects the host settings (player count, mode, map) in a single form.
-pub struct Host {
-    settings: Settings,
+pub struct HostSettingsForm {
+    settings: HostSettings,
     index: Index,
 }
 
-impl Host {
+impl HostSettingsForm {
     const TITLE: &str = "Host";
     const BORDER_COLOR: Color = Color::LightMagenta;
     const WIDTH: u16 = 32;
@@ -41,19 +41,19 @@ impl Host {
 
     pub fn new() -> Self {
         Self {
-            settings: Settings::new(),
+            settings: HostSettings::new(),
             index: Index::PlayerCount,
         }
     }
 
     /// `None` if cancelled.
-    pub fn summon(grimoire: &mut Grimoire) -> Result<Option<Settings>> {
+    pub fn summon(grimoire: &mut Grimoire) -> Result<Option<HostSettings>> {
         Self::new().invoke(grimoire)
     }
 }
 
-impl Ritual for Host {
-    type Return = Option<Settings>;
+impl Ritual for HostSettingsForm {
+    type Return = Option<HostSettings>;
 
     fn render(&mut self, page: &mut Page) {
         let area = page.area();
@@ -107,7 +107,7 @@ impl Ritual for Host {
         &mut self,
         grimoire: &mut Grimoire,
         key_code: KeyCode,
-    ) -> Result<Phase<Option<Settings>>> {
+    ) -> Result<Phase<Option<HostSettings>>> {
         match key_code {
             KeyCode::Enter => Ok(Phase::Return(Some(self.settings.clone()))),
             KeyCode::Tab => {
@@ -156,13 +156,13 @@ impl Ritual for Host {
 
 /// The options for a hosted game. `player_count` stays a string since it is passed straight to UZDoom.
 #[derive(Clone)]
-pub struct Settings {
+pub struct HostSettings {
     pub player_count: String,
     pub is_deathmatch: bool,
     pub map: String,
 }
 
-impl Settings {
+impl HostSettings {
     fn new() -> Self {
         Self {
             player_count: 2.to_string(),

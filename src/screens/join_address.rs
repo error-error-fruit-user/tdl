@@ -2,16 +2,16 @@ use ratatui::{crossterm::event::KeyCode, style::Color};
 
 use crate::{
     error::Result,
-    legend::Legend,
+    popups::legend::Legend,
     ritual::{self, Grimoire, Page, Phase, Ritual},
 };
 
 /// Prompts for the IP address of the host to join. Only digits and dots are accepted.
-pub struct Join {
+pub struct JoinAddressForm {
     ip: String,
 }
 
-impl Join {
+impl JoinAddressForm {
     const TITLE: &str = "Join";
     const BORDER_COLOR: Color = Color::LightMagenta;
     const WIDTH: u16 = 32;
@@ -29,7 +29,7 @@ impl Join {
     }
 }
 
-impl Ritual for Join {
+impl Ritual for JoinAddressForm {
     type Return = Option<String>;
 
     fn render(&mut self, page: &mut Page) {

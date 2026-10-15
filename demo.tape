@@ -17,7 +17,7 @@ Set TypingSpeed 200ms
 # Work on a copy so swaps/edits/saves never touch ~/.config/tdl or ~/.local/share/tdl.
 Hide
 Type@5ms "rm -rf /tmp/tdl-demo && mkdir -p /tmp/tdl-demo && cp -r ~/.config/tdl /tmp/tdl-demo/config && cp -r ~/.local/share/tdl /tmp/tdl-demo/data" Enter
-Type@5ms "clear && ./target/release/tdl /tmp/tdl-demo" Enter
+Type@5ms "clear && ./target/release/tdl --vault /tmp/tdl-demo" Enter
 Sleep 1s
 Show
 

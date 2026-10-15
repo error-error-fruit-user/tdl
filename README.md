@@ -63,10 +63,10 @@ Config and profiles live in your platform's config directory, saves, logs and do
 | macOS | `~/Library/Application Support/error.error.fruit.eef.tdl` | same as config |
 | Windows | `%APPDATA%\eef\tdl\config` | `%APPDATA%\eef\tdl\data` |
 
-To use a different location, pass a directory as the first argument:
+To use a different location, pass a vault folder:
 
 ```sh
-tdl /path/to/dir   # uses /path/to/dir/config and /path/to/dir/data
+tdl --vault /path/to/dir   # uses /path/to/dir/config and /path/to/dir/data
 ```
 
 ## Recording the demo

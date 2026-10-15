@@ -6,7 +6,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{error::Result, hash};
+use crate::{error::Result, vault::hash};
 
 /// A wad or pk3 file, identified across machines by the BLAKE3 hash of its contents.
 ///
