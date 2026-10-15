@@ -1,8 +1,8 @@
 use ratatui::{
-    Frame,
     crossterm::event::KeyCode,
     style::{Color, Stylize},
     text::{Line, Span, ToSpan},
+    Frame,
 };
 
 use crate::{
@@ -24,7 +24,7 @@ impl<'a> Legend<'a> {
     pub fn new(legend: &'a [[&'a str; 2]]) -> Self {
         Self {
             legend,
-            height: legend.len() as u16 * 2 + 5,
+            height: legend.len() as u16 * 2 + 3,
         }
     }
 }
