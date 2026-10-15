@@ -2,6 +2,7 @@ use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// `Exit` is not a failure: it is how Ctrl+C unwinds out of the nested rituals.
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Ghosted! 👻")]

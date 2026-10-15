@@ -6,21 +6,23 @@ use ratatui::{
 
 use crate::{
     error::{Error, Result},
-    utility::Terminal,
+    ritual::{Grimoire, Haunted},
 };
 
 const MIN_WIDTH: u16 = 32;
 const MIN_HEIGHT: u16 = 20;
 
+/// Whether the terminal is smaller than the UI can be drawn in.
 pub fn should_resize(width: u16, height: u16) -> bool {
     width < MIN_WIDTH || height < MIN_HEIGHT
 }
 
-pub fn run(terminal: &mut Terminal) -> Result<()> {
+/// Shows "Text too big!" until the terminal is large enough again; Ctrl+C still quits.
+pub fn summon(grimoire: &mut Grimoire) -> Result<()> {
     loop {
-        terminal.draw(|frame| {
-            let area = frame.area();
-            frame.render_widget(
+        grimoire.bewitch(|page| {
+            let area = page.area();
+            page.render_widget(
                 "Text too big!".to_line().centered(),
                 Rect::new(0, area.height / 2, area.width, 1),
             );

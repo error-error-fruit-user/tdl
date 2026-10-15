@@ -21,14 +21,16 @@ mod library;
 mod network;
 mod profile;
 mod resize;
-mod scene;
-mod utility;
+mod ritual;
+mod status;
 mod wad;
 mod warning;
 
+/// An optional first argument replaces the platform config/data directories with
+/// `<arg>/config` and `<arg>/data`.
 fn main() {
     let passed_directory = std::env::args().nth(1);
-    if let Err(error) = ratatui::run(|terminal| Launcher::evoke(terminal, passed_directory)) {
+    if let Err(error) = ratatui::run(|grimoire| Launcher::summon(grimoire, passed_directory)) {
         eprintln!("{error}");
         std::io::stderr().flush().unwrap();
     }

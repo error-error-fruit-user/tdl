@@ -5,10 +5,12 @@ use std::{
     ops::Deref,
     path::Path,
     process::{Command, Stdio},
+    time::Duration,
 };
 
 use crate::{error::Result, profile::Profile, wad::Wad};
 
+/// Runs UZDoom to completion, blocking the launcher. Output goes to `session.log` in `data_subdir`.
 fn execute(uzdoom: &OsStr, profile: &Profile, args: &[&OsStr], data_subdir: &Path) -> Result<()> {
     let mut command = Command::new(uzdoom);
     command
@@ -32,9 +34,13 @@ fn execute(uzdoom: &OsStr, profile: &Profile, args: &[&OsStr], data_subdir: &Pat
         };
     }
     doom.wait()?;
+    while ratatui::crossterm::event::poll(Duration::ZERO)? {
+        ratatui::crossterm::event::read()?;
+    }
     Ok(())
 }
 
+/// Plays offline, with saves kept in the profile's own folder.
 pub fn launch(
     uzdoom: &OsStr,
     base_wad: Option<&OsStr>,
@@ -52,6 +58,7 @@ pub fn launch(
     execute(uzdoom, profile, &args, data_subdir)
 }
 
+/// Starts a multiplayer game as host. An empty `map` lets UZDoom pick the starting map.
 pub fn host(
     uzdoom: &OsStr,
     base_wad: Option<&OsStr>,
@@ -83,6 +90,7 @@ pub fn host(
     execute(uzdoom, profile, &args, data_subdir)
 }
 
+/// Joins the game hosted at `ip`.
 pub fn join(
     uzdoom: &OsStr,
     base_wad: Option<&OsStr>,

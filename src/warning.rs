@@ -1,5 +1,4 @@
 use ratatui::{
-    Frame,
     crossterm::event::KeyCode,
     style::{Color, Stylize},
     text::ToLine,
@@ -7,10 +6,10 @@ use ratatui::{
 
 use crate::{
     error::Result,
-    scene::Scene,
-    utility::{self, Phase, Terminal},
+    ritual::{self, Grimoire, Page, Phase, Ritual},
 };
 
+/// A one-line popup dismissed by any key.
 pub struct Warning<'a> {
     message: &'a str,
     width: u16,
@@ -30,58 +29,59 @@ impl<'a> Warning<'a> {
 }
 
 impl Warning<'_> {
-    pub fn evoke(terminal: &mut Terminal, message: &str) -> Result<()> {
-        Warning::new(message).invoke(terminal)
+    /// Shows `message` and waits for a key.
+    pub fn summon(grimoire: &mut Grimoire, message: &str) -> Result<()> {
+        Warning::new(message).invoke(grimoire)
     }
 
-    pub fn uzdoom_not_selected(terminal: &mut Terminal) -> Result<()> {
-        Self::evoke(terminal, "No UZDoom path selected!")
+    pub fn uzdoom_not_selected(grimoire: &mut Grimoire) -> Result<()> {
+        Self::summon(grimoire, "No UZDoom path selected!")
     }
 
-    pub fn empty_profile_name(terminal: &mut Terminal) -> Result<()> {
-        Self::evoke(terminal, "Profile name cannot be empty")
+    pub fn empty_profile_name(grimoire: &mut Grimoire) -> Result<()> {
+        Self::summon(grimoire, "Profile name cannot be empty")
     }
 
-    pub fn profile_already_exists(terminal: &mut Terminal) -> Result<()> {
-        Self::evoke(terminal, "Profile name already exists")
+    pub fn profile_already_exists(grimoire: &mut Grimoire) -> Result<()> {
+        Self::summon(grimoire, "Profile name already exists")
     }
 
-    pub fn host_unreachable(terminal: &mut Terminal) -> Result<()> {
-        Self::evoke(terminal, "Could not connect to host!")
+    pub fn host_unreachable(grimoire: &mut Grimoire) -> Result<()> {
+        Self::summon(grimoire, "Could not connect to host!")
     }
 
-    pub fn wad_unreadable(terminal: &mut Terminal) -> Result<()> {
-        Self::evoke(terminal, "A wad file could not be read!")
+    pub fn wad_unreadable(grimoire: &mut Grimoire) -> Result<()> {
+        Self::summon(grimoire, "A wad file could not be read!")
     }
 
-    pub fn host_failed(terminal: &mut Terminal) -> Result<()> {
-        Self::evoke(terminal, "Could not start the host server!")
+    pub fn host_failed(grimoire: &mut Grimoire) -> Result<()> {
+        Self::summon(grimoire, "Could not start the host server!")
     }
 
-    pub fn download_failed(terminal: &mut Terminal) -> Result<()> {
-        Self::evoke(terminal, "Download failed!")
+    pub fn download_failed(grimoire: &mut Grimoire) -> Result<()> {
+        Self::summon(grimoire, "Download failed!")
     }
 }
 
-impl Scene for Warning<'_> {
+impl Ritual for Warning<'_> {
     type Return = ();
 
-    fn render(&mut self, frame: &mut Frame) {
-        let (window, mut window_area, ..) = utility::new_window(
+    fn render(&mut self, page: &mut Page) {
+        let (window, mut window_area, ..) = ritual::conjure_window(
             Self::TITLE,
             self.width,
             Self::HEIGHT,
             Self::BORDER_COLOR,
-            frame.area(),
+            page.area(),
         );
-        frame.render_widget(window, window_area);
+        page.render_widget(window, window_area);
         window_area.width -= 2;
         window_area.x += 1;
         window_area.y += 2;
-        frame.render_widget(self.message.to_line().centered().light_red(), window_area);
+        page.render_widget(self.message.to_line().centered().light_red(), window_area);
     }
 
-    fn prompt(&mut self, _: &mut Terminal, _: KeyCode) -> Result<Phase<Self::Return>> {
+    fn prompt(&mut self, _: &mut Grimoire, _: KeyCode) -> Result<Phase<Self::Return>> {
         Ok(Phase::Return(()))
     }
 }

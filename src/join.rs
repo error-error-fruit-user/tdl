@@ -1,12 +1,12 @@
-use ratatui::{Frame, crossterm::event::KeyCode, style::Color};
+use ratatui::{crossterm::event::KeyCode, style::Color};
 
 use crate::{
     error::Result,
     legend::Legend,
-    scene::Scene,
-    utility::{self, Phase, Terminal},
+    ritual::{self, Grimoire, Page, Phase, Ritual},
 };
 
+/// Prompts for the IP address of the host to join. Only digits and dots are accepted.
 pub struct Join {
     ip: String,
 }
@@ -23,36 +23,37 @@ impl Join {
         Self { ip: String::new() }
     }
 
-    pub fn evoke(terminal: &mut Terminal) -> Result<Option<String>> {
-        Self::new().invoke(terminal)
+    /// `None` if cancelled.
+    pub fn summon(grimoire: &mut Grimoire) -> Result<Option<String>> {
+        Self::new().invoke(grimoire)
     }
 }
 
-impl Scene for Join {
+impl Ritual for Join {
     type Return = Option<String>;
 
-    fn render(&mut self, frame: &mut Frame) {
-        let area = frame.area();
-        let (window, mut window_area, indicator, indicator_area) = utility::new_window(
+    fn render(&mut self, page: &mut Page) {
+        let area = page.area();
+        let (window, mut window_area, indicator, indicator_area) = ritual::conjure_window(
             Self::TITLE,
             Self::WIDTH,
             Self::HEIGHT,
             Self::BORDER_COLOR,
             area,
         );
-        frame.render_widget(window, window_area);
-        frame.render_widget(&indicator, indicator_area);
+        page.render_widget(window, window_area);
+        page.render_widget(&indicator, indicator_area);
 
         window_area.y += 2;
         let (line, ip_position) =
-            utility::new_query(Self::IP_LABEL, &self.ip, area.width, window_area.y);
-        frame.render_widget(line, window_area);
-        frame.set_cursor_position(ip_position);
+            ritual::conjure_query(Self::IP_LABEL, &self.ip, area.width, window_area.y);
+        page.render_widget(line, window_area);
+        page.set_cursor_position(ip_position);
     }
 
     fn prompt(
         &mut self,
-        terminal: &mut Terminal,
+        grimoire: &mut Grimoire,
         key_code: KeyCode,
     ) -> Result<Phase<Self::Return>> {
         match key_code {
@@ -67,7 +68,7 @@ impl Scene for Join {
                 Ok(Phase::Render)
             }
             KeyCode::Char('?') => {
-                Legend::evoke(terminal, Self::LEGEND)?;
+                Legend::summon(grimoire, Self::LEGEND)?;
                 Ok(Phase::Render)
             }
             _ => Ok(Phase::Prompt),

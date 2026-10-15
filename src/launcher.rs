@@ -2,7 +2,6 @@ use std::{ops::Deref, path::Path};
 
 use directories::ProjectDirs;
 use ratatui::{
-    Frame,
     crossterm::event::KeyCode,
     style::{Color, Style, Stylize},
     text::{Line, ToLine},
@@ -21,12 +20,14 @@ use crate::{
     legend::Legend,
     library::Library,
     resize,
-    scene::Scene,
-    utility::{self, Phase, Terminal},
+    ritual::{self, Grimoire, Haunted, Page, Phase, Ritual},
     wad::Wad,
     warning::Warning,
 };
 
+/// The main screen: a table of profiles followed by a `+` row for creating a new one.
+///
+/// Owns the [`Library`] and writes the config on quit.
 pub struct Launcher {
     library: Library,
     table_state: TableState,
@@ -53,6 +54,7 @@ impl Launcher {
         ["Esc", "Save and Quit"],
     ];
 
+    /// Uses `<passed_dir>/{config,data}` when given, otherwise the platform's standard directories.
     pub fn new(passed_dir: Option<String>) -> Self {
         let (config_dir, data_dir) = if let Some(pass) = passed_dir {
             let pass = Path::new(&pass);
@@ -71,23 +73,25 @@ impl Launcher {
         }
     }
 
-    pub fn evoke(terminal: &mut Terminal, passed_dir: Option<String>) -> Result<()> {
-        Self::new(passed_dir).invoke(terminal)
+    /// Builds the launcher and runs it until the user quits.
+    pub fn summon(grimoire: &mut Grimoire, passed_dir: Option<String>) -> Result<()> {
+        Self::new(passed_dir).invoke(grimoire)
     }
 }
 
-impl Scene for Launcher {
+impl Ritual for Launcher {
     type Return = ();
 
-    fn attach(&mut self, terminal: &mut Terminal) -> Result<()> {
-        let area = terminal.get_frame().area();
+    /// Shows the "Text too big!" screen first if the terminal starts out too small.
+    fn attach(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+        let area = grimoire.consult().area();
         if resize::should_resize(area.width, area.height) {
-            resize::run(terminal)?;
+            resize::summon(grimoire)?;
         }
         Ok(())
     }
 
-    fn render(&mut self, frame: &mut Frame) {
+    fn render(&mut self, page: &mut Page) {
         let header = Row::new(Self::HEADER.iter().map(|h| h.to_line().centered())).on_dark_gray();
         let rows = self
             .library
@@ -103,25 +107,25 @@ impl Scene for Launcher {
                 "+".to_line().centered(),
             ))));
 
-        let (window, window_area, indicator, indicator_area) = utility::new_window(
+        let (window, window_area, indicator, indicator_area) = ritual::conjure_window(
             Self::TITLE,
             Self::WIDTH,
             Self::HEIGHT,
             Self::BORDER_COLOR,
-            frame.area(),
+            page.area(),
         );
-        frame.render_widget(indicator, indicator_area);
+        page.render_widget(indicator, indicator_area);
 
         let table = Table::new(rows, Self::CONSTRAINTS)
             .header(header)
             .block(window)
             .row_highlight_style(Style::new().black().bg(Self::BORDER_COLOR));
-        frame.render_stateful_widget(table, window_area, &mut self.table_state);
+        page.render_stateful_widget(table, window_area, &mut self.table_state);
     }
 
     fn prompt(
         &mut self,
-        terminal: &mut Terminal,
+        grimoire: &mut Grimoire,
         key_code: KeyCode,
     ) -> Result<Phase<Self::Return>> {
         let index = self.table_state.selected_mut().as_mut().unwrap();
@@ -143,11 +147,11 @@ impl Scene for Launcher {
                         )?;
                         Ok(Phase::Prompt)
                     } else {
-                        Warning::uzdoom_not_selected(terminal)?;
+                        Warning::uzdoom_not_selected(grimoire)?;
                         Ok(Phase::Render)
                     }
                 } else {
-                    if let Some(profile) = Editor::evoke_blank(terminal, &self.library.profiles)? {
+                    if let Some(profile) = Editor::summon_blank(grimoire, &self.library.profiles)? {
                         self.library.insert(index, profile);
                     }
                     Ok(Phase::Render)
@@ -159,11 +163,11 @@ impl Scene for Launcher {
                         .uzdoom(&self.library.config)
                         .is_some()
                     {
-                        if let Some(settings) = Host::evoke(terminal)? {
-                            hosting::host(terminal, &self.library, *index, settings)?;
+                        if let Some(settings) = Host::summon(grimoire)? {
+                            hosting::summon(grimoire, &self.library, *index, settings)?;
                         }
                     } else {
-                        Warning::uzdoom_not_selected(terminal)?;
+                        Warning::uzdoom_not_selected(grimoire)?;
                     }
                     Ok(Phase::Render)
                 } else {
@@ -171,8 +175,8 @@ impl Scene for Launcher {
                 }
             }
             KeyCode::Char('n') => {
-                if let Some(ip) = Join::evoke(terminal)? {
-                    joining::join(terminal, &mut self.library, index, &ip)?;
+                if let Some(ip) = Join::summon(grimoire)? {
+                    joining::summon(grimoire, &mut self.library, index, &ip)?;
                 }
                 Ok(Phase::Render)
             }
@@ -217,14 +221,14 @@ impl Scene for Launcher {
                 }
             }
             KeyCode::Char('a') => {
-                if let Some(profile) = Editor::evoke_blank(terminal, &self.library.profiles)? {
+                if let Some(profile) = Editor::summon_blank(grimoire, &self.library.profiles)? {
                     self.library.insert(index, profile);
                 }
                 Ok(Phase::Render)
             }
             KeyCode::Char('e') => {
                 if *index != self.library.profiles.len() {
-                    Editor::evoke_existing(terminal, &mut self.library, *index)?;
+                    Editor::summon_existing(grimoire, &mut self.library, *index)?;
                     Ok(Phase::Render)
                 } else {
                     Ok(Phase::Prompt)
@@ -232,7 +236,7 @@ impl Scene for Launcher {
             }
             KeyCode::Char('d') => {
                 if *index != self.library.profiles.len() {
-                    if Dialog::should_delete(terminal, &self.library.profiles[*index].name)? {
+                    if Dialog::should_delete(grimoire, &self.library.profiles[*index].name)? {
                         self.library.remove(index);
                     }
                     Ok(Phase::Render)
@@ -260,7 +264,7 @@ impl Scene for Launcher {
                 Ok(Phase::Prompt)
             }
             KeyCode::Esc => {
-                if Dialog::should_quit(terminal)? {
+                if Dialog::should_quit(grimoire)? {
                     self.library
                         .config
                         .write(&self.library.config_dir, &self.library.profiles);
@@ -270,7 +274,7 @@ impl Scene for Launcher {
                 }
             }
             KeyCode::Char('?') => {
-                Legend::evoke(terminal, Self::LEGEND)?;
+                Legend::summon(grimoire, Self::LEGEND)?;
                 Ok(Phase::Render)
             }
             _ => Ok(Phase::Prompt),

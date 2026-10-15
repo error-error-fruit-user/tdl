@@ -19,8 +19,13 @@ use crate::{
 };
 
 pub const DEFAULT_PORT: u16 = 8080;
+/// Upper bound on wads a host may ask a joiner to download.
 pub const MAX_FILES: usize = 255;
 
+/// What a host serves at `/manifest`: its wads in load order, identified by hash.
+///
+/// Files are then requested by hash at `/file/<hash>`. The manifest comes from an untrusted peer,
+/// so [`Manifest::fetch`] validates it and downloads are verified against it.
 #[derive(Deserialize, Serialize)]
 pub struct Manifest {
     pub entries: Vec<Entry>,
@@ -28,6 +33,7 @@ pub struct Manifest {
 }
 
 impl Manifest {
+    /// Describes `wads` for joiners. Fails if a wad can't be read, since the host couldn't serve it.
     pub fn build(wads: &[Wad], base_wad_hash: String) -> Result<Self> {
         let entries = wads
             .iter()
@@ -48,6 +54,7 @@ impl Manifest {
         })
     }
 
+    /// Downloads and validates the host's manifest. Rejects too many files and unsafe names or hashes.
     pub fn fetch(ip: &str) -> Result<Self> {
         let response = new_agent()
             .get(&format!("{}/manifest", base_url(ip)))
@@ -64,6 +71,7 @@ impl Manifest {
         Ok(manifest)
     }
 
+    /// Serves until the returned guard is dropped. `paths` must be in the same order as `entries`.
     pub fn serve(self, port: u16, paths: Vec<OsString>) -> Result<ServerGuard> {
         let manifest =
             rmp_serde::to_vec(&self).map_err(|_| Error::Download("Could not encode file list"))?;
@@ -110,10 +118,12 @@ impl Manifest {
         })
     }
 
+    /// An empty hash means the host has no base wad selected, so anything matches.
     pub fn base_wad_matches(&self, base_wad: Option<&Wad>) -> bool {
         self.base_wad_hash.is_empty() || base_wad.is_none_or(|w| w.hash == self.base_wad_hash)
     }
 
+    /// Compatible means identical wads in identical order; names and paths don't matter.
     pub fn is_compatible_with(&self, profile: &Profile) -> bool {
         if self.entries.len() != profile.wads.len() {
             return false;
@@ -127,6 +137,7 @@ impl Manifest {
     }
 }
 
+/// One wad in a [`Manifest`].
 #[derive(Deserialize, Serialize)]
 pub struct Entry {
     pub name: OsString,
@@ -140,6 +151,7 @@ impl Entry {
     }
 
     // name and hash become path components when downloading, so a host must not choose them freely
+    /// Whether `name` is a bare file name and `hash` a BLAKE3 hex digest.
     fn is_safe(&self) -> bool {
         Path::new(&self.name).file_name() == Some(&self.name)
             && self.hash.len() == 64
@@ -147,6 +159,7 @@ impl Entry {
     }
 }
 
+/// An HTTP agent with timeouts short enough that an unreachable host fails quickly.
 fn new_agent() -> ureq::Agent {
     ureq::Agent::config_builder()
         .timeout_connect(Some(Duration::from_secs(3)))
@@ -155,11 +168,13 @@ fn new_agent() -> ureq::Agent {
         .new_agent()
 }
 
+/// Strips any `:port` the user typed; the host always serves on [`DEFAULT_PORT`].
 fn base_url(ip: &str) -> String {
     let host = ip.rsplit_once(":").map_or(ip, |(h, _)| h);
     format!("http://{host}:{DEFAULT_PORT}")
 }
 
+/// Downloads every entry in order, returning the wads at their local paths.
 pub fn download(ip: &str, entries: &[Entry], downloads_dir: &Path) -> Result<Vec<Wad>> {
     let agent = new_agent();
     entries
@@ -168,6 +183,8 @@ pub fn download(ip: &str, entries: &[Entry], downloads_dir: &Path) -> Result<Vec
         .collect()
 }
 
+/// Reuses a previous download if present. Otherwise downloads to `<name>.part` and renames it
+/// only after verification, so a partial or wrong file is never mistaken for a finished one.
 fn download_entry(
     agent: &ureq::Agent,
     ip: &str,
@@ -193,6 +210,7 @@ fn download_entry(
     Ok(Wad::new(wad_path.into(), entry.hash.clone()))
 }
 
+/// Streams the file to `part`, failing if it grows past the manifest's size or its hash differs.
 fn download_part(agent: &ureq::Agent, ip: &str, entry: &Entry, part: &Path) -> Result<()> {
     let url = format!("{}/file/{}", base_url(ip), entry.hash);
     let mut reader = agent.get(&url).call()?.into_body().into_reader();
@@ -224,6 +242,7 @@ fn download_part(agent: &ureq::Agent, ip: &str, entry: &Entry, part: &Path) -> R
     Ok(())
 }
 
+/// Stops and joins the server thread on drop, so the host is served for exactly as long as it's held.
 pub struct ServerGuard {
     should_quit: Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,

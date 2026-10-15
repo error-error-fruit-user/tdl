@@ -1,12 +1,12 @@
-use ratatui::{Frame, crossterm::event::KeyCode, style::Color};
+use ratatui::{crossterm::event::KeyCode, style::Color};
 
 use crate::{
     error::Result,
     legend::Legend,
-    scene::Scene,
-    utility::{self, Phase, Terminal},
+    ritual::{self, Grimoire, Page, Phase, Ritual},
 };
 
+/// Collects the host settings (player count, mode, map) in a single form.
 pub struct Host {
     settings: Settings,
     index: Index,
@@ -46,34 +46,35 @@ impl Host {
         }
     }
 
-    pub fn evoke(terminal: &mut Terminal) -> Result<Option<Settings>> {
-        Self::new().invoke(terminal)
+    /// `None` if cancelled.
+    pub fn summon(grimoire: &mut Grimoire) -> Result<Option<Settings>> {
+        Self::new().invoke(grimoire)
     }
 }
 
-impl Scene for Host {
+impl Ritual for Host {
     type Return = Option<Settings>;
 
-    fn render(&mut self, frame: &mut Frame) {
-        let area = frame.area();
-        let (window, mut window_area, indicator, indicator_area) = utility::new_window(
+    fn render(&mut self, page: &mut Page) {
+        let area = page.area();
+        let (window, mut window_area, indicator, indicator_area) = ritual::conjure_window(
             Self::TITLE,
             Self::WIDTH,
             Self::HEIGHT,
             Self::BORDER_COLOR,
             area,
         );
-        frame.render_widget(window, window_area);
-        frame.render_widget(indicator, indicator_area);
+        page.render_widget(window, window_area);
+        page.render_widget(indicator, indicator_area);
 
         window_area.y += 2;
-        let (player_count, player_count_position) = utility::new_query(
+        let (player_count, player_count_position) = ritual::conjure_query(
             Self::PLAYER_COUNT_LABEL,
             &self.settings.player_count,
             area.width,
             window_area.y,
         );
-        frame.render_widget(player_count, window_area);
+        page.render_widget(player_count, window_area);
 
         window_area.y += 2;
         let mode = if self.settings.is_deathmatch {
@@ -82,29 +83,29 @@ impl Scene for Host {
             "Cooperative"
         };
         let (mode, mode_position) =
-            utility::new_query(Self::MODE_LABEL, mode, area.width, window_area.y);
-        frame.render_widget(mode, window_area);
+            ritual::conjure_query(Self::MODE_LABEL, mode, area.width, window_area.y);
+        page.render_widget(mode, window_area);
 
         window_area.y += 2;
-        let (map, map_position) = utility::new_query(
+        let (map, map_position) = ritual::conjure_query(
             Self::MAP_LABEL,
             &self.settings.map,
             area.width,
             window_area.y,
         );
-        frame.render_widget(map, window_area);
+        page.render_widget(map, window_area);
 
         let position = match self.index {
             Index::PlayerCount => player_count_position,
             Index::Mode => mode_position,
             Index::Map => map_position,
         };
-        frame.set_cursor_position(position);
+        page.set_cursor_position(position);
     }
 
     fn prompt(
         &mut self,
-        terminal: &mut Terminal,
+        grimoire: &mut Grimoire,
         key_code: KeyCode,
     ) -> Result<Phase<Option<Settings>>> {
         match key_code {
@@ -138,8 +139,8 @@ impl Scene for Host {
             }
             KeyCode::Esc => Ok(Phase::Return(None)),
             KeyCode::Char('?') => {
-                Legend::evoke(
-                    terminal,
+                Legend::summon(
+                    grimoire,
                     match self.index {
                         Index::PlayerCount => Self::PLAYER_COUNT_LEGEND,
                         Index::Mode => Self::MODE_LEGEND,
@@ -153,6 +154,7 @@ impl Scene for Host {
     }
 }
 
+/// The options for a hosted game. `player_count` stays a string since it is passed straight to UZDoom.
 #[derive(Clone)]
 pub struct Settings {
     pub player_count: String,
@@ -170,6 +172,7 @@ impl Settings {
     }
 }
 
+/// Which field of the form has focus.
 #[derive(Eq, PartialEq)]
 enum Index {
     PlayerCount,

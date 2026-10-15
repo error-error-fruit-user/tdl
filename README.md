@@ -55,7 +55,15 @@ The host serves its wad list on port **8080** while the game runs, so that port 
 
 ### Data locations
 
-Config and profiles live in your platform's config directory, saves and downloads in its data directory (on Linux, `~/.config/tdl` and `~/.local/share/tdl`). To use a different location, pass a directory as the first argument:
+Config and profiles live in your platform's config directory, saves, logs and downloads in its data directory:
+
+| OS | Config | Data |
+| --- | --- | --- |
+| Linux | `~/.config/tdl` | `~/.local/share/tdl` |
+| macOS | `~/Library/Application Support/error.error.fruit.eef.tdl` | same as config |
+| Windows | `%APPDATA%\eef\tdl\config` | `%APPDATA%\eef\tdl\data` |
+
+To use a different location, pass a directory as the first argument:
 
 ```sh
 tdl /path/to/dir   # uses /path/to/dir/config and /path/to/dir/data

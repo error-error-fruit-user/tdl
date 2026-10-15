@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use ratatui::{
-    Frame,
     crossterm::event::KeyCode,
     layout::{Alignment, Position, Rect},
     style::{Color, Style, Stylize},
@@ -16,12 +15,15 @@ use crate::{
     legend::Legend,
     library::Library,
     profile::Profile,
-    scene::Scene,
-    utility::{self, Phase, Terminal},
+    ritual::{self, Grimoire, Page, Phase, Ritual},
     wad::Wad,
     warning::Warning,
 };
 
+/// Creates or edits one profile; `Enter`/`Esc` both finish, and an empty untouched profile is discarded.
+///
+/// `profiles` is every existing profile, used to reject duplicate names; when editing, the
+/// profile's own entry is excluded via `skipped_index`.
 pub struct Editor<'a> {
     profile: Profile,
     profiles: &'a [Profile],
@@ -54,24 +56,27 @@ impl<'a> Editor<'a> {
         ["I", "Select Ini"],
     ];
 
-    pub fn evoke_blank(
-        terminal: &mut Terminal,
+    /// Creates a profile. `None` if cancelled or left empty.
+    pub fn summon_blank(
+        grimoire: &mut Grimoire,
         profiles: &'a [Profile],
     ) -> Result<Option<Profile>> {
-        Self::new(profiles).invoke(terminal)
+        Self::new(profiles).invoke(grimoire)
     }
 
-    pub fn evoke_existing(
-        terminal: &mut Terminal,
+    /// Edits `library.profiles[index]` and saves the result. Cancelling keeps the original.
+    pub fn summon_existing(
+        grimoire: &mut Grimoire,
         library: &mut Library,
         index: usize,
     ) -> Result<()> {
-        if let Some(profile) = Editor::edit(&library.profiles, index).invoke(terminal)? {
+        if let Some(profile) = Editor::edit(&library.profiles, index).invoke(grimoire)? {
             library.replace(index, profile);
         }
         Ok(())
     }
 
+    /// Starts on the name field.
     fn new(profiles: &'a [Profile]) -> Self {
         Self {
             profile: Profile::default(),
@@ -82,6 +87,7 @@ impl<'a> Editor<'a> {
         }
     }
 
+    /// Starts on the wad list, with the existing profile loaded.
     fn edit(profiles: &'a [Profile], index: usize) -> Self {
         Self {
             profile: profiles[index].clone(),
@@ -91,6 +97,7 @@ impl<'a> Editor<'a> {
         }
     }
 
+    /// The cursor belongs in the window's title, which shows the name being typed.
     fn get_cursor_position(&self, area: Rect) -> Position {
         Position::new(
             area.width / 2 + self.profile.name.len() as u16 / 2,
@@ -99,25 +106,25 @@ impl<'a> Editor<'a> {
     }
 }
 
-impl Scene for Editor<'_> {
+impl Ritual for Editor<'_> {
     type Return = Option<Profile>;
 
-    fn render(&mut self, frame: &mut Frame) {
-        let area = frame.area();
-        let (window, window_area, indicator, indicator_area) = utility::new_window(
+    fn render(&mut self, page: &mut Page) {
+        let area = page.area();
+        let (window, window_area, indicator, indicator_area) = ritual::conjure_window(
             &self.profile.name,
             Self::WIDTH,
             Self::HEIGHT,
             Self::BORDER_COLOR,
             area,
         );
-        frame.render_widget(indicator, indicator_area);
+        page.render_widget(indicator, indicator_area);
 
         let paths: Vec<_> = self
             .profile
             .wads
             .iter()
-            .map(|m| Path::new(&m.path).file_name().unwrap().to_string_lossy())
+            .map(|w| Path::new(&w.path).file_name().unwrap().to_string_lossy())
             .collect();
         let header = Row::new(
             Self::HEADER
@@ -144,13 +151,13 @@ impl Scene for Editor<'_> {
         } else {
             table
         };
-        frame.render_stateful_widget(table, window_area, &mut self.table_state);
+        page.render_stateful_widget(table, window_area, &mut self.table_state);
         if !self.editing_wads {
-            frame.set_cursor_position(self.get_cursor_position(area));
+            page.set_cursor_position(self.get_cursor_position(area));
         }
     }
 
-    fn prompt(&mut self, terminal: &mut Terminal, key_code: KeyCode) -> Result<Phase<Self::Tea>> {
+    fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Tea>> {
         let index = self.table_state.selected_mut().as_mut().unwrap();
         match key_code {
             KeyCode::Esc | KeyCode::Enter => {
@@ -161,7 +168,7 @@ impl Scene for Editor<'_> {
                     {
                         Ok(Phase::Return(None))
                     } else {
-                        Warning::empty_profile_name(terminal)?;
+                        Warning::empty_profile_name(grimoire)?;
                         Ok(Phase::Render)
                     }
                 } else if self
@@ -170,7 +177,7 @@ impl Scene for Editor<'_> {
                     .enumerate()
                     .any(|(i, p)| Some(i) != self.skipped_index && p.name == self.profile.name)
                 {
-                    Warning::profile_already_exists(terminal)?;
+                    Warning::profile_already_exists(grimoire)?;
                     Ok(Phase::Render)
                 } else {
                     Ok(Phase::Return(Some(self.profile.clone())))
@@ -283,7 +290,7 @@ impl Scene for Editor<'_> {
             KeyCode::Char('d') => {
                 if *index != self.profile.wads.len() {
                     if Dialog::should_delete(
-                        terminal,
+                        grimoire,
                         &Path::new(&self.profile.wads[*index].path)
                             .file_name()
                             .unwrap()
@@ -334,7 +341,7 @@ impl Scene for Editor<'_> {
                 } else {
                     Self::NAMING_LEGEND
                 };
-                Legend::evoke(terminal, legend)?;
+                Legend::summon(grimoire, legend)?;
                 Ok(Phase::Render)
             }
             _ => Ok(Phase::Prompt),
