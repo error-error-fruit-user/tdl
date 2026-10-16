@@ -1,12 +1,13 @@
-//! The command line: `tdl [--vault <folder>] [--no-splash]`.
+//! The command line: `tdl [--vault <folder>] [--no-splash] [--music]`.
 
 pub const USAGE: &str = "\
-Usage: tdl [--vault <folder>] [--no-splash]
+Usage: tdl [--vault <folder>] [--no-splash] [--music]
 
 Options:
   --vault <folder>   Keep the config and data in <folder>/config and <folder>/data
                      (the folder on its own, `tdl <folder>`, still works)
   --no-splash        Go straight to the launcher
+  --music            Keep the music playing after the splash screen
   -h, --help         Show this help";
 
 /// What was asked for on the command line.
@@ -16,6 +17,8 @@ pub struct Cli {
     pub vault: Option<String>,
     /// Skips the splash screen.
     pub no_splash: bool,
+    /// Keeps the music playing in the launcher, not just on the splash screen.
+    pub music: bool,
 }
 
 impl Cli {
@@ -25,9 +28,14 @@ impl Cli {
         let mut args = args.into_iter();
         let mut vault = None;
         let mut no_splash = false;
+        let mut music = false;
         while let Some(arg) = args.next() {
             if arg == "--no-splash" {
                 no_splash = true;
+                continue;
+            }
+            if arg == "--music" {
+                music = true;
                 continue;
             }
             let folder = if arg == "--vault" {
@@ -43,7 +51,11 @@ impl Cli {
                 return Err("The vault folder was given more than once".to_string());
             }
         }
-        Ok(Self { vault, no_splash })
+        Ok(Self {
+            vault,
+            no_splash,
+            music,
+        })
     }
 }
 
@@ -78,6 +90,13 @@ mod tests {
     }
 
     #[test]
+    fn music_is_off_unless_asked_for() {
+        assert!(!parse(&[]).unwrap().music);
+        assert!(parse(&["--music"]).unwrap().music);
+        assert!(parse(&["--music", "--vault", "/tmp/v"]).unwrap().music);
+    }
+
+    #[test]
     fn the_folder_alone_still_works() {
         assert_eq!(parse(&["/tmp/v"]), vault("/tmp/v"));
     }
@@ -109,6 +128,7 @@ mod tests {
         let both = Cli {
             vault: Some("/tmp/v".into()),
             no_splash: true,
+            ..Cli::default()
         };
         assert_eq!(parse(&["--vault", "/tmp/v", "--no-splash"]), Ok(both));
         assert_eq!(

@@ -83,7 +83,7 @@ To use a different location, pass a vault folder:
 tdl --vault /path/to/dir   # uses /path/to/dir/config and /path/to/dir/data
 ```
 
-The fire splash plays until you press a key; `tdl --no-splash` goes straight to the launcher.
+The fire splash plays until you press a key; `tdl --no-splash` goes straight to the launcher. The splash plays "Inevitable Doom"; `tdl --music` keeps it going in the launcher.
 
 ## Tuning the look
 
@@ -107,6 +107,10 @@ vhs demo.tape
 ```
 
 The tape records ten seconds of the splash screen into `demo.gif`. It runs against an empty throwaway vault in `/tmp`, so your real profiles are never read or written.
+
+## Credits
+
+- Music: "Inevitable Doom" by celestialghost8 (CC0), played on the splash screen (and in the launcher with `--music`)
 
 ## License
 

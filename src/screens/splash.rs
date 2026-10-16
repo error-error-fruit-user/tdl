@@ -12,6 +12,7 @@ use ratatui::{
 
 use crate::{
     error::{Error, Result},
+    music,
     ritual::{Grimoire, Haunted},
     theme,
     widgets::fire::Fire,
@@ -76,7 +77,10 @@ pub fn summon(grimoire: &mut Grimoire) -> Result<()> {
                 {
                     return Err(Error::Exit);
                 }
-                Event::Key(key) if key.is_press() => return Ok(()),
+                Event::Key(key) if key.is_press() => {
+                    music::splash_over();
+                    return Ok(());
+                }
                 _ => {}
             }
         }

@@ -7,6 +7,7 @@ use crate::{cli::Cli, screens::launcher::Launcher};
 mod cli;
 mod error;
 mod layout;
+mod music;
 mod net;
 mod picker;
 mod popups;
@@ -30,6 +31,9 @@ fn main() {
         eprintln!("{message}\n\n{}", cli::USAGE);
         std::process::exit(2);
     });
+    if cli.music || !cli.no_splash {
+        music::start(cli.music);
+    }
     if let Err(error) =
         ratatui::run(|grimoire| Launcher::summon(grimoire, cli.vault, !cli.no_splash))
     {
