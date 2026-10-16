@@ -68,6 +68,7 @@ impl Launcher {
         ["D", "Delete"],
         ["U", "Select UZDoom"],
         ["W", "Select Base Wad"],
+        ["S", "Toggle Splash Screen"],
         ["Esc", "Save and Quit"],
     ];
 
@@ -109,7 +110,7 @@ impl Ritual for Launcher {
         if layout::is_too_small(area.width, area.height) {
             resize::summon(grimoire)?;
         }
-        if self.splash {
+        if self.splash && !self.vault.config.skip_splash {
             splash::summon(grimoire)?;
         }
         if self.vault.is_too_new() {
@@ -366,6 +367,19 @@ impl Ritual for Launcher {
                     self.vault.config.base_wad = Some(Wad::from_path(&path)?);
                 }
                 Ok(Phase::Prompt)
+            }
+            KeyCode::Char('s') => {
+                self.vault.config.skip_splash = !self.vault.config.skip_splash;
+                // 💾 saved right away: the splash is the first thing the next start shows
+                if self
+                    .vault
+                    .config
+                    .write(&self.vault.config_dir, &self.vault.profiles)
+                    .is_err()
+                {
+                    Warning::save_failed(grimoire)?;
+                }
+                Ok(Phase::Render)
             }
             KeyCode::Esc => {
                 if Dialog::should_quit(grimoire)? {

@@ -23,5 +23,6 @@ expression: "testing::draw(90, 28, |page| launcher.render(page))"
                                  ┏━━━━━━[ global ]━━━━━━┓
                                  ┃   uzdoom ■ uzdoom.sh ┃
                                  ┃ base wad ■ DOOM2.WAD ┃
+                                 ┃   splash ■ on        ┃
                                  ┗━━━━━━━━━━━━━━━━━━━━━━┛
                                            [?]

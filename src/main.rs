@@ -31,8 +31,8 @@ fn main() {
         eprintln!("{message}\n\n{}", cli::USAGE);
         std::process::exit(2);
     });
-    if cli.music || !cli.no_splash {
-        music::start(cli.music);
+    if cli.music {
+        music::start(true);
     }
     if let Err(error) =
         ratatui::run(|grimoire| Launcher::summon(grimoire, cli.vault, !cli.no_splash))

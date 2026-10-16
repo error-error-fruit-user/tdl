@@ -21,6 +21,9 @@ pub struct Config {
     /// The order profiles appear in the launcher. Kept in step with the profiles by [`Config::write`].
     #[serde(default)]
     pub profile_names: Vec<String>,
+    /// Goes straight to the launcher without the splash screen. Toggled with `S` in the launcher.
+    #[serde(default)]
+    pub skip_splash: bool,
 }
 
 impl Edition for Config {
@@ -42,5 +45,34 @@ impl Config {
     pub fn write(&mut self, directory: &Path, profiles: &[Profile]) -> io::Result<()> {
         self.profile_names = profiles.iter().map(|p| p.name.clone()).collect();
         self.save(&Self::path(directory))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_config_saved_before_the_splash_option_still_shows_the_splash() {
+        // the same data, minus the field that did not exist yet
+        let old = rmp_serde::to_vec_named(&old_config()).unwrap();
+        let config: Config = rmp_serde::from_slice(&old).unwrap();
+        assert!(!config.skip_splash);
+        assert_eq!(config.profile_names, ["brutal"]);
+    }
+
+    #[derive(Serialize)]
+    struct OldConfig {
+        uzdoom: Option<OsString>,
+        base_wad: Option<Wad>,
+        profile_names: Vec<String>,
+    }
+
+    fn old_config() -> OldConfig {
+        OldConfig {
+            uzdoom: None,
+            base_wad: None,
+            profile_names: vec!["brutal".to_string()],
+        }
     }
 }

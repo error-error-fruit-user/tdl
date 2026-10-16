@@ -49,15 +49,28 @@ const FRAME: Duration = Duration::from_millis(33);
 /// The fire fills the screen from this far down.
 const FIRE_TOP_PERCENT: u16 = 45;
 
-/// Plays the splash until a key is pressed. Ctrl+C still quits.
+/// Plays the splash, fading in from black, until a key is pressed, then fades it to black along
+/// with the music.
+/// Ctrl+C still quits.
 pub fn summon(grimoire: &mut Grimoire) -> Result<()> {
+    music::start(false);
     let seed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(1, |time| time.subsec_nanos());
     let mut fire: Option<Fire> = None;
     let start = Instant::now();
+    // when a key was pressed, which starts the fade
+    let mut leaving: Option<Instant> = None;
     loop {
         let elapsed = start.elapsed();
+        let fade_in = elapsed.as_secs_f32() / music::FADE_IN.as_secs_f32();
+        let fade_out = leaving.map_or(1.0, |at| {
+            1.0 - at.elapsed().as_secs_f32() / music::FADE.as_secs_f32()
+        });
+        let brightness = fade_in.min(fade_out).min(1.0);
+        if fade_out <= 0.0 {
+            return Ok(());
+        }
         grimoire.bewitch(|page| {
             let area = page.area();
             let flames = fire_area(area);
@@ -68,6 +81,7 @@ pub fn summon(grimoire: &mut Grimoire) -> Result<()> {
             };
             fire.step();
             paint(fire, elapsed, area, page.buffer_mut());
+            dim(page.buffer_mut(), brightness);
         })?;
         if event::poll(FRAME)? {
             match event::read()? {
@@ -77,13 +91,30 @@ pub fn summon(grimoire: &mut Grimoire) -> Result<()> {
                 {
                     return Err(Error::Exit);
                 }
-                Event::Key(key) if key.is_press() => {
+                Event::Key(key) if key.is_press() && leaving.is_none() => {
                     music::splash_over();
-                    return Ok(());
+                    leaving = Some(Instant::now());
                 }
                 _ => {}
             }
         }
+    }
+}
+
+/// Scales every color toward black: 1.0 leaves the frame as it is, 0.0 is fully dark.
+fn dim(buffer: &mut Buffer, brightness: f32) {
+    if brightness >= 1.0 {
+        return;
+    }
+    let scale = |color: Color| match color {
+        Color::Rgb(r, g, b) => {
+            let by = |channel: u8| (channel as f32 * brightness) as u8;
+            Color::Rgb(by(r), by(g), by(b))
+        }
+        other => other,
+    };
+    for cell in &mut buffer.content {
+        (cell.fg, cell.bg) = (scale(cell.fg), scale(cell.bg));
     }
 }
 
@@ -181,6 +212,16 @@ fn stamp(buffer: &mut Buffer, area: Rect, x: u16, y: u16, character: char, style
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dimming_scales_colors_toward_black() {
+        let mut buffer = Buffer::empty(Rect::new(0, 0, 1, 1));
+        buffer[(0, 0)].fg = Color::Rgb(200, 100, 50);
+        dim(&mut buffer, 0.5);
+        assert_eq!(buffer[(0, 0)].fg, Color::Rgb(100, 50, 25));
+        dim(&mut buffer, 0.0);
+        assert_eq!(buffer[(0, 0)].fg, Color::Rgb(0, 0, 0));
+    }
 
     #[test]
     fn every_row_of_the_logo_is_the_same_width() {

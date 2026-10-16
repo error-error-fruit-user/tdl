@@ -58,6 +58,7 @@ On first run, press `U` to select your UZDoom executable and `W` to select a bas
 | `D` | Delete a profile |
 | `U` | Select the UZDoom executable |
 | `W` | Select the base wad |
+| `S` | Toggle the splash screen on startup |
 | `Esc` | Save and quit |
 | `?` | Show the keys for the current screen |
 
@@ -83,7 +84,7 @@ To use a different location, pass a vault folder:
 tdl --vault /path/to/dir   # uses /path/to/dir/config and /path/to/dir/data
 ```
 
-The fire splash plays until you press a key; `tdl --no-splash` goes straight to the launcher. The splash plays "Inevitable Doom"; `tdl --music` keeps it going in the launcher.
+The fire splash plays until you press a key; `tdl --no-splash` goes straight to the launcher, and pressing `S` in the launcher turns the splash off (or back on) for good. The screen and music fade in, and fade out again when you press a key. The splash plays "Inevitable Doom"; `tdl --music` keeps it going in the launcher.
 
 ## Tuning the look
 

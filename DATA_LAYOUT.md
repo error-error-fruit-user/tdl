@@ -57,6 +57,7 @@ Every `.rite` file is MessagePack, a compact binary format, in a wrapper that re
 | `uzdoom` | Path to the UZDoom executable, used by profiles that don't set their own. |
 | `base_wad` | The default base wad (`path` and `hash`), used by profiles that don't set their own. |
 | `profile_names` | The profiles in the order the launcher shows them. |
+| `skip_splash` | `true` to go straight to the launcher without the splash screen. Missing in older files, which count as `false`. Toggled with `S` in the launcher. |
 
 **`.profiles/<name>.rite`** (`data`)
 

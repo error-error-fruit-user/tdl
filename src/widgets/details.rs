@@ -229,6 +229,16 @@ impl Details {
                 base_fault.as_ref(),
                 "auto",
             ),
+            Detail {
+                label: "splash",
+                state: if config.skip_splash {
+                    State::Unset
+                } else {
+                    State::Good
+                },
+                value: if config.skip_splash { "off" } else { "on" }.to_string(),
+                note: vec![],
+            },
         ];
         // 🌐 everything here is global, so saying so on every line would only be noise
         let lines = lines
