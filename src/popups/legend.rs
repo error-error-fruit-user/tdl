@@ -1,70 +1,88 @@
 use ratatui::{
     crossterm::event::KeyCode,
-    style::{Color, Stylize},
-    text::{Line, Span, ToSpan},
+    style::Style,
+    text::{Line, Span},
 };
 
 use crate::{
     error::Result,
-    ritual::{self, Grimoire, Page, Phase, Ritual},
+    layout, popups,
+    ritual::{Grimoire, Page, Phase, Ritual},
+    theme,
 };
 
-/// A popup listing `[key, description]` pairs, dismissed by any key.
+/// A popup listing `[key, description]` pairs, one per row with the keys right-aligned, dismissed
+/// by any key.
 pub struct Legend<'a> {
     legend: &'a [[&'a str; 2]],
-    height: u16,
 }
 
 impl<'a> Legend<'a> {
-    const TITLE: &str = "Legend";
-    const WIDTH: u16 = 32;
-    const BORDER_COLOR: Color = Color::LightGreen;
+    const TITLE: &str = "keys";
 
-    /// Two rows per entry, so the window is tall for long legends.
     pub fn new(legend: &'a [[&'a str; 2]]) -> Self {
-        Self {
-            legend,
-            height: legend.len() as u16 * 2 + 3,
-        }
+        Self { legend }
     }
-}
 
-impl Legend<'_> {
     pub fn summon(grimoire: &mut Grimoire, legend: &[[&str; 2]]) -> Result<()> {
         Legend::new(legend).invoke(grimoire)
     }
+
+    /// Every row padded to the same width, so the columns line up once the rows are centered.
+    fn lines(&self) -> Vec<Line<'a>> {
+        let key_width = self
+            .legend
+            .iter()
+            .map(|[key, _]| layout::width(key))
+            .max()
+            .unwrap_or(0);
+        let text_width = self
+            .legend
+            .iter()
+            .map(|[_, text]| layout::width(text))
+            .max()
+            .unwrap_or(0);
+        self.legend
+            .iter()
+            .map(|[key, text]| {
+                Line::from(vec![
+                    Span::styled(
+                        format!("{key:>width$}", width = key_width as usize),
+                        Style::new().fg(theme::KEY),
+                    ),
+                    Span::raw("  "),
+                    Span::styled(
+                        format!("{text:<width$}", width = text_width as usize),
+                        Style::new().fg(theme::TEXT),
+                    ),
+                ])
+            })
+            .collect()
+    }
 }
 
-impl<'a> Ritual for Legend<'a> {
+impl Ritual for Legend<'_> {
     type Return = ();
 
     fn render(&mut self, page: &mut Page) {
-        let (window, mut window_area, ..) = ritual::conjure_window(
-            Self::TITLE,
-            Self::WIDTH,
-            self.height,
-            Self::BORDER_COLOR,
-            page.area(),
-        );
-        page.render_widget(&window, window_area);
-        window_area.x += 1;
-        window_area.width -= 2;
-        window_area.y += 2;
-        for [key, explanation] in self.legend {
-            let line = [
-                "[".to_span(),
-                Span::from(*key).light_yellow(),
-                Span::from(format!("]: {explanation}")),
-            ]
-            .into_iter()
-            .collect::<Line>()
-            .centered();
-            page.render_widget(line, window_area);
-            window_area.y += 2;
-        }
+        popups::draw(page, Self::TITLE, theme::LEGEND, &self.lines(), None);
     }
 
     fn prompt(&mut self, _: &mut Grimoire, _: KeyCode) -> Result<Phase<Self::Tea>> {
         Ok(Phase::Return(()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_row_is_the_same_width_so_the_columns_line_up() {
+        let legend = [["Enter", "Launch"], ["J↓/K↑", "Traverse"], ["?", "Keys"]];
+        let lines = Legend::new(&legend).lines();
+        let widths: Vec<_> = lines.iter().map(Line::width).collect();
+        assert!(widths.iter().all(|&w| w == widths[0]));
+        assert_eq!(lines[2].spans[0].content, "    ?");
     }
 }

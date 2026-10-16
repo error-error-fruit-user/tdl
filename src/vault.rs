@@ -161,15 +161,27 @@ impl Vault {
     ///
     /// The order matters: the new file is written first, then the settings, and only then are the
     /// old saves moved and the old file deleted. A failure at any point leaves the old profile whole.
+    ///
+    /// Nothing is written if nothing changed, and the settings are only rewritten when the name did,
+    /// since all they hold about a profile is its name. Every save waits for the disk, so skipping
+    /// the needless ones is what keeps leaving the editor quick.
     pub fn replace(&mut self, index: usize, profile: Profile) -> Result<()> {
+        if self.profiles[index] == profile {
+            return Ok(());
+        }
+        let renamed = self.profiles[index].name != profile.name;
+        let mut profile = profile;
+        if renamed {
+            profile.follow_rename(&self.data_dir, &self.profiles[index].name);
+        }
         profile.save(&Profile::path(&self.config_dir, &profile.name))?;
         let old = std::mem::replace(&mut self.profiles[index], profile);
-        if let Err(error) = self.config.write(&self.config_dir, &self.profiles) {
+        if renamed && let Err(error) = self.config.write(&self.config_dir, &self.profiles) {
             self.profiles[index] = old;
             return Err(error.into());
         }
         let profile = &self.profiles[index];
-        if old.name != profile.name {
+        if renamed {
             old.rename(&profile.name, &self.config_dir, &self.data_dir);
         }
         Ok(profile.create_saves_dir(&self.data_dir)?)
@@ -220,7 +232,9 @@ mod tests {
     use std::{ffi::OsString, fs};
 
     use super::*;
-    use crate::{vault::scribe, vault::scribe::tests::Altar, vault::wad::Wad};
+    use crate::{
+        vault::profile::Part, vault::scribe, vault::scribe::tests::Altar, vault::wad::Wad,
+    };
 
     /// A config dir laid out exactly as the app saved it before editions existed.
     fn legacy_altar(name: &str) -> (Altar, Profile) {
@@ -229,7 +243,7 @@ mod tests {
         fs::create_dir_all(config.join("profiles")).unwrap();
         let profile = Profile {
             name: "brutal".into(),
-            wads: vec![Wad::new("/wads/brutal.pk3".into(), "ab".repeat(32))],
+            wads: vec![Wad::new("/wads/brutal.pk3".into(), "ab".repeat(32), 0)],
             base_wad: None,
             uzdoom: Some(OsString::from("/usr/bin/uzdoom")),
             ini: None,
@@ -555,6 +569,7 @@ mod tests {
         };
         vault.replace(0, renamed.clone()).unwrap();
         assert_eq!(vault.profiles, std::slice::from_ref(&renamed));
+        assert_eq!(vault.config.profile_names, ["renamed"]);
         assert!(!altar.file("config/.profiles/brutal.rite").exists());
         assert!(altar.file("config/.profiles/renamed.rite").exists());
         assert!(!altar.file("data/brutal").exists());
@@ -564,5 +579,88 @@ mod tests {
         );
         // and it survives a restart
         assert_eq!(self::vault(&altar).profiles, [renamed]);
+    }
+
+    #[test]
+    fn leaving_the_editor_without_changes_writes_nothing() {
+        let (altar, profile) = upgraded_altar("vault-replace-unchanged");
+        let mut vault = vault(&altar);
+        let files = [
+            "config/.profiles/brutal.rite",
+            "config/.profiles/brutal.rite.bak",
+        ];
+        let snapshot = || -> Vec<_> {
+            files
+                .iter()
+                .map(|f| {
+                    let modified = fs::metadata(altar.file(f)).unwrap().modified().unwrap();
+                    (fs::read(altar.file(f)).unwrap(), modified)
+                })
+                .collect()
+        };
+        let before = snapshot();
+        vault.replace(0, profile).unwrap();
+        assert_eq!(before, snapshot());
+        assert!(!altar.file("config/.profiles/brutal.rite.tmp").exists());
+    }
+
+    #[test]
+    fn an_edit_that_keeps_the_name_does_not_rewrite_the_settings() {
+        let (altar, profile) = upgraded_altar("vault-replace-keeps-config");
+        let mut vault = vault(&altar);
+        // saving the settings again would copy the current config over its backup
+        let backup = fs::read(altar.file("config/config.rite.bak")).unwrap();
+        let modified = fs::metadata(altar.file("config/config.rite"))
+            .unwrap()
+            .modified()
+            .unwrap();
+
+        let mut edited = profile;
+        edited
+            .wads
+            .push(Wad::new("/wads/extra.pk3".into(), "cd".repeat(32), 0));
+        vault.replace(0, edited.clone()).unwrap();
+
+        assert_eq!(
+            fs::read(altar.file("config/config.rite.bak")).unwrap(),
+            backup
+        );
+        let now = fs::metadata(altar.file("config/config.rite"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(now, modified);
+        // while the profile itself was saved
+        assert_eq!(self::vault(&altar).profiles, [edited]);
+    }
+
+    #[test]
+    fn renaming_a_profile_keeps_its_own_ini_pointing_at_the_moved_file() {
+        let (altar, profile) = upgraded_altar("vault-rename-ini");
+        let mut vault = vault(&altar);
+        let ini = altar.file("data/brutal/uzdoom.ini");
+        fs::create_dir_all(altar.file("data/brutal")).unwrap();
+        fs::write(&ini, b"[Doom.Player]").unwrap();
+        let with_ini = Profile {
+            ini: Some(ini.into()),
+            ..profile
+        };
+        vault.replace(0, with_ini.clone()).unwrap();
+
+        let renamed = Profile {
+            name: "renamed".into(),
+            ..with_ini
+        };
+        vault.replace(0, renamed).unwrap();
+
+        let moved = altar.file("data/renamed/uzdoom.ini");
+        assert_eq!(vault.profiles[0].ini, Some(moved.clone().into()));
+        assert_eq!(fs::read(moved).unwrap(), b"[Doom.Player]");
+        // and a restart sees the same, with no broken ini to complain about
+        let reloaded = self::vault(&altar);
+        assert_eq!(reloaded.profiles[0].ini, vault.profiles[0].ini);
+        // (the wad and UZDoom paths in this fixture are made up, so only the ini is checked)
+        let faults = reloaded.profiles[0].faults(&reloaded.config);
+        assert!(faults.iter().all(|(part, _)| *part != Part::Ini));
     }
 }

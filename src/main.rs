@@ -6,13 +6,17 @@ use crate::{cli::Cli, screens::launcher::Launcher};
 
 mod cli;
 mod error;
+mod layout;
 mod net;
+mod picker;
 mod popups;
 mod ritual;
 mod screens;
 mod slayer;
+mod theme;
 mod uzdoom;
 mod vault;
+mod widgets;
 
 fn main() {
     let args: Vec<_> = std::env::args().skip(1).collect();
@@ -24,7 +28,9 @@ fn main() {
         eprintln!("{message}\n\n{}", cli::USAGE);
         std::process::exit(2);
     });
-    if let Err(error) = ratatui::run(|grimoire| Launcher::summon(grimoire, cli.vault)) {
+    if let Err(error) =
+        ratatui::run(|grimoire| Launcher::summon(grimoire, cli.vault, !cli.no_splash))
+    {
         eprintln!("{error}");
         std::io::stderr().flush().unwrap();
     }

@@ -32,6 +32,14 @@ pub fn summon(
     let Some(uzdoom) = profile.uzdoom(&vault.config) else {
         return Warning::uzdoom_not_selected(grimoire);
     };
+    if Warning::faults(grimoire, &profile.faults(&vault.config))? {
+        return Ok(());
+    }
+    // 🌀 volatile wads may legitimately differ from the host's, but not without the user knowing
+    let differing = manifest.differing_wads(&profile);
+    if !differing.is_empty() && !Dialog::should_join_with_different_wads(grimoire, &differing)? {
+        return Ok(());
+    }
     let base_wad = profile.base_wad(&vault.config);
     if manifest.base_wad_matches(base_wad)
         || Dialog::summon(
@@ -39,13 +47,14 @@ pub fn summon(
             "Selected base wad does not match, do you want to continue?",
         )?
     {
-        uzdoom::join(
+        let result = uzdoom::join(
             uzdoom,
             base_wad.map(Wad::deref),
             &profile,
             ip,
             &vault.data_dir.join(&profile.name),
-        )
+        );
+        Warning::report_spawn(grimoire, result)
     } else {
         Ok(())
     }

@@ -3,8 +3,10 @@ use ratatui::{crossterm::event::KeyCode, style::Color};
 use crate::{
     error::Result,
     popups::{legend::Legend, warning::Warning},
-    ritual::{self, Grimoire, Page, Phase, Ritual},
+    ritual::{Grimoire, Page, Phase, Ritual},
+    theme,
     vault::profile::Profile,
+    widgets::form::{self, Field},
 };
 
 /// Prompts for a name for a downloaded profile, rejecting empty and taken names.
@@ -14,10 +16,8 @@ pub struct ProfileNamer<'a> {
 }
 
 impl<'a> ProfileNamer<'a> {
-    const TITLE: &str = "Name Profile";
-    const BORDER_COLOR: Color = Color::LightMagenta;
-    const WIDTH: u16 = 32;
-    const HEIGHT: u16 = 5;
+    const TITLE: &str = "name the profile";
+    const BORDER_COLOR: Color = theme::MULTIPLAYER;
     const LEGEND: &[[&str; 2]] = &[
         ["Enter", "Save Profile"],
         ["A-Z/0-9/_", "Input"],
@@ -40,23 +40,13 @@ impl Ritual for ProfileNamer<'_> {
     type Return = Option<String>;
 
     fn render(&mut self, page: &mut Page) {
-        let area = page.area();
-        let (window, mut window_area, indicator, indicator_area) = ritual::conjure_window(
-            Self::TITLE,
-            Self::WIDTH,
-            Self::HEIGHT,
-            Self::BORDER_COLOR,
-            area,
-        );
-        page.render_widget(window, window_area);
-        page.render_widget(indicator, indicator_area);
-        window_area.y += 2;
-
-        let (line, cursor_position) =
-            ritual::conjure_query("Name", &self.profile_name, area.width, window_area.y);
-
-        page.render_widget(line, window_area);
-        page.set_cursor_position(cursor_position);
+        let fields = [Field {
+            label: "name",
+            value: &self.profile_name,
+            placeholder: "type a name",
+            room: 16,
+        }];
+        form::draw(page, Self::TITLE, Self::BORDER_COLOR, &fields, 0);
     }
 
     fn prompt(

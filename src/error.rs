@@ -20,6 +20,10 @@ pub enum Error {
     #[error("Download Error: {0}!")]
     Download(&'static str),
 
+    /// UZDoom itself could not be started. Unlike the others this is shown, not fatal.
+    #[error("Could not start UZDoom: {0}!")]
+    Spawn(std::io::Error),
+
     #[error("Upgrade Error: {0}!")]
     Upgrade(&'static str),
 }

@@ -12,6 +12,9 @@ A terminal launcher for [UZDoom](https://github.com/UZDoom/UZDoom). Group your w
 - **Join**: enter the host's IP; tdl picks a compatible profile, or offers to download the wads and create one
 - **Import** a whole folder of wads into a profile
 - **Per-profile saves** and a `session.log` of UZDoom's output
+- **Status at a glance**: a panel under the launcher shows what the selected profile would run with (UZDoom, base wad, ini, wads) and whether anything is broken
+- **Placeholders, not surprises**: a wad that moved is shown in the editor with what's wrong, and only that profile is held back from launching
+- **Fits any terminal** from 40×20 up: every window is sized from what it holds, and long lists scroll
 
 ## Requirements
 
@@ -68,6 +71,22 @@ To use a different location, pass a vault folder:
 ```sh
 tdl --vault /path/to/dir   # uses /path/to/dir/config and /path/to/dir/data
 ```
+
+The fire splash plays until you press a key; `tdl --no-splash` goes straight to the launcher.
+
+## Tuning the look
+
+Everything visual lives in a few small files, so it can be changed without touching the screens:
+
+| File | What's in it |
+| --- | --- |
+| `src/theme.rs` | The palette (blood, hellfire, bone, nukage…), what each part of the interface is drawn with, border styles, and the status glyphs |
+| `src/layout.rs` | The smallest terminal size, margins, padding, how far the launcher and editor grow into free space (`GROW_PERCENT`, `MAX_GROWN_WIDTH`), and how windows are centered and stacked |
+| `src/screens/splash.rs` | The startup logo, tagline, the "press any key" hint and how fast it pulses |
+| `src/widgets/fire.rs` | The fire itself: its palette and how high the flames reach |
+| `src/popups.rs` | How wide popup text gets before it wraps |
+
+Setting `BACKGROUND` in `theme.rs` to `Color::Reset` keeps your terminal's own background.
 
 ## Recording the demo
 

@@ -28,6 +28,7 @@ The macOS paths follow the `directories` crate's documentation and have not been
 <data folder>/
 ├── brutal/                     one folder per profile, named after the profile
 │   ├── saves/                  UZDoom's save games for this profile (-savedir)
+│   ├── uzdoom.ini              only if you chose "New" for the profile's UZDoom config (see below)
 │   └── session.log             everything UZDoom printed during the last session
 ├── nacht/
 │   ├── saves/
@@ -62,10 +63,10 @@ Every `.rite` file is MessagePack, a compact binary format, in a wrapper that re
 | Field | Meaning |
 | --- | --- |
 | `name` | The profile's name. Letters, digits and `_` only, since it is also the file and folder name. |
-| `wads` | The wads in load order, each with its full `path` and `hash`. |
+| `wads` | The wads in load order, each with its full `path`, `hash` and `size`. The size (0 if unknown) lets tdl notice when a file has changed since it was added. `volatile` marks a wad you are still developing: see below. |
 | `base_wad` | Overrides the global base wad. |
 | `uzdoom` | Overrides the global UZDoom path. |
-| `ini` | A UZDoom config file to pass with `-config`. If unset, UZDoom uses its own default. |
+| `ini` | A UZDoom config file to pass with `-config`. If unset, UZDoom uses its own global config. Press `I` in the editor to choose: **Global** (unset), **New** (an empty `uzdoom.ini` in the profile's data folder, which UZDoom fills in on first run) or **Select** (an existing file). A profile's own ini moves with it when the profile is renamed. |
 
 All paths are the full paths on the machine that saved them, so a profile file copied to another computer will not find its wads.
 
@@ -77,6 +78,14 @@ All paths are the full paths on the machine that saved them, so a profile file c
 - **Editions.** `version` is the edition number. When a file is older than the running tdl, tdl offers to upgrade it, checks the upgraded file by reading it back, and asks before deleting the original. A file from a newer tdl is never touched; tdl tells you and exits.
 - **Old folder name.** The profiles folder used to be called `profiles`. tdl renames it to `.profiles` on startup if the new one doesn't exist yet.
 - **Old files.** Before `.rite` files existed, tdl used `.doom` files. They are still read. After an upgrade the original `.doom` (or the old-format file's `.bak`) is deleted only if you say yes.
+
+## When a wad can't be found
+
+tdl never searches for moved files. A wad (or the base wad, UZDoom or ini) that has gone missing, isn't a file, or can't be opened is shown as a placeholder in the editor (a red row marked `!`), and `Space` on it says exactly what is wrong. `R` picks the file again. A profile with such a problem can't be launched or hosted, and the launcher marks it when the cursor is on it; other profiles are unaffected. A wad whose size changed since it was added is only marked `~`, since it still runs.
+
+### Volatile wads
+
+A wad you are still working on changes constantly, so its stored hash goes stale. Press `V` on it in the editor ("Toggle Volatility") to mark it volatile; it shows a cyan `*`. A volatile wad is not flagged when its size changes, replacing it never asks about a different hash, and when you host, tdl hashes it again right before building the list, so players download the current version. When you join a game, a volatile wad matches the host's wad of the same name; if its hash differs you are asked whether to join anyway.
 
 ## When a file is unreadable
 

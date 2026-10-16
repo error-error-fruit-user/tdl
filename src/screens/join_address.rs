@@ -3,7 +3,9 @@ use ratatui::{crossterm::event::KeyCode, style::Color};
 use crate::{
     error::Result,
     popups::legend::Legend,
-    ritual::{self, Grimoire, Page, Phase, Ritual},
+    ritual::{Grimoire, Page, Phase, Ritual},
+    theme,
+    widgets::form::{self, Field},
 };
 
 /// Prompts for the IP address of the host to join. Only digits and dots are accepted.
@@ -12,11 +14,8 @@ pub struct JoinAddressForm {
 }
 
 impl JoinAddressForm {
-    const TITLE: &str = "Join";
-    const BORDER_COLOR: Color = Color::LightMagenta;
-    const WIDTH: u16 = 32;
-    const HEIGHT: u16 = 5;
-    const IP_LABEL: &str = "Ip Address";
+    const TITLE: &str = "join";
+    const BORDER_COLOR: Color = theme::MULTIPLAYER;
     const LEGEND: &[[&str; 2]] = &[["Enter", "Launch"], ["Esc", "Cancel"], ["0-9/.", "Input"]];
 
     pub fn new() -> Self {
@@ -33,22 +32,13 @@ impl Ritual for JoinAddressForm {
     type Return = Option<String>;
 
     fn render(&mut self, page: &mut Page) {
-        let area = page.area();
-        let (window, mut window_area, indicator, indicator_area) = ritual::conjure_window(
-            Self::TITLE,
-            Self::WIDTH,
-            Self::HEIGHT,
-            Self::BORDER_COLOR,
-            area,
-        );
-        page.render_widget(window, window_area);
-        page.render_widget(&indicator, indicator_area);
-
-        window_area.y += 2;
-        let (line, ip_position) =
-            ritual::conjure_query(Self::IP_LABEL, &self.ip, area.width, window_area.y);
-        page.render_widget(line, window_area);
-        page.set_cursor_position(ip_position);
+        let fields = [Field {
+            label: "host",
+            value: &self.ip,
+            placeholder: "ip address",
+            room: 15,
+        }];
+        form::draw(page, Self::TITLE, Self::BORDER_COLOR, &fields, 0);
     }
 
     fn prompt(

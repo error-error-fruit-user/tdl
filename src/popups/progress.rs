@@ -1,10 +1,12 @@
 use std::ffi::OsStr;
 
-use ratatui::{style::Color, widgets::Gauge};
+use ratatui::{style::Style, text::Span, widgets::Gauge};
 
 use crate::{
     error::Result,
+    layout,
     ritual::{self, Grimoire, Haunted},
+    theme,
 };
 
 /// A progress window for downloads. It holds the grimoire for as long as the download runs and
@@ -22,10 +24,10 @@ pub struct Progress<'a> {
 }
 
 impl<'a> Progress<'a> {
-    const TITLE: &str = "Progress";
-    const WIDTH: u16 = 40;
-    const HEIGHT: u16 = 5;
-    const BORDER_COLOR: Color = Color::Yellow;
+    const TITLE: &str = "downloading";
+    /// The gauge stretches to fit the file name, between these widths.
+    const MIN_WIDTH: u16 = 36;
+    const MAX_WIDTH: u16 = 64;
 
     /// Nothing is shown until the first [`Progress::count_file`], since the first file's name and
     /// size aren't known here.
@@ -40,26 +42,28 @@ impl<'a> Progress<'a> {
         }
     }
 
-    /// The gauge shows the current file's bytes; the label shows `[files done/total]: name`.
+    /// The gauge shows the current file's bytes; the label shows `[files done/total] name`.
     fn render(&mut self) -> Result<()> {
         self.grimoire.bewitch(|page| {
-            let (window, window_area, ..) = ritual::conjure_window(
-                Self::TITLE,
-                Self::WIDTH,
-                Self::HEIGHT,
-                Self::BORDER_COLOR,
-                page.area(),
+            let label = format!(
+                "[{}/{}] {}",
+                self.file_count, self.max_file_count, self.file_name
             );
+            let width = (layout::width(&label) + 4).clamp(Self::MIN_WIDTH, Self::MAX_WIDTH);
+            let (width, height) = layout::window(width, 1);
+            let (window, window_area, ..) =
+                ritual::conjure_window(Self::TITLE, width, height, theme::BUSY, page.area());
             // clamped because the gauge panics outside 0..=1, and a bad count shouldn't take the UI down
             let ratio = if self.max_byte_count == 0 {
                 0.0
             } else {
                 (self.byte_count as f64 / self.max_byte_count as f64).clamp(0.0, 1.0)
             };
-            let gauge = Gauge::default().block(window).ratio(ratio).label(format!(
-                "[{}/{}]: {}",
-                self.file_count, self.max_file_count, self.file_name
-            ));
+            let gauge = Gauge::default()
+                .block(window)
+                .ratio(ratio)
+                .gauge_style(Style::new().fg(theme::HELLFIRE).bg(theme::IRON))
+                .label(Span::styled(label, Style::new().fg(theme::BONE)));
             page.render_widget(gauge, window_area);
         })
     }

@@ -1,31 +1,22 @@
-use ratatui::{
-    crossterm::event::KeyCode,
-    style::{Color, Stylize},
-    text::{Line, ToLine, ToSpan},
-};
+use ratatui::{crossterm::event::KeyCode, style::Style, text::Line};
 
 use crate::{
     error::Result,
-    ritual::{self, Grimoire, Page, Phase, Ritual},
+    popups,
+    ritual::{Grimoire, Page, Phase, Ritual},
+    theme,
 };
 
 /// A yes/no popup, answered with `y` or `n`.
 pub struct Dialog<'a> {
     message: &'a str,
-    width: u16,
 }
 
 impl<'a> Dialog<'a> {
-    const TITLE: &str = "Dialogue";
-    const HEIGHT: u16 = 7;
-    const BORDER_COLOR: Color = Color::LightCyan;
+    const TITLE: &str = "dialogue";
 
-    /// Sizes the window to fit `message`.
     pub fn new(message: &'a str) -> Self {
-        Self {
-            width: message.len().max(10) as u16 + 4,
-            message,
-        }
+        Self { message }
     }
 }
 
@@ -33,28 +24,12 @@ impl Ritual for Dialog<'_> {
     type Return = bool;
 
     fn render(&mut self, page: &mut Page) {
-        let (window, mut window_area, ..) = ritual::conjure_window(
-            Self::TITLE,
-            self.width,
-            Self::HEIGHT,
-            Self::BORDER_COLOR,
-            page.area(),
-        );
-        page.render_widget(window, window_area);
-        window_area.y += 2;
-        page.render_widget(self.message.to_line().centered(), window_area);
-        let legend = [
-            "[".to_span(),
-            "Y".to_span().light_yellow(),
-            "]es [".to_span(),
-            "N".to_span().light_yellow(),
-            "]o".to_span(),
-        ]
-        .into_iter()
-        .collect::<Line>()
-        .centered();
-        window_area.y += 2;
-        page.render_widget(legend, window_area);
+        let lines: Vec<_> = popups::wrap(self.message, page.area())
+            .into_iter()
+            .map(|line| Line::styled(line, Style::new().fg(theme::TEXT)))
+            .collect();
+        let answers = popups::answers(&["Yes", "No"]);
+        popups::draw(page, Self::TITLE, theme::DIALOG, &lines, Some(answers));
     }
 
     fn prompt(&mut self, _: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Return>> {
@@ -85,6 +60,27 @@ impl Dialog<'_> {
 
     pub fn should_delete_originals(grimoire: &mut Grimoire) -> Result<bool> {
         Self::summon(grimoire, "Upgraded! Delete the original files?")
+    }
+
+    /// For volatile wads that differ from the host's copy.
+    pub fn should_join_with_different_wads(
+        grimoire: &mut Grimoire,
+        names: &[String],
+    ) -> Result<bool> {
+        match names {
+            [name] => Self::summon(
+                grimoire,
+                &format!("{name} differs from the host's, join anyway?"),
+            ),
+            _ => Self::summon(
+                grimoire,
+                &format!("{} wads differ from the host's, join anyway?", names.len()),
+            ),
+        }
+    }
+
+    pub fn should_use_different_file(grimoire: &mut Grimoire) -> Result<bool> {
+        Self::summon(grimoire, "Different file than expected, use it anyway?")
     }
 
     pub fn should_quit_unsaved(grimoire: &mut Grimoire) -> Result<bool> {

@@ -8,7 +8,11 @@ use std::{
     time::Duration,
 };
 
-use crate::{error::Result, vault::profile::Profile, vault::wad::Wad};
+use crate::{
+    error::{Error, Result},
+    vault::profile::Profile,
+    vault::wad::Wad,
+};
 
 /// Runs UZDoom to completion, blocking the launcher. Output goes to `session.log` in `data_subdir`.
 fn execute(uzdoom: &OsStr, profile: &Profile, args: &[&OsStr], data_subdir: &Path) -> Result<()> {
@@ -22,10 +26,11 @@ fn execute(uzdoom: &OsStr, profile: &Profile, args: &[&OsStr], data_subdir: &Pat
         command
             .arg("-file")
             .args(profile.wads.iter().map(Wad::deref))
-            .spawn()?
+            .spawn()
     } else {
-        command.spawn()?
-    };
+        command.spawn()
+    }
+    .map_err(Error::Spawn)?;
     if let Some(mut stdout) = doom.stdout.take() {
         // the log is best effort, but stdout must still be drained or the game blocks on a full pipe
         let _ = match File::create(data_subdir.join("session.log")) {
@@ -106,4 +111,20 @@ pub fn join(
         args.extend([OsStr::new("-config"), ini]);
     }
     execute(uzdoom, profile, &args, data_subdir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_uzdoom_that_cannot_start_is_a_spawn_error_not_a_crash() {
+        let result = execute(
+            OsStr::new("/nowhere/at/all/uzdoom"),
+            &Profile::default(),
+            &[],
+            Path::new("/nowhere"),
+        );
+        assert!(matches!(result, Err(Error::Spawn(_))));
+    }
 }

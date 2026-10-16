@@ -3,7 +3,9 @@ use ratatui::{crossterm::event::KeyCode, style::Color};
 use crate::{
     error::Result,
     popups::legend::Legend,
-    ritual::{self, Grimoire, Page, Phase, Ritual},
+    ritual::{Grimoire, Page, Phase, Ritual},
+    theme,
+    widgets::form::{self, Field},
 };
 
 /// Collects the host settings (player count, mode, map) in a single form.
@@ -13,13 +15,11 @@ pub struct HostSettingsForm {
 }
 
 impl HostSettingsForm {
-    const TITLE: &str = "Host";
-    const BORDER_COLOR: Color = Color::LightMagenta;
-    const WIDTH: u16 = 32;
-    const HEIGHT: u16 = 9;
-    const PLAYER_COUNT_LABEL: &str = "Player Count";
-    const MODE_LABEL: &str = "Mode";
-    const MAP_LABEL: &str = "Map";
+    const TITLE: &str = "host";
+    const BORDER_COLOR: Color = theme::MULTIPLAYER;
+    const PLAYER_COUNT_LABEL: &str = "players";
+    const MODE_LABEL: &str = "mode";
+    const MAP_LABEL: &str = "map";
     const PLAYER_COUNT_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Launch"],
         ["Tab/Backtab", "Traverse"],
@@ -56,51 +56,37 @@ impl Ritual for HostSettingsForm {
     type Return = Option<HostSettings>;
 
     fn render(&mut self, page: &mut Page) {
-        let area = page.area();
-        let (window, mut window_area, indicator, indicator_area) = ritual::conjure_window(
-            Self::TITLE,
-            Self::WIDTH,
-            Self::HEIGHT,
-            Self::BORDER_COLOR,
-            area,
-        );
-        page.render_widget(window, window_area);
-        page.render_widget(indicator, indicator_area);
-
-        window_area.y += 2;
-        let (player_count, player_count_position) = ritual::conjure_query(
-            Self::PLAYER_COUNT_LABEL,
-            &self.settings.player_count,
-            area.width,
-            window_area.y,
-        );
-        page.render_widget(player_count, window_area);
-
-        window_area.y += 2;
         let mode = if self.settings.is_deathmatch {
-            "Deathmatch"
+            "deathmatch"
         } else {
-            "Cooperative"
+            "cooperative"
         };
-        let (mode, mode_position) =
-            ritual::conjure_query(Self::MODE_LABEL, mode, area.width, window_area.y);
-        page.render_widget(mode, window_area);
-
-        window_area.y += 2;
-        let (map, map_position) = ritual::conjure_query(
-            Self::MAP_LABEL,
-            &self.settings.map,
-            area.width,
-            window_area.y,
-        );
-        page.render_widget(map, window_area);
-
-        let position = match self.index {
-            Index::PlayerCount => player_count_position,
-            Index::Mode => mode_position,
-            Index::Map => map_position,
+        let fields = [
+            Field {
+                label: Self::PLAYER_COUNT_LABEL,
+                value: &self.settings.player_count,
+                placeholder: "",
+                room: 1,
+            },
+            Field {
+                label: Self::MODE_LABEL,
+                value: mode,
+                placeholder: "",
+                room: 11,
+            },
+            Field {
+                label: Self::MAP_LABEL,
+                value: &self.settings.map,
+                placeholder: "any",
+                room: 8,
+            },
+        ];
+        let focus = match self.index {
+            Index::PlayerCount => 0,
+            Index::Mode => 1,
+            Index::Map => 2,
         };
-        page.set_cursor_position(position);
+        form::draw(page, Self::TITLE, Self::BORDER_COLOR, &fields, focus);
     }
 
     fn prompt(

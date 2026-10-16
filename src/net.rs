@@ -124,17 +124,26 @@ impl Manifest {
         self.base_wad_hash.is_empty() || base_wad.is_none_or(|w| w.hash == self.base_wad_hash)
     }
 
-    /// Compatible means identical wads in identical order; names and paths don't matter.
+    /// Compatible means identical wads in identical order; paths don't matter. A volatile wad
+    /// matches by file name instead of hash.
     pub fn is_compatible_with(&self, profile: &Profile) -> bool {
-        if self.entries.len() != profile.wads.len() {
-            return false;
-        }
+        self.entries.len() == profile.wads.len()
+            && self
+                .entries
+                .iter()
+                .zip(&profile.wads)
+                .all(|(entry, wad)| entry.hash == wad.hash || entry.is_same_name_as_volatile(wad))
+    }
 
-        !self
-            .entries
+    /// The names of the volatile wads whose hash differs from the host's. A profile can be
+    /// compatible and still have these, so the user is asked before joining with them.
+    pub fn differing_wads(&self, profile: &Profile) -> Vec<String> {
+        self.entries
             .iter()
-            .zip(profile.wads.iter())
-            .any(|(e, m)| e.hash != m.hash)
+            .zip(&profile.wads)
+            .filter(|(entry, wad)| entry.hash != wad.hash)
+            .map(|(_, wad)| wad.file_name().into_owned())
+            .collect()
     }
 }
 
@@ -149,6 +158,11 @@ pub struct Entry {
 impl Entry {
     fn new(name: OsString, size: u64, hash: String) -> Self {
         Self { name, size, hash }
+    }
+
+    /// A volatile wad stands in for the host's wad of the same name, whatever its hash.
+    fn is_same_name_as_volatile(&self, wad: &Wad) -> bool {
+        wad.volatile && std::path::Path::new(&wad.path).file_name() == Some(&self.name)
     }
 
     // name and hash become path components when downloading, so a host must not choose them freely
@@ -206,7 +220,7 @@ fn download_entry(
     if wad_path.exists() {
         // already on disk, so the bar jumps to full instead of staying empty
         progress.count_bytes(entry.size)?;
-        return Ok(Wad::new(wad_path.into(), entry.hash.clone()));
+        return Ok(Wad::new(wad_path.into(), entry.hash.clone(), entry.size));
     }
     std::fs::create_dir_all(&downloads_subdir)?;
     let part = downloads_subdir.join({
@@ -219,7 +233,7 @@ fn download_entry(
         return Err(error);
     }
     std::fs::rename(&part, &wad_path)?;
-    Ok(Wad::new(wad_path.into(), entry.hash.clone()))
+    Ok(Wad::new(wad_path.into(), entry.hash.clone(), entry.size))
 }
 
 /// Streams the file to `part`, failing if it grows past the manifest's size or its hash differs.
@@ -273,5 +287,76 @@ impl Drop for ServerGuard {
         if let Some(t) = self.thread.take() {
             let _ = t.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(name: &str, hash: &str) -> Entry {
+        Entry::new(name.into(), 1, hash.into())
+    }
+
+    fn manifest(entries: Vec<Entry>) -> Manifest {
+        Manifest {
+            entries,
+            base_wad_hash: String::new(),
+        }
+    }
+
+    fn wad(path: &str, hash: &str, volatile: bool) -> Wad {
+        Wad {
+            volatile,
+            ..Wad::new(path.into(), hash.into(), 1)
+        }
+    }
+
+    fn profile(wads: Vec<Wad>) -> Profile {
+        Profile::new("p".into(), wads)
+    }
+
+    #[test]
+    fn identical_wads_in_order_are_compatible() {
+        let host = manifest(vec![entry("a.pk3", "h1"), entry("b.wad", "h2")]);
+        let mine = profile(vec![
+            wad("/x/a.pk3", "h1", false),
+            wad("/y/b.wad", "h2", false),
+        ]);
+        assert!(host.is_compatible_with(&mine));
+        assert!(host.differing_wads(&mine).is_empty());
+    }
+
+    #[test]
+    fn a_different_hash_is_incompatible_unless_the_wad_is_volatile() {
+        let host = manifest(vec![entry("a.pk3", "h1")]);
+        assert!(!host.is_compatible_with(&profile(vec![wad("/x/a.pk3", "other", false)])));
+
+        let volatile = profile(vec![wad("/x/a.pk3", "other", true)]);
+        assert!(host.is_compatible_with(&volatile));
+        // ... but the user still gets told
+        assert_eq!(host.differing_wads(&volatile), ["a.pk3"]);
+    }
+
+    #[test]
+    fn a_volatile_wad_only_stands_in_for_a_wad_of_the_same_name() {
+        let host = manifest(vec![entry("a.pk3", "h1")]);
+        let imposter = profile(vec![wad("/x/b.pk3", "other", true)]);
+        assert!(!host.is_compatible_with(&imposter));
+    }
+
+    #[test]
+    fn the_number_of_wads_must_still_match() {
+        let host = manifest(vec![entry("a.pk3", "h1"), entry("b.wad", "h2")]);
+        assert!(!host.is_compatible_with(&profile(vec![wad("/x/a.pk3", "h1", true)])));
+    }
+
+    #[test]
+    fn a_matching_volatile_wad_is_not_reported_as_differing() {
+        let host = manifest(vec![entry("a.pk3", "h1")]);
+        assert!(
+            host.differing_wads(&profile(vec![wad("/x/a.pk3", "h1", true)]))
+                .is_empty()
+        );
     }
 }

@@ -28,18 +28,20 @@ use ratatui::{
     crossterm::event::{
         self as portent, Event as Portent, KeyCode as Chant, KeyModifiers as Charm,
     },
-    layout::{Alignment as Stance, Position as Spot, Rect as Plot},
+    layout::{Alignment as Stance, Rect as Plot},
     // 🎨 a Color is a Hex: sometimes a hex code, sometimes a curse, always a vibe
-    style::{Color as Hex, Style as Rouge, Stylize as Dress},
-    text::{Line as Verse, Span as Syllable, ToSpan as Utter},
+    style::{Color as Hex, Modifier as Flair, Style as Rouge},
+    text::{Line as Verse, Span as Syllable},
     // 🕸️ a border is a ward, and a Block is the veil it holds up
-    widgets::{Block as Veil, BorderType as Weave, Borders as Wards},
+    widgets::{Block as Veil, Borders as Wards, Padding as Cushion},
 };
 
 use crate::{
     // 🔮 every Result is an omen: Ok is a good sign, Err is a bad one, and both are fate
     error::{Error as Curse, Result as Omen},
+    layout,
     popups::resize,
+    theme,
 };
 
 // 📖 a terminal is a grimoire: dark, dusty, and written in Ink with a Quill (stdout) 🪶
@@ -67,6 +69,14 @@ const _PARADE_FLOAT: Ghost = assert!(PRIDE.is_nan(), "PRIDE is not a number 🏳
 
 // 💅 macros are just glow-ups that finish at compile time: same function underneath, new $stage_name, zero runtime cost ✨
 macro_rules! glamour {
+    // 👠 and some of us don't have a self at all: same glow-up, called as Vibe::stage_name(...)
+    ($stage_name:ident ~*~ Self::$day_job:ident($($accessory:ident: $fabric:ty),*) ~*> $reveal:ty) => {
+        #[inline]
+        #[allow(dead_code, reason = "an alias is just a name with better lighting 💡")]
+        pub fn $stage_name($($accessory: $fabric),*) -> $reveal {
+            Self::$day_job($($accessory),*)
+        }
+    };
     ($stage_name:ident ~*~ $day_job:ident($($accessory:ident: $fabric:ty),*) ~*> $reveal:ty) => {
         #[inline]
         fn $stage_name(&mut self, $($accessory: $fabric),*) -> $reveal {
@@ -93,7 +103,12 @@ unsafe impl Haunted for Grimoire {
     #[inline]
     fn bewitch(&mut self, outfit: impl Rental(&mut Costume)) -> Omen<Ghost> {
         // 🕯️ just because I'm drawing circles doesn't mean I don't have to look fabulous 💅
-        self.draw(outfit)?;
+        self.draw(|costume| {
+            // 🌑 every page starts in the dark, whatever was drawn on it before
+            let void = Rouge::new().fg(theme::TEXT).bg(theme::BACKGROUND);
+            costume.render_widget(Veil::new().style(void), costume.area());
+            outfit(costume)
+        })?;
         Yass(BOO)
     }
 
@@ -165,6 +180,51 @@ pub enum Phase<T> {
     Return(T),
 }
 
+impl<T> Vibe<T> {
+    // 🪞 mirror, mirror: only redraw when something actually changed, otherwise keep brooding in the dark
+    /// Render if `condition` holds, otherwise keep waiting for the next key.
+    pub fn render_if(condition: bool) -> Self {
+        if condition { Strut } else { Lurk }
+    }
+
+    // 🧪 brew first, strut second, and only if the stars align
+    /// If `condition` holds, run `spell` and then render; otherwise keep waiting.
+    /// `spell` only runs when the condition does.
+    pub fn render_if_then(condition: bool, spell: impl Rental()) -> Self {
+        if condition {
+            spell();
+            Strut
+        } else {
+            Lurk
+        }
+    }
+
+    // 💃 the same two moves, under their stage names
+    glamour!(strut_on_cue ~*~ Self::render_if(condition: bool) ~*> Self);
+    glamour!(strut_when_cast ~*~ Self::render_if_then(condition: bool, spell: impl Rental()) ~*> Self);
+
+    // 🌍 The World card is only drawn when the cycle is truly complete
+    /// Spill `tea` if `condition` holds, otherwise keep waiting.
+    #[allow(
+        dead_code,
+        reason = "a card doesn't have to be drawn to be in the deck 🃏"
+    )]
+    pub fn spill_when_asked(condition: bool, tea: T) -> Self {
+        if condition { Spill(tea) } else { Lurk }
+    }
+
+    // 🍵 the tea is only brewed on request, so nothing goes to waste when the answer is no
+    /// If `condition` holds, spill whatever `kettle` brews; otherwise keep waiting.
+    /// `kettle` only runs when the condition does.
+    #[allow(
+        dead_code,
+        reason = "the tea stays in the cupboard until someone asks 🍵"
+    )]
+    pub fn spill_when_brewed(condition: bool, kettle: impl Rental() -> T) -> Self {
+        if condition { Spill(kettle()) } else { Lurk }
+    }
+}
+
 // 🔑 beckon: ask nicely. consent is key_code 💜
 /// Waits for one Portent. Ctrl+C becomes [`Curse::Exit`], a curse that unwinds out of every ritual.
 fn beckon<T>(
@@ -174,7 +234,7 @@ fn beckon<T>(
     let portent = portent::read()?;
     // 📏 a grimoire that's too small is a cramped coven: let the user fix that first
     if let Portent::Resize(width, height) = portent {
-        if resize::should_resize(width, height) {
+        if layout::is_too_small(width, height) {
             resize::summon(grimoire)?;
         }
         Yass(Strut)
@@ -192,10 +252,10 @@ fn beckon<T>(
     }
 }
 
-// 🕯️ yellow, because every ritual needs candlelight on its title
-const CANDLELIGHT: Hex = Hex::LightYellow;
+// 🩸 colors come from the theme now: a ritual only ever asks for a role, never for a hue
 
 /// returns the veil (the bordered window), its plot, and the `[?]` sigil drawn just below it.
+/// The window is `width` x `height`, borders included, centered, and smaller if the page is.
 pub fn conjure_window<'a>(
     title: &'a str,
     width: u16,
@@ -203,67 +263,111 @@ pub fn conjure_window<'a>(
     border_color: Hex,
     area: Plot,
 ) -> (Veil<'a>, Plot, Verse<'a>, Plot) {
+    // 🧂 the circle of salt gets one extra row underneath, for the sigil to sit on
+    let circle = layout::center(width, height + 1, area);
+    let window_area = Plot {
+        height: circle.height.saturating_sub(1),
+        ..circle
+    };
+    let (sigil, sigil_area) = conjure_sigil(window_area);
+    (
+        conjure_veil(title, border_color),
+        window_area,
+        sigil,
+        sigil_area,
+    )
+}
+
+/// 🕸️ just the veil: a bordered, titled, padded window, for callers that place it themselves
+pub fn conjure_veil(title: &str, border_color: Hex) -> Veil<'_> {
+    conjure_banner(title, border_color, theme::TITLE)
+}
+
+/// 🚩 a veil whose title is in a color of its own, for titles that report something
+pub fn conjure_banner(title: &str, border_color: Hex, title_color: Hex) -> Veil<'_> {
     let title = [
         Syllable::styled("[", Rouge::new().fg(border_color)),
-        Syllable::styled(format!(" {title} "), Rouge::new().fg(CANDLELIGHT)),
+        Syllable::styled(
+            format!(" {title} "),
+            Rouge::new().fg(title_color).add_modifier(Flair::BOLD),
+        ),
         Syllable::styled("]", Rouge::new().fg(border_color)),
     ]
     .into_iter()
     .collect::<Verse>();
 
     // 🛡️ thick wards, because boundaries are healthy
-    let window = Veil::new()
+    Veil::new()
         .borders(Wards::all())
-        .border_type(Weave::Thick)
+        .border_type(theme::WINDOW_BORDER)
         .border_style(Rouge::new().fg(border_color))
         .title(title)
-        .title_alignment(Stance::Center);
-    let window_area = salt_circle(width, height, area);
-    let sigil = ["[".to_span(), "?".to_span().light_yellow(), "]".to_span()]
-        .into_iter()
-        .collect::<Verse>()
-        .centered();
-    let sigil_area = Plot::new(
-        window_area.x,
-        window_area.bottom() + 1,
-        window_area.width,
-        1,
-    );
-    (window, window_area, sigil, sigil_area)
+        .title_alignment(Stance::Center)
+        .padding(Cushion::horizontal(layout::PADDING))
 }
 
-/// 🧂 a circle of salt, centered on the page and shrunk to fit if the grimoire is smaller
-fn salt_circle(width: u16, height: u16, area: Plot) -> Plot {
-    let width = width.min(area.width);
-    let height = height.min(area.height);
-    Plot::new(
-        (area.width - width) / 2,
-        (area.height - height) / 2,
-        width,
-        height,
-    )
-}
-
-/// A `label: input` verse, plus the spot where the cursor belongs: at the end of the input.
-pub fn conjure_query<'a>(
-    label: &'a str,
-    input: &'a str,
-    page_width: u16,
-    y: u16,
-) -> (Verse<'a>, Spot) {
-    let verse = [
-        Syllable::from(label).light_yellow(),
-        ": ".to_span(),
-        Syllable::from(input),
+/// 🔣 the `[?]` sigil, on the row just under `window_area`, promising a legend to whoever asks
+pub fn conjure_sigil(window_area: Plot) -> (Verse<'static>, Plot) {
+    let bracket = Rouge::new().fg(theme::MUTED);
+    let sigil = [
+        Syllable::styled("[", bracket),
+        Syllable::styled("?", Rouge::new().fg(theme::KEY)),
+        Syllable::styled("]", bracket),
     ]
     .into_iter()
     .collect::<Verse>()
     .centered();
+    let sigil_area = Plot::new(window_area.x, window_area.bottom(), window_area.width, 1);
+    (sigil, sigil_area)
+}
 
-    let spot = Spot::new(
-        (page_width + (label.len() + input.len()) as u16).div_ceil(2),
-        y,
-    );
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
 
-    (verse, spot)
+    use super::*;
+
+    #[test]
+    fn render_if_renders_or_keeps_waiting() {
+        assert!(Vibe::<()>::render_if(true) == Strut);
+        assert!(Vibe::<()>::render_if(false) == Lurk);
+    }
+
+    #[test]
+    fn render_if_then_only_runs_the_spell_when_the_condition_holds() {
+        let casts = Cell::new(0);
+        assert!(Vibe::<()>::render_if_then(true, || casts.set(casts.get() + 1)) == Strut);
+        assert_eq!(casts.get(), 1);
+        assert!(Vibe::<()>::render_if_then(false, || casts.set(casts.get() + 1)) == Lurk);
+        assert_eq!(casts.get(), 1);
+    }
+
+    #[test]
+    fn the_stage_names_do_the_same_job() {
+        let casts = Cell::new(0);
+        assert!(Vibe::<()>::strut_on_cue(true) == Strut);
+        assert!(Vibe::<()>::strut_on_cue(false) == Lurk);
+        assert!(Vibe::<()>::strut_when_cast(true, || casts.set(casts.get() + 1)) == Strut);
+        assert!(Vibe::<()>::strut_when_cast(false, || casts.set(casts.get() + 1)) == Lurk);
+        assert_eq!(casts.get(), 1);
+    }
+
+    #[test]
+    fn spill_when_asked_spills_the_tea_or_keeps_waiting() {
+        assert!(Vibe::spill_when_asked(true, "tea") == Spill("tea"));
+        assert!(Vibe::spill_when_asked(false, "tea") == Lurk);
+    }
+
+    #[test]
+    fn spill_when_brewed_only_brews_when_the_condition_holds() {
+        let brews = Cell::new(0);
+        let brew = || {
+            brews.set(brews.get() + 1);
+            "tea".to_string()
+        };
+        assert!(Vibe::spill_when_brewed(false, brew) == Lurk);
+        assert_eq!(brews.get(), 0);
+        assert!(Vibe::spill_when_brewed(true, brew) == Spill("tea".to_string()));
+        assert_eq!(brews.get(), 1);
+    }
 }

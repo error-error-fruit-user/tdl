@@ -25,20 +25,28 @@ pub fn summon(
     let base_wad = profile.base_wad(&vault.config);
     status::summon(grimoire, TITLE, "Hosting...", BORDER_COLOR)?;
 
-    let Ok(manifest) = net::Manifest::build(
-        &profile.wads,
-        base_wad.map(|w| w.hash.clone()).unwrap_or_default(),
-    ) else {
+    // 🌀 volatile wads are hashed fresh, so what the manifest says is what actually gets served
+    let Ok(wads) = profile
+        .wads
+        .iter()
+        .map(Wad::refreshed)
+        .collect::<Result<Vec<_>>>()
+    else {
+        return Warning::wad_unreadable(grimoire);
+    };
+    let Ok(manifest) =
+        net::Manifest::build(&wads, base_wad.map(|w| w.hash.clone()).unwrap_or_default())
+    else {
         return Warning::wad_unreadable(grimoire);
     };
     let Ok(_server) = manifest.serve(
         net::DEFAULT_PORT,
-        profile.wads.iter().map(|w| w.path.clone()).collect(),
+        wads.iter().map(|w| w.path.clone()).collect(),
     ) else {
         return Warning::host_failed(grimoire);
     };
 
-    uzdoom::host(
+    let result = uzdoom::host(
         uzdoom,
         base_wad.map(Wad::deref),
         profile,
@@ -46,5 +54,6 @@ pub fn summon(
         settings.is_deathmatch,
         &settings.map,
         &vault.data_dir.join(&profile.name),
-    )
+    );
+    Warning::report_spawn(grimoire, result)
 }

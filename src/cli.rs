@@ -1,11 +1,12 @@
-//! The command line: `tdl [--vault <folder>]`.
+//! The command line: `tdl [--vault <folder>] [--no-splash]`.
 
 pub const USAGE: &str = "\
-Usage: tdl [--vault <folder>]
+Usage: tdl [--vault <folder>] [--no-splash]
 
 Options:
   --vault <folder>   Keep the config and data in <folder>/config and <folder>/data
                      (the folder on its own, `tdl <folder>`, still works)
+  --no-splash        Go straight to the launcher
   -h, --help         Show this help";
 
 /// What was asked for on the command line.
@@ -13,6 +14,8 @@ Options:
 pub struct Cli {
     /// Replaces the platform's standard config and data folders.
     pub vault: Option<String>,
+    /// Skips the splash screen.
+    pub no_splash: bool,
 }
 
 impl Cli {
@@ -21,7 +24,12 @@ impl Cli {
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, String> {
         let mut args = args.into_iter();
         let mut vault = None;
+        let mut no_splash = false;
         while let Some(arg) = args.next() {
+            if arg == "--no-splash" {
+                no_splash = true;
+                continue;
+            }
             let folder = if arg == "--vault" {
                 args.next().ok_or("--vault needs a folder")?
             } else if let Some(folder) = arg.strip_prefix("--vault=") {
@@ -35,7 +43,7 @@ impl Cli {
                 return Err("The vault folder was given more than once".to_string());
             }
         }
-        Ok(Self { vault })
+        Ok(Self { vault, no_splash })
     }
 }
 
@@ -50,6 +58,7 @@ mod tests {
     fn vault(folder: &str) -> Result<Cli, String> {
         Ok(Cli {
             vault: Some(folder.to_string()),
+            ..Cli::default()
         })
     }
 
@@ -88,5 +97,23 @@ mod tests {
         assert!(parse(&["--vault", "a", "--vault", "b"]).is_err());
         assert!(parse(&["a", "--vault", "b"]).is_err());
         assert!(parse(&["a", "b"]).is_err());
+    }
+
+    #[test]
+    fn no_splash_works_alone_and_beside_the_vault() {
+        let alone = Cli {
+            no_splash: true,
+            ..Cli::default()
+        };
+        assert_eq!(parse(&["--no-splash"]), Ok(alone));
+        let both = Cli {
+            vault: Some("/tmp/v".into()),
+            no_splash: true,
+        };
+        assert_eq!(parse(&["--vault", "/tmp/v", "--no-splash"]), Ok(both));
+        assert_eq!(
+            parse(&["--no-splash", "/tmp/v"]).unwrap().vault,
+            Some("/tmp/v".into())
+        );
     }
 }

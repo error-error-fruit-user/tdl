@@ -1,37 +1,84 @@
-use ratatui::{
-    crossterm::event::KeyCode,
-    style::{Color, Stylize},
-    text::ToLine,
-};
+use ratatui::{crossterm::event::KeyCode, style::Style, text::Line};
 
 use crate::{
-    error::Result,
-    ritual::{self, Grimoire, Page, Phase, Ritual},
+    error::{Error, Result},
+    popups,
+    ritual::{Grimoire, Page, Phase, Ritual},
+    theme,
+    vault::{profile::Part, wad::Fault},
 };
 
-/// A one-line popup dismissed by any key.
-pub struct Warning<'a> {
-    message: &'a str,
-    width: u16,
+/// A popup of one or more lines, dismissed by any key.
+pub struct Warning {
+    lines: Vec<Line<'static>>,
 }
 
-impl<'a> Warning<'a> {
-    const TITLE: &str = "Warning";
-    const HEIGHT: u16 = 5;
-    const BORDER_COLOR: Color = Color::LightCyan;
-
-    pub fn new(message: &'a str) -> Self {
-        Self {
-            width: message.len() as u16 + 4,
-            message,
-        }
-    }
+impl Warning {
+    const TITLE: &str = "warning";
 }
 
-impl Warning<'_> {
+impl Warning {
     /// Shows `message` and waits for a key.
     pub fn summon(grimoire: &mut Grimoire, message: &str) -> Result<()> {
-        Warning::new(message).invoke(grimoire)
+        Self::summon_lines(grimoire, &[message.to_string()])
+    }
+
+    /// Shows several lines at once and waits for a key.
+    pub fn summon_lines(grimoire: &mut Grimoire, lines: &[String]) -> Result<()> {
+        let lines = lines
+            .iter()
+            .map(|line| Line::styled(line.clone(), Style::new().fg(theme::TEXT)))
+            .collect();
+        Self::summon_styled(grimoire, lines)
+    }
+
+    /// Shows lines that carry their own styles. A line made of one span is still wrapped to fit;
+    /// a line of several is shown as it is, so keep those short.
+    pub fn summon_styled(grimoire: &mut Grimoire, lines: Vec<Line<'static>>) -> Result<()> {
+        Warning { lines }.invoke(grimoire)
+    }
+
+    /// If any of `faults` stops the profile from running, says so and returns `true`. A changed
+    /// file only gets marked, so it never counts. Wads are summed up, since the editor is the
+    /// place to fix them; the UZDoom path, base wad and ini are named.
+    pub fn faults(grimoire: &mut Grimoire, faults: &[(Part, Fault)]) -> Result<bool> {
+        let blocking: Vec<_> = faults
+            .iter()
+            .filter(|(_, fault)| fault.is_blocking())
+            .collect();
+        if blocking.is_empty() {
+            return Ok(false);
+        }
+        let mut lines: Vec<String> = blocking
+            .iter()
+            .filter_map(|(part, fault)| match part {
+                Part::Uzdoom => Some(format!("UZDoom {fault}")),
+                Part::BaseWad => Some(format!("The base wad {fault}")),
+                Part::Ini => Some(format!("The ini file {fault}")),
+                Part::Wad(_) => None,
+            })
+            .collect();
+        let wads = blocking
+            .iter()
+            .filter(|(part, _)| matches!(part, Part::Wad(_)))
+            .count();
+        match wads {
+            0 => {}
+            1 => lines.push("1 wad needs attention, open the editor (E)".to_string()),
+            n => lines.push(format!("{n} wads need attention, open the editor (E)")),
+        }
+        Self::summon_lines(grimoire, &lines)?;
+        Ok(true)
+    }
+
+    /// Turns "UZDoom could not be started" from a crash into a message. Anything else passes through.
+    pub fn report_spawn(grimoire: &mut Grimoire, result: Result<()>) -> Result<()> {
+        match result {
+            Err(Error::Spawn(error)) => {
+                Self::summon(grimoire, &format!("Could not start UZDoom: {error}"))
+            }
+            other => other,
+        }
     }
 
     pub fn uzdoom_not_selected(grimoire: &mut Grimoire) -> Result<()> {
@@ -58,6 +105,10 @@ impl Warning<'_> {
         Self::summon(grimoire, "Could not start the host server!")
     }
 
+    pub fn no_folder_to_open(grimoire: &mut Grimoire) -> Result<()> {
+        Self::summon(grimoire, "No folder found to open the file picker in!")
+    }
+
     pub fn save_failed(grimoire: &mut Grimoire) -> Result<()> {
         Self::summon(grimoire, "Could not save, is the disk full?")
     }
@@ -75,22 +126,23 @@ impl Warning<'_> {
     }
 }
 
-impl Ritual for Warning<'_> {
+impl Ritual for Warning {
     type Return = ();
 
     fn render(&mut self, page: &mut Page) {
-        let (window, mut window_area, ..) = ritual::conjure_window(
-            Self::TITLE,
-            self.width,
-            Self::HEIGHT,
-            Self::BORDER_COLOR,
-            page.area(),
-        );
-        page.render_widget(window, window_area);
-        window_area.width -= 2;
-        window_area.x += 1;
-        window_area.y += 2;
-        page.render_widget(self.message.to_line().centered().light_red(), window_area);
+        let area = page.area();
+        let lines: Vec<_> = self
+            .lines
+            .iter()
+            .flat_map(|line| match &line.spans[..] {
+                [span] => popups::wrap(&span.content, area)
+                    .into_iter()
+                    .map(|text| Line::styled(text, span.style.patch(line.style)))
+                    .collect(),
+                _ => vec![line.clone()],
+            })
+            .collect();
+        popups::draw(page, Self::TITLE, theme::WARNING, &lines, None);
     }
 
     fn prompt(&mut self, _: &mut Grimoire, _: KeyCode) -> Result<Phase<Self::Return>> {

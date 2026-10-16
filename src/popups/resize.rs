@@ -1,35 +1,47 @@
 use ratatui::{
     crossterm::event::{self, KeyCode, KeyModifiers},
     layout::Rect,
-    text::ToLine,
+    style::{Modifier, Style},
+    text::Line,
 };
 
 use crate::{
     error::{Error, Result},
+    layout,
     ritual::{Grimoire, Haunted},
+    theme,
 };
 
-const MIN_WIDTH: u16 = 40;
-const MIN_HEIGHT: u16 = 30;
-
-/// Whether the terminal is smaller than the UI can be drawn in.
-pub fn should_resize(width: u16, height: u16) -> bool {
-    width < MIN_WIDTH || height < MIN_HEIGHT
-}
-
-/// Shows "Text too big!" until the terminal is large enough again; Ctrl+C still quits.
+/// Shows how much bigger the terminal has to be, until it is; Ctrl+C still quits.
 pub fn summon(grimoire: &mut Grimoire) -> Result<()> {
     loop {
         grimoire.bewitch(|page| {
             let area = page.area();
-            page.render_widget(
-                "Text too big!".to_line().centered(),
-                Rect::new(0, area.height / 2, area.width, 1),
-            );
+            let middle = area.height / 2;
+            let lines = [
+                Line::styled(
+                    "too small",
+                    Style::new().fg(theme::BAD).add_modifier(Modifier::BOLD),
+                ),
+                Line::styled(
+                    format!("{}×{} needed", layout::MIN_WIDTH, layout::MIN_HEIGHT),
+                    Style::new().fg(theme::MUTED),
+                ),
+                Line::styled(
+                    format!("{}×{} now", area.width, area.height),
+                    Style::new().fg(theme::MUTED),
+                ),
+            ];
+            for (i, line) in lines.into_iter().enumerate() {
+                let y = (middle + i as u16).saturating_sub(1);
+                if y < area.height {
+                    page.render_widget(line.centered(), Rect::new(0, y, area.width, 1));
+                }
+            }
         })?;
         let event = event::read()?;
         if let event::Event::Resize(width, height) = event {
-            if !should_resize(width, height) {
+            if !layout::is_too_small(width, height) {
                 return Ok(());
             }
         } else if let event::Event::Key(key) = event

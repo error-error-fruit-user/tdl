@@ -3,13 +3,15 @@ use std::{ops::Deref, path::Path};
 use directories::ProjectDirs;
 use ratatui::{
     crossterm::event::KeyCode,
-    style::{Color, Style, Stylize},
-    text::{Line, ToLine},
-    widgets::{Row, Table, TableState},
+    layout::Constraint,
+    style::{Color, Style},
+    text::Line,
+    widgets::{Paragraph, Row, Table, TableState},
 };
 
 use crate::{
     error::{Error, Result},
+    layout, picker,
     popups::dialog::Dialog,
     popups::legend::Legend,
     popups::resize,
@@ -19,13 +21,15 @@ use crate::{
     screens::editor::Editor,
     screens::host_settings::HostSettingsForm,
     screens::join_address::JoinAddressForm,
+    screens::splash,
     screens::wrap_around,
     slayer::host_game,
     slayer::join_game,
-    uzdoom,
+    theme, uzdoom,
     vault::Vault,
     vault::scribe,
     vault::wad::Wad,
+    widgets::details::Details,
 };
 
 /// The main screen: a table of profiles followed by a `+` row for creating a new one.
@@ -34,15 +38,19 @@ use crate::{
 pub struct Launcher {
     vault: Vault,
     table_state: TableState,
+    /// Whether to play the splash screen first.
+    splash: bool,
 }
 
 impl Launcher {
-    const TITLE: &str = "Launcher";
-    const BORDER_COLOR: Color = Color::LightRed;
-    const WIDTH: u16 = Self::CONSTRAINTS[0] + Self::CONSTRAINTS[1] + 2;
-    const HEIGHT: u16 = 12;
-    const HEADER: [&str; 2] = ["Profile", "Wads"];
-    const CONSTRAINTS: [u16; 2] = [24, 6];
+    const TITLE: &str = "launcher";
+    const BORDER_COLOR: Color = theme::SCREEN;
+    const HEADER: [&str; 2] = ["profile", "wads"];
+    /// The last row, which makes a new profile.
+    const NEW_ROW: &str = "+ new profile";
+    /// The wads column: a count and the broken mark.
+    const WADS_WIDTH: u16 = 5;
+    const COLUMN_SPACING: u16 = 2;
     const LEGEND: &[[&str; 2]] = &[
         ["Enter", "Launch"],
         ["H", "Host"],
@@ -58,7 +66,7 @@ impl Launcher {
     ];
 
     /// Uses `<vault_dir>/{config,data}` when given, otherwise the platform's standard directories.
-    pub fn new(vault_dir: Option<String>) -> Self {
+    pub fn new(vault_dir: Option<String>, splash: bool) -> Self {
         let (config_dir, data_dir) = if let Some(pass) = vault_dir {
             let pass = Path::new(&pass);
             (pass.join("config"), pass.join("data"))
@@ -73,12 +81,13 @@ impl Launcher {
         Self {
             vault: Vault::new(config_dir, data_dir),
             table_state: TableState::new().with_selected(0),
+            splash,
         }
     }
 
-    /// Builds the launcher and runs it until the user quits.
-    pub fn summon(grimoire: &mut Grimoire, vault_dir: Option<String>) -> Result<()> {
-        Self::new(vault_dir).invoke(grimoire)
+    /// Builds the launcher and runs it until the user quits, after the splash screen if `splash`.
+    pub fn summon(grimoire: &mut Grimoire, vault_dir: Option<String>, splash: bool) -> Result<()> {
+        Self::new(vault_dir, splash).invoke(grimoire)
     }
 }
 
@@ -90,8 +99,11 @@ impl Ritual for Launcher {
     /// upgraded if the user agrees, and the originals are deleted only if they agree to that too.
     fn attach(&mut self, grimoire: &mut Grimoire) -> Result<()> {
         let area = grimoire.consult().area();
-        if resize::should_resize(area.width, area.height) {
+        if layout::is_too_small(area.width, area.height) {
             resize::summon(grimoire)?;
+        }
+        if self.splash {
+            splash::summon(grimoire)?;
         }
         if self.vault.is_too_new() {
             Warning::files_too_new(grimoire)?;
@@ -118,36 +130,85 @@ impl Ritual for Launcher {
         Ok(())
     }
 
+    /// The profile list, and under it a panel for whatever the cursor is on: what that profile
+    /// would launch with, or the global settings when it's on the new-profile row.
     fn render(&mut self, page: &mut Page) {
-        let header = Row::new(Self::HEADER.iter().map(|h| h.to_line().centered())).on_dark_gray();
+        // 🔎 only the profile under the cursor is looked at, so even a huge pack costs a handful of stats
+        let selected = self.table_state.selected();
+        let profile = selected.and_then(|i| self.vault.profiles.get(i));
+        let details = match profile {
+            Some(profile) => Details::launch(
+                profile,
+                &self.vault.config,
+                &profile.faults(&self.vault.config),
+            ),
+            None => Details::global(&self.vault.config),
+        };
+        let is_broken = profile.is_some() && details.is_broken();
+
+        let name_width = self
+            .vault
+            .profiles
+            .iter()
+            .map(|p| layout::width(&p.name))
+            .chain([layout::width(Self::HEADER[0]), layout::width(Self::NEW_ROW)])
+            .max()
+            .unwrap_or(0);
+        let header = Row::new([
+            Line::from(Self::HEADER[0]),
+            Line::from(Self::HEADER[1]).right_aligned(),
+        ])
+        .style(theme::HEADER);
         let rows = self
             .vault
             .profiles
             .iter()
-            .map(|p| {
+            .enumerate()
+            .map(|(i, p)| {
+                let mark = if is_broken && Some(i) == selected {
+                    theme::BROKEN_MARK
+                } else {
+                    ""
+                };
                 Row::new([
-                    p.name.to_line().centered(),
-                    Line::from(p.wads.len().to_string()).centered(),
+                    Line::from(p.name.as_str()),
+                    Line::from(format!("{}{mark}", p.wads.len())).right_aligned(),
                 ])
             })
-            .chain(std::iter::once(Row::new(std::iter::once(
-                "+".to_line().centered(),
-            ))));
+            .chain([Row::new([
+                Line::styled(Self::NEW_ROW, Style::new().fg(theme::MUTED)),
+                Line::default(),
+            ])]);
 
-        let (window, window_area, indicator, indicator_area) = ritual::conjure_window(
-            Self::TITLE,
-            Self::WIDTH,
-            Self::HEIGHT,
-            Self::BORDER_COLOR,
-            page.area(),
-        );
-        page.render_widget(indicator, indicator_area);
+        let (details_width, details_height) = details.size();
+        let panel = layout::window(details_width, details_height);
+        // the header, the profiles and the new-profile row
+        let list_width = name_width + Self::COLUMN_SPACING + Self::WADS_WIDTH;
+        let (width, height) = layout::window(list_width, self.vault.profiles.len() as u16 + 2);
+        let list = layout::grow(width, height, panel.1, page.area());
+        let [list_area, details_area] = layout::stack(&[list, panel], page.area())[..] else {
+            return;
+        };
 
-        let table = Table::new(rows, Self::CONSTRAINTS)
-            .header(header)
-            .block(window)
-            .row_highlight_style(Style::new().black().bg(Self::BORDER_COLOR));
-        page.render_stateful_widget(table, window_area, &mut self.table_state);
+        let table = Table::new(
+            rows,
+            [Constraint::Fill(1), Constraint::Length(Self::WADS_WIDTH)],
+        )
+        .column_spacing(Self::COLUMN_SPACING)
+        .header(header)
+        .block(ritual::conjure_veil(Self::TITLE, Self::BORDER_COLOR))
+        .row_highlight_style(if is_broken {
+            theme::BROKEN_CURSOR
+        } else {
+            theme::CURSOR
+        });
+        page.render_stateful_widget(table, list_area, &mut self.table_state);
+
+        let panel = ritual::conjure_banner(details.title, theme::PANEL, details.title_color);
+        page.render_widget(Paragraph::new(details.lines()).block(panel), details_area);
+
+        let (sigil, sigil_area) = ritual::conjure_sigil(details_area);
+        page.render_widget(sigil, sigil_area);
     }
 
     fn prompt(
@@ -159,22 +220,24 @@ impl Ritual for Launcher {
         match key_code {
             KeyCode::Enter => {
                 if *index != self.vault.profiles.len() {
-                    if let Some(uzdoom) = self.vault.profiles[*index].uzdoom(&self.vault.config) {
-                        uzdoom::launch(
-                            uzdoom,
-                            self.vault.profiles[*index]
-                                .base_wad(&self.vault.config)
-                                .map(Wad::deref),
-                            &self.vault.profiles[*index],
-                            &self.vault.data_dir.join(&self.vault.profiles[*index].name),
-                        )?;
-                        Ok(Phase::Prompt)
+                    let profile = &self.vault.profiles[*index];
+                    if let Some(uzdoom) = profile.uzdoom(&self.vault.config) {
+                        // 🚧 a profile with a broken part is not fixed for you, but it isn't launched either
+                        if !Warning::faults(grimoire, &profile.faults(&self.vault.config))? {
+                            let result = uzdoom::launch(
+                                uzdoom,
+                                profile.base_wad(&self.vault.config).map(Wad::deref),
+                                profile,
+                                &self.vault.data_dir.join(&profile.name),
+                            );
+                            Warning::report_spawn(grimoire, result)?;
+                        }
                     } else {
                         Warning::uzdoom_not_selected(grimoire)?;
-                        Ok(Phase::Render)
                     }
+                    Ok(Phase::Render)
                 } else {
-                    if let Some(profile) = Editor::summon_blank(grimoire, &self.vault.profiles)?
+                    if let Some(profile) = Editor::summon_blank(grimoire, &self.vault)?
                         && self.vault.insert(index, profile).is_err()
                     {
                         Warning::save_failed(grimoire)?;
@@ -184,15 +247,13 @@ impl Ritual for Launcher {
             }
             KeyCode::Char('h') => {
                 if *index != self.vault.profiles.len() {
-                    if self.vault.profiles[*index]
-                        .uzdoom(&self.vault.config)
-                        .is_some()
-                    {
-                        if let Some(settings) = HostSettingsForm::summon(grimoire)? {
-                            host_game::summon(grimoire, &self.vault, *index, settings)?;
-                        }
-                    } else {
+                    let profile = &self.vault.profiles[*index];
+                    if profile.uzdoom(&self.vault.config).is_none() {
                         Warning::uzdoom_not_selected(grimoire)?;
+                    } else if !Warning::faults(grimoire, &profile.faults(&self.vault.config))?
+                        && let Some(settings) = HostSettingsForm::summon(grimoire)?
+                    {
+                        host_game::summon(grimoire, &self.vault, *index, settings)?;
                     }
                     Ok(Phase::Render)
                 } else {
@@ -205,48 +266,32 @@ impl Ritual for Launcher {
                 }
                 Ok(Phase::Render)
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                if wrap_around::select_next(
-                    self.table_state.selected_mut(),
-                    self.vault.profiles.len() + 1,
-                ) {
-                    Ok(Phase::Render)
-                } else {
-                    Ok(Phase::Prompt)
-                }
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                if wrap_around::select_previous(
-                    self.table_state.selected_mut(),
-                    self.vault.profiles.len() + 1,
-                ) {
-                    Ok(Phase::Render)
-                } else {
-                    Ok(Phase::Prompt)
-                }
-            }
-            KeyCode::Char('}') => {
-                if self.vault.profiles.len() != 1 && *index != self.vault.profiles.len() {
+            KeyCode::Char('j') | KeyCode::Down => Ok(Phase::render_if(wrap_around::select_next(
+                self.table_state.selected_mut(),
+                self.vault.profiles.len() + 1,
+            ))),
+            KeyCode::Char('k') | KeyCode::Up => Ok(Phase::render_if(wrap_around::select_previous(
+                self.table_state.selected_mut(),
+                self.vault.profiles.len() + 1,
+            ))),
+            KeyCode::Char('}') => Ok(Phase::render_if_then(
+                self.vault.profiles.len() != 1 && *index != self.vault.profiles.len(),
+                || {
                     let next_index = wrap_around::next(*index, self.vault.profiles.len());
                     self.vault.profiles.swap(*index, next_index);
                     *index = next_index;
-                    Ok(Phase::Render)
-                } else {
-                    Ok(Phase::Prompt)
-                }
-            }
-            KeyCode::Char('{') => {
-                if self.vault.profiles.len() != 1 && *index != self.vault.profiles.len() {
+                },
+            )),
+            KeyCode::Char('{') => Ok(Phase::render_if_then(
+                self.vault.profiles.len() != 1 && *index != self.vault.profiles.len(),
+                || {
                     let previous_index = wrap_around::previous(*index, self.vault.profiles.len());
                     self.vault.profiles.swap(*index, previous_index);
                     *index = previous_index;
-                    Ok(Phase::Render)
-                } else {
-                    Ok(Phase::Prompt)
-                }
-            }
+                },
+            )),
             KeyCode::Char('a') => {
-                if let Some(profile) = Editor::summon_blank(grimoire, &self.vault.profiles)?
+                if let Some(profile) = Editor::summon_blank(grimoire, &self.vault)?
                     && self.vault.insert(index, profile).is_err()
                 {
                     Warning::save_failed(grimoire)?;
@@ -274,19 +319,14 @@ impl Ritual for Launcher {
                 }
             }
             KeyCode::Char('u') => {
-                if let Some(path) = rfd::FileDialog::new()
-                    .set_directory(std::env::current_dir().unwrap())
-                    .pick_file()
-                {
+                if let Some(path) = picker::file(grimoire, None, None)? {
                     self.vault.config.uzdoom = Some(path.into());
                 }
                 Ok(Phase::Prompt)
             }
             KeyCode::Char('w') => {
-                if let Some(path) = rfd::FileDialog::new()
-                    .set_directory(std::env::current_dir().unwrap())
-                    .add_filter("base wad", Wad::EXTENSIONS)
-                    .pick_file()
+                if let Some(path) =
+                    picker::file(grimoire, Some(("base wad", Wad::EXTENSIONS)), None)?
                 {
                     self.vault.config.base_wad = Some(Wad::from_path(&path)?);
                 }

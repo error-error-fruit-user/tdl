@@ -1,0 +1,455 @@
+//! A small status panel: one line each for a profile's UZDoom, base wad, ini and wads, with a
+//! colored mark that says at a glance whether each is fine, broken, changed, or not set.
+
+use std::{ffi::OsStr, path::Path};
+
+use ratatui::{
+    style::{Color, Style},
+    text::{Line, Span},
+};
+
+use crate::{
+    layout, theme,
+    vault::{
+        config::Config,
+        profile::{Part, Profile},
+        wad::{Fault, Wad},
+    },
+};
+
+/// How a line in the panel is doing, which decides its mark and color.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum State {
+    Good,
+    Bad,
+    Changed,
+    /// Not set, which is allowed (an ini, a base wad).
+    Unset,
+    /// Only used in notes: volatile wads, which are fine but worth knowing about.
+    Volatile,
+}
+
+impl State {
+    fn color(self) -> Color {
+        match self {
+            Self::Good => theme::GOOD,
+            Self::Bad => theme::BAD,
+            Self::Changed => theme::CHANGED,
+            Self::Unset => theme::MUTED,
+            Self::Volatile => theme::VOLATILE,
+        }
+    }
+
+    fn mark(self) -> &'static str {
+        if self == Self::Unset {
+            theme::UNSET
+        } else {
+            theme::STATUS
+        }
+    }
+
+    fn of(fault: Option<&Fault>) -> Self {
+        match fault {
+            None => Self::Good,
+            Some(fault) if fault.is_blocking() => Self::Bad,
+            Some(_) => Self::Changed,
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct Detail {
+    pub label: &'static str,
+    pub state: State,
+    pub value: String,
+    /// Said after the value: where it comes from, or what is wrong with it. Each part is colored
+    /// by its own state, so "1 broken, 1 volatile" is red, then blue.
+    pub note: Vec<(String, State)>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct Details {
+    /// The panel's title, which sums up the lines.
+    pub title: &'static str,
+    pub title_color: Color,
+    pub lines: Vec<Detail>,
+}
+
+/// Width of the label column, from the longest label.
+const LABEL_WIDTH: usize = 8;
+/// The widest a value gets before it is cut, keeping its end.
+const VALUE_WIDTH: usize = 24;
+
+fn file_name(path: &OsStr) -> String {
+    Path::new(path)
+        .file_name()
+        .unwrap_or(path)
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// A line for a file that may be set on the profile, set globally, or not set at all.
+fn file_line(
+    label: &'static str,
+    own: Option<&OsStr>,
+    global: Option<&OsStr>,
+    fault: Option<&Fault>,
+    unset: &str,
+) -> Detail {
+    let (path, source) = match (own, global) {
+        (Some(path), _) => (Some(path), "own"),
+        (None, Some(path)) => (Some(path), "global"),
+        (None, None) => (None, ""),
+    };
+    match path {
+        Some(path) => Detail {
+            label,
+            state: State::of(fault),
+            value: file_name(path),
+            note: match fault {
+                Some(fault) => vec![(fault.short().to_string(), State::of(Some(fault)))],
+                None => vec![(source.to_string(), State::Unset)],
+            },
+        },
+        None => Detail {
+            label,
+            state: State::Unset,
+            value: unset.to_string(),
+            note: Vec::new(),
+        },
+    }
+}
+
+/// The line for the wads: how many, and how many need a look.
+fn wads_line(wads: &[Wad], faults: impl Iterator<Item = Fault>) -> Detail {
+    let (mut broken, mut changed) = (0, 0);
+    for fault in faults {
+        if fault.is_blocking() {
+            broken += 1
+        } else {
+            changed += 1
+        }
+    }
+    let volatile = wads.iter().filter(|w| w.volatile).count();
+    let note = [
+        (broken, "broken", State::Bad),
+        (changed, "changed", State::Changed),
+        (volatile, "volatile", State::Volatile),
+    ]
+    .into_iter()
+    .filter(|(count, ..)| *count > 0)
+    .map(|(count, what, state)| (format!("{count} {what}"), state))
+    .collect();
+    let state = if wads.is_empty() {
+        State::Unset
+    } else if broken > 0 {
+        State::Bad
+    } else if changed > 0 {
+        State::Changed
+    } else {
+        State::Good
+    };
+    Detail {
+        label: "wads",
+        state,
+        value: match wads.len() {
+            0 => "none".to_string(),
+            1 => "1 wad".to_string(),
+            n => format!("{n} wads"),
+        },
+        note,
+    }
+}
+
+impl Details {
+    /// What launching `profile` would use, with `faults` from [`Profile::faults`].
+    pub fn launch(profile: &Profile, config: &Config, faults: &[(Part, Fault)]) -> Self {
+        let fault = |part| faults.iter().find(|(p, _)| *p == part).map(|(_, f)| f);
+        let mut uzdoom = file_line(
+            "uzdoom",
+            profile.uzdoom.as_deref(),
+            config.uzdoom.as_deref(),
+            fault(Part::Uzdoom),
+            "not set",
+        );
+        if uzdoom.state == State::Unset {
+            // 🚫 without UZDoom there is no game, so this one is not optional
+            uzdoom.state = State::Bad;
+        }
+        let lines = vec![
+            uzdoom,
+            file_line(
+                "base wad",
+                profile.base_wad.as_deref(),
+                config.base_wad.as_deref(),
+                fault(Part::BaseWad),
+                "auto",
+            ),
+            file_line(
+                "ini",
+                profile.ini.as_deref(),
+                None,
+                fault(Part::Ini),
+                "uzdoom's own",
+            ),
+            wads_line(
+                &profile.wads,
+                faults
+                    .iter()
+                    .filter(|(part, _)| matches!(part, Part::Wad(_)))
+                    .map(|(_, fault)| fault.clone()),
+            ),
+        ];
+        Self::summed_up(lines)
+    }
+
+    /// The global settings, which every profile without its own falls back on.
+    pub fn global(config: &Config) -> Self {
+        let uzdoom_fault = config
+            .uzdoom
+            .as_ref()
+            .and_then(|p| Fault::of(Path::new(p), 0));
+        let base_fault = config.base_wad.as_ref().and_then(Wad::check);
+        let mut uzdoom = file_line(
+            "uzdoom",
+            None,
+            config.uzdoom.as_deref(),
+            uzdoom_fault.as_ref(),
+            "not set",
+        );
+        if uzdoom.state == State::Unset {
+            uzdoom.state = State::Bad;
+        }
+        let lines = vec![
+            uzdoom,
+            file_line(
+                "base wad",
+                None,
+                config.base_wad.as_deref(),
+                base_fault.as_ref(),
+                "auto",
+            ),
+        ];
+        // 🌐 everything here is global, so saying so on every line would only be noise
+        let lines = lines
+            .into_iter()
+            .map(|line| Detail {
+                note: line
+                    .note
+                    .into_iter()
+                    .filter(|(note, _)| note != "global")
+                    .collect(),
+                ..line
+            })
+            .collect();
+        Self {
+            title: "global",
+            ..Self::summed_up(lines)
+        }
+    }
+
+    /// What a profile sets for itself, for the editor. Anything unset falls back on the globals.
+    pub fn overrides(profile: &Profile) -> Self {
+        let check =
+            |path: Option<&std::ffi::OsString>| path.and_then(|p| Fault::of(Path::new(p), 0));
+        let uzdoom_fault = check(profile.uzdoom.as_ref());
+        let base_fault = profile.base_wad.as_ref().and_then(Wad::check);
+        let ini_fault = check(profile.ini.as_ref());
+        let lines = vec![
+            file_line(
+                "uzdoom",
+                profile.uzdoom.as_deref(),
+                None,
+                uzdoom_fault.as_ref(),
+                "global",
+            ),
+            file_line(
+                "base wad",
+                profile.base_wad.as_deref(),
+                None,
+                base_fault.as_ref(),
+                "global",
+            ),
+            file_line(
+                "ini",
+                profile.ini.as_deref(),
+                None,
+                ini_fault.as_ref(),
+                "uzdoom's own",
+            ),
+        ];
+        Self {
+            title: "overrides",
+            title_color: theme::TITLE,
+            lines,
+        }
+    }
+
+    /// Titled "ready" or "broken" by whether anything stops it from running.
+    fn summed_up(lines: Vec<Detail>) -> Self {
+        let broken = lines.iter().any(|line| line.state == State::Bad);
+        Self {
+            title: if broken { "broken" } else { "ready" },
+            title_color: if broken { theme::BAD } else { theme::GOOD },
+            lines,
+        }
+    }
+
+    /// Whether anything in the panel stops the profile from running.
+    pub fn is_broken(&self) -> bool {
+        self.lines.iter().any(|line| line.state == State::Bad)
+    }
+
+    /// The text of each line: label, mark, value, then the note.
+    pub fn lines(&self) -> Vec<Line<'_>> {
+        self.lines
+            .iter()
+            .map(|detail| {
+                let mut spans = vec![
+                    Span::styled(
+                        format!("{:>LABEL_WIDTH$} ", detail.label),
+                        Style::new().fg(theme::MUTED),
+                    ),
+                    Span::styled(detail.state.mark(), Style::new().fg(detail.state.color())),
+                    Span::raw(" "),
+                    Span::styled(
+                        layout::tail(&detail.value, VALUE_WIDTH),
+                        Style::new().fg(if detail.state == State::Unset {
+                            theme::MUTED
+                        } else {
+                            theme::TEXT
+                        }),
+                    ),
+                ];
+                for (i, (note, state)) in detail.note.iter().enumerate() {
+                    let separator = if i == 0 { "  " } else { ", " };
+                    spans.push(Span::styled(separator, Style::new().fg(theme::MUTED)));
+                    spans.push(Span::styled(note.clone(), Style::new().fg(state.color())));
+                }
+                Line::from(spans)
+            })
+            .collect()
+    }
+
+    /// The space the lines need.
+    pub fn size(&self) -> (u16, u16) {
+        let width = self
+            .lines()
+            .iter()
+            .map(|l| l.width() as u16)
+            .max()
+            .unwrap_or(0);
+        (width, self.lines.len() as u16)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+
+    impl Detail {
+        fn note_text(&self) -> String {
+            let parts: Vec<_> = self.note.iter().map(|(note, _)| note.as_str()).collect();
+            parts.join(", ")
+        }
+    }
+    use crate::vault::scribe::tests::Altar;
+
+    fn wad(altar: &Altar, name: &str) -> Wad {
+        fs::write(altar.file(name), b"1234").unwrap();
+        Wad::from_path(&altar.file(name)).unwrap()
+    }
+
+    #[test]
+    fn a_healthy_profile_on_global_settings_is_ready() {
+        let altar = Altar::new("details-ready");
+        fs::write(altar.file("uzdoom"), b"").unwrap();
+        let config = Config {
+            uzdoom: Some(altar.file("uzdoom").into()),
+            ..Config::default()
+        };
+        let profile = Profile {
+            wads: vec![wad(&altar, "a.pk3")],
+            ..Profile::default()
+        };
+        let details = Details::launch(&profile, &config, &profile.faults(&config));
+        assert_eq!(details.title, "ready");
+        assert_eq!(details.lines[0].value, "uzdoom");
+        assert_eq!(details.lines[0].note_text(), "global");
+        assert_eq!(details.lines[1].state, State::Unset);
+        assert_eq!(details.lines[3].value, "1 wad");
+        assert_eq!(details.lines[3].state, State::Good);
+    }
+
+    #[test]
+    fn no_uzdoom_at_all_is_broken() {
+        let details = Details::launch(&Profile::default(), &Config::default(), &[]);
+        assert_eq!(details.title, "broken");
+        assert_eq!(details.lines[0].state, State::Bad);
+        assert_eq!(details.lines[0].value, "not set");
+    }
+
+    #[test]
+    fn broken_and_changed_wads_are_counted() {
+        let altar = Altar::new("details-wads");
+        fs::write(altar.file("uzdoom"), b"").unwrap();
+        let config = Config {
+            uzdoom: Some(altar.file("uzdoom").into()),
+            ..Config::default()
+        };
+        let mut volatile = wad(&altar, "v.pk3");
+        volatile.volatile = true;
+        let profile = Profile {
+            wads: vec![wad(&altar, "gone.pk3"), wad(&altar, "grew.pk3"), volatile],
+            ..Profile::default()
+        };
+        fs::remove_file(altar.file("gone.pk3")).unwrap();
+        fs::write(altar.file("grew.pk3"), b"123456").unwrap();
+        let details = Details::launch(&profile, &config, &profile.faults(&config));
+        let wads = &details.lines[3];
+        assert_eq!(wads.state, State::Bad);
+        assert_eq!(wads.value, "3 wads");
+        assert_eq!(wads.note_text(), "1 broken, 1 changed, 1 volatile");
+        let colors: Vec<_> = wads.note.iter().map(|(_, state)| *state).collect();
+        assert_eq!(colors, [State::Bad, State::Changed, State::Volatile]);
+        assert_eq!(details.title, "broken");
+    }
+
+    #[test]
+    fn a_missing_uzdoom_says_so_instead_of_where_it_came_from() {
+        let altar = Altar::new("details-missing");
+        let profile = Profile {
+            uzdoom: Some(altar.file("nope").into()),
+            ..Profile::default()
+        };
+        let config = Config::default();
+        let details = Details::launch(&profile, &config, &profile.faults(&config));
+        assert_eq!(details.lines[0].note_text(), "missing");
+        assert_eq!(details.lines[0].state, State::Bad);
+    }
+
+    #[test]
+    fn the_editor_shows_what_falls_back_on_the_globals() {
+        let details = Details::overrides(&Profile::default());
+        assert_eq!(details.title, "overrides");
+        assert!(details.lines.iter().all(|l| l.state == State::Unset));
+        assert_eq!(details.lines[0].value, "global");
+        assert_eq!(details.lines[2].value, "uzdoom's own");
+    }
+
+    #[test]
+    fn the_lines_line_up_and_the_size_fits_them() {
+        let details = Details::launch(&Profile::default(), &Config::default(), &[]);
+        let lines = details.lines();
+        assert!(
+            lines
+                .iter()
+                .all(|l| l.spans[0].content.len() == LABEL_WIDTH + 1)
+        );
+        let (width, height) = details.size();
+        assert_eq!(height, 4);
+        assert_eq!(width, lines.iter().map(|l| l.width() as u16).max().unwrap());
+    }
+}
