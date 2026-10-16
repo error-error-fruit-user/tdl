@@ -14,6 +14,9 @@ const TRACK: &[u8] = include_bytes!("../assets/inevitable_doom.wav");
 /// How often the music thread checks whether it should stop or start the track over.
 const POLL: Duration = Duration::from_millis(50);
 
+/// How long the music takes to fade out once it is told to stop.
+const FADE: Duration = Duration::from_millis(600);
+
 static STOP: AtomicBool = AtomicBool::new(false);
 static KEEP: AtomicBool = AtomicBool::new(false);
 
@@ -24,7 +27,7 @@ pub fn start(keep: bool) {
     thread::spawn(play);
 }
 
-/// Called when the splash screen is dismissed: stops the music unless `--music` asked to keep it.
+/// Called when the splash screen is dismissed: fades the music out unless `--music` asked to keep it.
 pub fn splash_over() {
     if !KEEP.load(Ordering::Relaxed) {
         STOP.store(true, Ordering::Relaxed);
@@ -33,9 +36,10 @@ pub fn splash_over() {
 
 fn play() {
     // 🔇 no sound device, or a track that won't decode: nothing to do but stay quiet
-    let Ok(sink) = DeviceSinkBuilder::open_default_sink() else {
+    let Ok(mut sink) = DeviceSinkBuilder::open_default_sink() else {
         return;
     };
+    sink.log_on_drop(false);
     let player = Player::connect_new(sink.mixer());
     while !STOP.load(Ordering::Relaxed) {
         if player.empty() {
@@ -44,6 +48,12 @@ fn play() {
                 Err(_) => return,
             }
         }
+        thread::sleep(POLL);
+    }
+    // 🔉 fade out rather than cutting off mid-note
+    let steps = (FADE.as_millis() / POLL.as_millis()) as u32;
+    for step in (0..steps).rev() {
+        player.set_volume(step as f32 / steps as f32);
         thread::sleep(POLL);
     }
 }
