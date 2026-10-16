@@ -81,7 +81,7 @@ impl Ritual for ProfilePicker<'_> {
                 Ok(Phase::Render)
             }
             KeyCode::Esc => Ok(Phase::Return(None)),
-            KeyCode::Char('?') => {
+            KeyCode::Char('?') | KeyCode::F(1) => {
                 Legend::summon(grimoire, Self::LEGEND)?;
                 Ok(Phase::Render)
             }

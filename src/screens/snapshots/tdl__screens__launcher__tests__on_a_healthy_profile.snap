@@ -17,12 +17,12 @@ expression: "testing::draw(90, 28, |page| launcher.render(page))"
               ┃                                                           ┃
               ┃                                                           ┃
               ┃                                                           ┃
-              ┃                                                           ┃
               ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-                             ┏━━━━━━━━━━[ ready ]━━━━━━━━━━━┓
-                             ┃   uzdoom ■ uzdoom.sh  global ┃
-                             ┃ base wad ■ DOOM2.WAD  global ┃
-                             ┃      ini □ uzdoom's own      ┃
-                             ┃     wads ■ 3 wads            ┃
-                             ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-                                           [?]
+                ┏━━━━━━━━━━[ ready ]━━━━━━━━━━━┓ ┏━━━━━━[ global ]━━━━━━┓
+                ┃   uzdoom ■ uzdoom.sh  global ┃ ┃   uzdoom ■ uzdoom.sh ┃
+                ┃ base wad ■ DOOM2.WAD  global ┃ ┃ base wad ■ DOOM2.WAD ┃
+                ┃      ini □ uzdoom's own      ┃ ┃     args □ none      ┃
+                ┃     args □ none              ┃ ┃                      ┃
+                ┃     wads ■ 3 wads            ┃ ┃                      ┃
+                ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┗━━━━━━━━━━━━━━━━━━━━━━┛
+                                         [F1/?]

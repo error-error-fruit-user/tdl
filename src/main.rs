@@ -8,6 +8,7 @@ use crate::{
 };
 
 mod cli;
+mod clipboard;
 mod error;
 mod layout;
 mod music;
@@ -18,6 +19,7 @@ mod quips;
 mod ritual;
 mod screens;
 mod slayer;
+mod tag;
 mod tally;
 #[cfg(test)]
 mod testing;
@@ -32,12 +34,19 @@ fn main() {
         println!("{}", cli::USAGE);
         return;
     }
+    if args.iter().any(|arg| arg == "--list-quips") {
+        print!("{}", quips::listing());
+        return;
+    }
     let cli = Cli::parse(args).unwrap_or_else(|message| {
         eprintln!("{message}\n\n{}", cli::USAGE);
         std::process::exit(2);
     });
-    if cli.music {
-        music::start(true);
+    if let Some(song) = &cli.music
+        && let Err(message) = music::use_song(std::path::Path::new(song))
+    {
+        eprintln!("{message}");
+        std::process::exit(2);
     }
     if let Err(error) = ratatui::run(|grimoire| {
         let start = Start {
@@ -47,6 +56,10 @@ fn main() {
             wads: cli.wads,
             unseal: cli.unseal,
             splash: !cli.no_splash,
+            quip: cli.quip,
+            no_quips: cli.no_quips,
+            keep_music: cli.keep_music,
+            no_music: cli.no_music,
         };
         Launcher::summon(grimoire, start)
     }) {

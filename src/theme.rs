@@ -72,6 +72,8 @@ pub const CURSOR: Style = Style::new()
     .add_modifier(Modifier::BOLD);
 /// The cursor row of a list when what it points at is broken.
 pub const BROKEN_CURSOR: Style = Style::new().fg(BONE).bg(BLOOD).add_modifier(Modifier::BOLD);
+/// A row picked to be copied, with `Shift+V` or `M`.
+pub const SELECTED: Style = Style::new().fg(BONE).bg(IRON);
 /// A row that is broken, but not under the cursor.
 pub const BROKEN_ROW: Style = Style::new().fg(BONE).bg(GORE);
 /// Column headings.

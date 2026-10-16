@@ -7,7 +7,10 @@ use crate::{
     ritual::{Grimoire, Page, Phase, Ritual},
     theme,
     vault::{Vault, host_settings::HostSettings},
-    widgets::form::{self, Button, Field},
+    widgets::{
+        form::{self, Button, Field},
+        text,
+    },
 };
 
 /// Collects the host settings (player count, mode, map, port, join code) in a single form, with
@@ -17,6 +20,8 @@ pub struct HostSettingsForm {
     index: Index,
     /// Whether the profile has defaults saved, so the clear button knows if it can do anything.
     has_defaults: bool,
+    /// Where the cursor is in the focused field, when it is one that is typed into.
+    caret: usize,
 }
 
 /// What the form was left with.
@@ -36,39 +41,44 @@ impl HostSettingsForm {
     const MAP_LABEL: &str = "map";
     const PORT_LABEL: &str = "port";
     const CODE_LABEL: &str = "code";
+    /// The longest a map name may be typed, far longer than any real one.
+    const MAX_MAP: usize = 32;
     const PLAYER_COUNT_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Launch"],
-        ["Tab/Backtab", "Traverse"],
-        ["2-8", "Input"],
+        ["Tab/↓, Backtab/↑", "Traverse"],
+        ["2-8, ←/→", "Input"],
         ["Esc", "Cancel"],
     ];
     const MODE_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Launch"],
-        ["Tab/Backtab", "Traverse"],
-        ["J/K", "Switch Mode"],
+        ["Tab/↓, Backtab/↑", "Traverse"],
+        ["J/K, ←/→", "Switch Mode"],
         ["Esc", "Cancel"],
     ];
     const MAP_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Launch"],
-        ["Tab/Backtab", "Traverse"],
+        ["Tab/↓, Backtab/↑", "Traverse"],
         ["A-Z/0-9/_", "Input"],
+        ["←/→/Home/End", "Move the Cursor"],
         ["Esc", "Cancel"],
     ];
     const PORT_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Launch"],
-        ["Tab/Backtab", "Traverse"],
+        ["Tab/↓, Backtab/↑", "Traverse"],
         ["0-9", "Input"],
+        ["←/→/Home/End", "Move the Cursor"],
         ["Esc", "Cancel"],
     ];
     const CODE_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Launch"],
-        ["Tab/Backtab", "Traverse"],
+        ["Tab/↓, Backtab/↑", "Traverse"],
         ["a-z/0-9", "Input"],
+        ["←/→/Home/End", "Move the Cursor"],
         ["Esc", "Cancel"],
     ];
     const BUTTON_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Press"],
-        ["Tab/Backtab", "Traverse"],
+        ["Tab/↓, Backtab/↑", "Traverse"],
         ["Esc", "Cancel"],
     ];
 
@@ -79,6 +89,7 @@ impl HostSettingsForm {
             has_defaults: defaults.is_some(),
             settings: defaults.unwrap_or_else(|| HostSettings::new(port)),
             index: Index::PlayerCount,
+            caret: 0,
         }
     }
 
@@ -150,30 +161,35 @@ impl Ritual for HostSettingsForm {
                 value: &self.settings.player_count,
                 placeholder: "",
                 room: 1,
+                caret: None,
             },
             Field {
                 label: Self::MODE_LABEL,
                 value: mode,
                 placeholder: "",
                 room: 11,
+                caret: None,
             },
             Field {
                 label: Self::MAP_LABEL,
                 value: &self.settings.map,
                 placeholder: "any",
                 room: 8,
+                caret: (self.index == Index::Map).then_some(self.caret),
             },
             Field {
                 label: Self::PORT_LABEL,
                 value: &self.settings.port,
                 placeholder: &default_port,
                 room: 5,
+                caret: (self.index == Index::Port).then_some(self.caret),
             },
             Field {
                 label: Self::CODE_LABEL,
                 value: &self.settings.code,
                 placeholder: "random",
                 room: net::MAX_CODE_LENGTH as u16,
+                caret: (self.index == Index::Code).then_some(self.caret),
             },
         ];
         let buttons = [
@@ -207,60 +223,7 @@ impl Ritual for HostSettingsForm {
 
     fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Choice>> {
         match key_code {
-            KeyCode::Enter => Ok(Phase::Return(match self.index {
-                Index::Save => Choice::SaveDefaults,
-                Index::Clear => Choice::ClearDefaults,
-                _ => Choice::Launch(self.settings.clone()),
-            })),
-            KeyCode::Tab => {
-                self.index.select_next();
-                Ok(Phase::Render)
-            }
-            KeyCode::BackTab => {
-                self.index.select_previous();
-                Ok(Phase::Render)
-            }
-            KeyCode::Char(c @ '2'..='8') if self.index == Index::PlayerCount => {
-                self.settings.player_count.pop();
-                self.settings.player_count.push(c);
-                Ok(Phase::Render)
-            }
-            KeyCode::Char('j' | 'k') if self.index == Index::Mode => {
-                self.settings.is_deathmatch = !self.settings.is_deathmatch;
-                Ok(Phase::Render)
-            }
-            KeyCode::Char(c @ 'a'..='z' | c @ 'A'..='Z' | c @ '0'..='9' | c @ '_')
-                if self.index == Index::Map =>
-            {
-                self.settings.map.push(c);
-                Ok(Phase::Render)
-            }
-            KeyCode::Backspace if self.index == Index::Map => {
-                self.settings.map.pop();
-                Ok(Phase::Render)
-            }
-            KeyCode::Char(c @ '0'..='9')
-                if self.index == Index::Port && self.settings.port.len() < 5 =>
-            {
-                self.settings.port.push(c);
-                Ok(Phase::Render)
-            }
-            KeyCode::Backspace if self.index == Index::Port => {
-                self.settings.port.pop();
-                Ok(Phase::Render)
-            }
-            KeyCode::Char(c @ ('a'..='z' | 'A'..='Z' | '0'..='9'))
-                if self.index == Index::Code && self.settings.code.len() < net::MAX_CODE_LENGTH =>
-            {
-                self.settings.code.push(c.to_ascii_lowercase());
-                Ok(Phase::Render)
-            }
-            KeyCode::Backspace if self.index == Index::Code => {
-                self.settings.code.pop();
-                Ok(Phase::Render)
-            }
-            KeyCode::Esc => Ok(Phase::Return(Choice::Cancel)),
-            KeyCode::Char('?') => {
+            KeyCode::Char('?') | KeyCode::F(1) => {
                 Legend::summon(
                     grimoire,
                     match self.index {
@@ -274,7 +237,97 @@ impl Ritual for HostSettingsForm {
                 )?;
                 Ok(Phase::Render)
             }
-            _ => Ok(Phase::Prompt),
+            key_code => Ok(self.edit(key_code)),
+        }
+    }
+}
+
+impl HostSettingsForm {
+    /// The fewest and most players UZDoom's `-host` is given here.
+    const PLAYERS: std::ops::RangeInclusive<u8> = 2..=8;
+
+    /// Moves to the next field or button, or with `back` the one before, with the cursor at the
+    /// end of its text.
+    fn move_focus(&mut self, back: bool) -> Phase<Choice> {
+        if back {
+            self.index.select_previous();
+        } else {
+            self.index.select_next();
+        }
+        self.caret = self.focused_text().map_or(0, |text| text::end(text));
+        Phase::Render
+    }
+
+    /// The text of the field in focus, if it is one that is typed into.
+    fn focused_text(&mut self) -> Option<&mut String> {
+        match self.index {
+            Index::Map => Some(&mut self.settings.map),
+            Index::Port => Some(&mut self.settings.port),
+            Index::Code => Some(&mut self.settings.code),
+            _ => None,
+        }
+    }
+
+    /// Steps the player count up or down by one, staying within [`Self::PLAYERS`].
+    fn step_players(&mut self, up: bool) -> Phase<Choice> {
+        let count: u8 = self
+            .settings
+            .player_count
+            .parse()
+            .unwrap_or(*Self::PLAYERS.start());
+        let stepped = if up {
+            count.saturating_add(1)
+        } else {
+            count.saturating_sub(1)
+        };
+        let stepped = stepped.clamp(*Self::PLAYERS.start(), *Self::PLAYERS.end());
+        Phase::render_if_then(stepped != count, || {
+            self.settings.player_count = stepped.to_string();
+        })
+    }
+
+    /// Every key but the legend's, none of which needs the terminal.
+    fn edit(&mut self, key_code: KeyCode) -> Phase<Choice> {
+        match (key_code, &self.index) {
+            (KeyCode::Enter, Index::Save) => Phase::Return(Choice::SaveDefaults),
+            (KeyCode::Enter, Index::Clear) => Phase::Return(Choice::ClearDefaults),
+            (KeyCode::Enter, _) => Phase::Return(Choice::Launch(self.settings.clone())),
+            (KeyCode::Esc, _) => Phase::Return(Choice::Cancel),
+            (KeyCode::Tab | KeyCode::Down, _) => self.move_focus(false),
+            (KeyCode::BackTab | KeyCode::Up, _) => self.move_focus(true),
+            (KeyCode::Char(c @ '2'..='8'), Index::PlayerCount) => {
+                self.settings.player_count = c.to_string();
+                Phase::Render
+            }
+            (KeyCode::Right, Index::PlayerCount) => self.step_players(true),
+            (KeyCode::Left, Index::PlayerCount) => self.step_players(false),
+            (KeyCode::Char('j' | 'k') | KeyCode::Left | KeyCode::Right, Index::Mode) => {
+                self.settings.is_deathmatch = !self.settings.is_deathmatch;
+                Phase::Render
+            }
+            // ↔️ between the two buttons
+            (KeyCode::Right, Index::Save) => self.move_focus(false),
+            (KeyCode::Left, Index::Clear) => self.move_focus(true),
+            (key_code, Index::Map | Index::Port | Index::Code) => {
+                let (max, accept): (usize, fn(char) -> Option<char>) = match self.index {
+                    Index::Map => (Self::MAX_MAP, |c| {
+                        (c.is_ascii_alphanumeric() || c == '_').then_some(c)
+                    }),
+                    Index::Port => (5, |c| c.is_ascii_digit().then_some(c)),
+                    _ => (net::MAX_CODE_LENGTH, |c| {
+                        c.is_ascii_alphanumeric().then_some(c.to_ascii_lowercase())
+                    }),
+                };
+                let mut caret = self.caret;
+                let text = self.focused_text().expect("a typed field has focus");
+                let changed = text::edit(text, &mut caret, key_code, max, accept);
+                self.caret = caret;
+                match changed {
+                    Some(changed) => Phase::render_if(changed),
+                    None => Phase::Prompt,
+                }
+            }
+            _ => Phase::Prompt,
         }
     }
 }
@@ -354,6 +407,44 @@ mod tests {
         let form = HostSettingsForm::new(None, Some(7000));
         assert_eq!(form.settings.port, "7000");
         assert!(!form.has_defaults);
+    }
+
+    #[test]
+    fn the_arrows_step_the_players_switch_the_mode_and_move_about_the_text() {
+        let mut form = HostSettingsForm::new(None, None);
+        assert!(form.edit(KeyCode::Right) == Phase::Render);
+        assert_eq!(form.settings.player_count, "3");
+        for _ in 0..10 {
+            let _ = form.edit(KeyCode::Right);
+        }
+        assert_eq!(form.settings.player_count, "8", "no more than 8");
+        assert!(form.edit(KeyCode::Right) == Phase::Prompt);
+
+        assert!(form.edit(KeyCode::Down) == Phase::Render);
+        assert_eq!(form.index, Index::Mode);
+        let deathmatch = form.settings.is_deathmatch;
+        let _ = form.edit(KeyCode::Left);
+        assert_ne!(form.settings.is_deathmatch, deathmatch);
+
+        let _ = form.edit(KeyCode::Down);
+        for c in "MAP7".chars() {
+            let _ = form.edit(KeyCode::Char(c));
+        }
+        let _ = form.edit(KeyCode::Left);
+        let _ = form.edit(KeyCode::Char('0'));
+        assert_eq!(form.settings.map, "MAP07");
+        let _ = form.edit(KeyCode::Up);
+        assert_eq!(form.index, Index::Mode);
+    }
+
+    #[test]
+    fn left_and_right_move_between_the_buttons() {
+        let mut form = HostSettingsForm::new(None, None);
+        form.index = Index::Save;
+        let _ = form.edit(KeyCode::Right);
+        assert_eq!(form.index, Index::Clear);
+        let _ = form.edit(KeyCode::Left);
+        assert_eq!(form.index, Index::Save);
     }
 
     #[test]

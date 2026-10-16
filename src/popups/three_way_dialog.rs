@@ -12,6 +12,8 @@ use crate::{
 pub struct ThreeWayDialog<'a> {
     message: &'a str,
     options: [&'a str; 3],
+    /// The answer picked with `←`/`→`, if any, which `Enter` takes.
+    selected: Option<usize>,
 }
 
 impl<'a> ThreeWayDialog<'a> {
@@ -40,7 +42,12 @@ impl<'a> ThreeWayDialog<'a> {
         message: &'a str,
         options: [&'a str; 3],
     ) -> Result<Option<usize>> {
-        Self { message, options }.invoke(grimoire)
+        Self {
+            message,
+            options,
+            selected: None,
+        }
+        .invoke(grimoire)
     }
 }
 
@@ -52,11 +59,18 @@ impl Ritual for ThreeWayDialog<'_> {
             .into_iter()
             .map(|line| Line::styled(line, Style::new().fg(theme::TEXT)))
             .collect();
-        let answers = popups::answers(&self.options);
+        let answers = popups::answers(&self.options, self.selected);
         popups::draw(page, Self::TITLE, theme::DIALOG, &lines, Some(answers));
     }
 
     fn prompt(&mut self, _: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Return>> {
+        if let Some(phase) = popups::pick(&mut self.selected, self.options.len(), key_code) {
+            return Ok(match phase {
+                Phase::Return(answer) => Phase::Return(Some(answer)),
+                Phase::Render => Phase::Render,
+                Phase::Prompt => Phase::Prompt,
+            });
+        }
         Ok(Self::answer(&self.options, key_code))
     }
 }
@@ -100,6 +114,7 @@ mod tests {
         let mut dialog = ThreeWayDialog {
             message: "Which UZDoom config file to use?",
             options: OPTIONS,
+            selected: None,
         };
         insta::assert_snapshot!(crate::testing::draw(60, 12, |page| dialog.render(page)));
     }

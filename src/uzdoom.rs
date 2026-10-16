@@ -12,6 +12,7 @@ use std::{
 
 use crate::{
     error::{Error, Result},
+    vault::host_settings::HostSettings,
     vault::profile::Profile,
     vault::wad::Wad,
 };
@@ -56,11 +57,24 @@ impl Game {
     }
 }
 
-/// Starts UZDoom, with its output going to `session.log` in `data_subdir`.
-fn execute(uzdoom: &OsStr, profile: &Profile, args: &[&OsStr], data_subdir: &Path) -> Result<Game> {
+/// The player's own extra arguments, from the settings: split at whitespace, with no quoting.
+pub fn extra_args(text: &str) -> impl Iterator<Item = &str> {
+    text.split_whitespace()
+}
+
+/// Starts UZDoom, with its output going to `session.log` in `data_subdir`. `extra` (the player's
+/// own arguments) goes after tdl's `args` and before the wads, so `-file` stays last.
+fn execute(
+    uzdoom: &OsStr,
+    profile: &Profile,
+    args: &[&OsStr],
+    extra: &str,
+    data_subdir: &Path,
+) -> Result<Game> {
     let mut command = Command::new(uzdoom);
     command
         .args(args)
+        .args(extra_args(extra))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
@@ -125,6 +139,7 @@ pub fn launch(
     uzdoom: &OsStr,
     base_wad: Option<&OsStr>,
     profile: &Profile,
+    extra: &str,
     data_subdir: &Path,
 ) -> Result<Game> {
     let saves_path = data_subdir.join("saves");
@@ -135,23 +150,23 @@ pub fn launch(
     if let Some(ini) = profile.ini.as_ref() {
         args.extend([OsStr::new("-config"), ini])
     }
-    execute(uzdoom, profile, &args, data_subdir)
+    execute(uzdoom, profile, &args, extra, data_subdir)
 }
 
-/// Starts a multiplayer game as host. An empty `map` lets UZDoom pick the starting map.
+/// Starts a multiplayer game as host, with the player count, mode and map from `settings`. An
+/// empty map lets UZDoom pick the starting map.
 pub fn host(
     uzdoom: &OsStr,
     base_wad: Option<&OsStr>,
     profile: &Profile,
-    player_count: &str,
-    is_deathmatch: bool,
-    map: &str,
+    settings: &HostSettings,
+    extra: &str,
     data_subdir: &Path,
 ) -> Result<Game> {
     let saves_path = data_subdir.join("saves");
     let mut args = vec![
         OsStr::new("-host"),
-        OsStr::new(player_count),
+        OsStr::new(&settings.player_count),
         OsStr::new("-savedir"),
         saves_path.as_os_str(),
     ];
@@ -161,13 +176,13 @@ pub fn host(
     if let Some(ini) = profile.ini.as_ref() {
         args.extend([OsStr::new("-config"), ini]);
     }
-    if is_deathmatch {
+    if settings.is_deathmatch {
         args.push(OsStr::new("-deathmatch"));
     }
-    if !map.is_empty() {
-        args.extend(["+map", map].map(OsStr::new));
+    if !settings.map.is_empty() {
+        args.extend(["+map", &settings.map].map(OsStr::new));
     }
-    execute(uzdoom, profile, &args, data_subdir)
+    execute(uzdoom, profile, &args, extra, data_subdir)
 }
 
 /// Joins the game hosted at `ip`.
@@ -176,6 +191,7 @@ pub fn join(
     base_wad: Option<&OsStr>,
     profile: &Profile,
     ip: &str,
+    extra: &str,
     data_subdir: &Path,
 ) -> Result<Game> {
     let mut args = vec![OsStr::new("-join"), OsStr::new(ip)];
@@ -185,7 +201,7 @@ pub fn join(
     if let Some(ini) = profile.ini.as_ref() {
         args.extend([OsStr::new("-config"), ini]);
     }
-    execute(uzdoom, profile, &args, data_subdir)
+    execute(uzdoom, profile, &args, extra, data_subdir)
 }
 
 #[cfg(test)]
@@ -200,9 +216,37 @@ mod tests {
             OsStr::new("/nowhere/at/all/uzdoom"),
             &Profile::default(),
             &[],
+            "",
             Path::new("/nowhere"),
         );
         assert!(matches!(result, Err(Error::Spawn(_))));
+    }
+
+    /// Writes `body` to `path` as a script that can be run.
+    #[cfg(unix)]
+    fn script(path: &Path, body: &str) {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        fs::write(path, body).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    /// Runs `start` until it gets past "text file busy" (ETXTBSY). Linux won't run a file that is
+    /// open for writing anywhere, and a script that was just written still is for a moment if
+    /// another test thread forked meanwhile: its child holds a copy of the handle until it execs.
+    /// That clears up in moments, so retrying is enough.
+    #[cfg(unix)]
+    fn past_busy<T>(mut start: impl FnMut() -> Result<T>) -> T {
+        const TEXT_FILE_BUSY: i32 = 26;
+        for _ in 0..100 {
+            match start() {
+                Err(Error::Spawn(error)) if error.raw_os_error() == Some(TEXT_FILE_BUSY) => {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                other => return other.unwrap_or_else(|error| panic!("{error}")),
+            }
+        }
+        panic!("the script stayed busy");
     }
 
     /// Runs the real UZDoom (the flatpak) on exactly the arguments `uzdoom::launch` builds, with
@@ -269,7 +313,7 @@ for file in "${files[@]}"; do add "$file" "PWAD IWAD"; done
     /// from its log that the IWAD and every wad were loaded, in order.
     #[cfg(unix)]
     fn loads_the_iwad_and_every_wad_in_order(name: &str, uzdoom: &str, iwad: PathBuf) {
-        use std::{fs, os::unix::fs::PermissionsExt};
+        use std::fs;
 
         use crate::vault::scribe::tests::Altar;
 
@@ -287,8 +331,7 @@ for file in "${files[@]}"; do add "$file" "PWAD IWAD"; done
             fs::write(altar.file(name), &empty_pwad).unwrap();
         }
         let wrapper = altar.file("uzdoom.sh");
-        fs::write(&wrapper, uzdoom).unwrap();
-        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+        script(&wrapper, uzdoom);
 
         let profile = Profile::new(
             "real".into(),
@@ -299,10 +342,17 @@ for file in "${files[@]}"; do add "$file" "PWAD IWAD"; done
         );
         let data = altar.file("data");
         fs::create_dir_all(data.join("saves")).unwrap();
-        launch(wrapper.as_os_str(), Some(iwad.as_os_str()), &profile, &data)
-            .unwrap()
-            .wait()
-            .unwrap();
+        past_busy(|| {
+            launch(
+                wrapper.as_os_str(),
+                Some(iwad.as_os_str()),
+                &profile,
+                "",
+                &data,
+            )
+        })
+        .wait()
+        .unwrap();
 
         let log = fs::read_to_string(data.join("session.log")).unwrap();
         println!("{log}");
@@ -340,21 +390,22 @@ for file in "${files[@]}"; do add "$file" "PWAD IWAD"; done
     #[test]
     #[cfg(unix)]
     fn the_dummy_uzdoom_fails_like_uzdoom_on_a_file_that_is_not_a_wad() {
-        use std::{fs, os::unix::fs::PermissionsExt};
+        use std::fs;
 
         use crate::vault::scribe::tests::Altar;
 
         let altar = Altar::new("dummy-uzdoom-bad");
         let wrapper = altar.file("uzdoom.sh");
-        fs::write(&wrapper, DUMMY_UZDOOM).unwrap();
-        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+        script(&wrapper, DUMMY_UZDOOM);
         fs::write(altar.file("notes.wad"), b"not a wad at all").unwrap();
-        let status = Command::new(&wrapper)
-            .arg("-file")
-            .arg(altar.file("notes.wad"))
-            .stderr(Stdio::null())
-            .status()
-            .unwrap();
+        let status = past_busy(|| {
+            Command::new(&wrapper)
+                .arg("-file")
+                .arg(altar.file("notes.wad"))
+                .stderr(Stdio::null())
+                .status()
+                .map_err(Error::Spawn)
+        });
         assert!(!status.success());
     }
 
@@ -366,6 +417,53 @@ for file in "${files[@]}"; do add "$file" "PWAD IWAD"; done
         // passes tdl's arguments into the sandbox: files are forwarded with @@ … @@ and the save
         // folder is opened up, the way a real wrapper has to
         loads_the_iwad_and_every_wad_in_order("real-uzdoom", HEADLESS_UZDOOM, iwad.into());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn extra_arguments_go_after_tdls_own_and_before_the_wads() {
+        use std::fs;
+
+        use crate::vault::scribe::tests::Altar;
+
+        let altar = Altar::new("uzdoom-extra-args");
+        let echo = altar.file("uzdoom.sh");
+        script(
+            &echo,
+            "#!/bin/sh\nfor arg in \"$@\"; do echo \"$arg\"; done\n",
+        );
+        let profile = Profile::new(
+            "p".into(),
+            vec![Wad::new("/wads/a.wad".into(), String::new(), 0)],
+        );
+        let data = altar.file("data");
+        fs::create_dir_all(&data).unwrap();
+        past_busy(|| {
+            launch(
+                echo.as_os_str(),
+                None,
+                &profile,
+                "  -nomusic   +sv_cheats 1 ",
+                &data,
+            )
+        })
+        .wait()
+        .unwrap();
+        let log = fs::read_to_string(data.join("session.log")).unwrap();
+        let args: Vec<_> = log.lines().collect();
+        let saves = data.join("saves");
+        assert_eq!(
+            args,
+            [
+                "-savedir",
+                saves.to_str().unwrap(),
+                "-nomusic",
+                "+sv_cheats",
+                "1",
+                "-file",
+                "/wads/a.wad"
+            ]
+        );
     }
 
     #[test]

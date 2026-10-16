@@ -71,6 +71,7 @@ pub fn summon(
             base_wad.map(Wad::deref),
             &profile,
             &address.host,
+            profile.uzdoom_args(&vault.config),
             &vault.data_dir.join(&profile.name),
         )
         .and_then(|game| running::summon(grimoire, "joining", &details, game));

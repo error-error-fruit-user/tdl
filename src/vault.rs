@@ -13,6 +13,7 @@ pub mod wad;
 use std::path::PathBuf;
 
 use crate::{
+    clipboard::Clipboard,
     error::Result,
     vault::{
         config::Config,
@@ -42,6 +43,9 @@ pub struct Vault {
     /// the ones kept for this vault and then the global ones. Joining looks in them for wads it
     /// already has.
     pub wad_folders: Vec<PathBuf>,
+    /// Wads or profiles copied with `Y` in the launcher or the editor, for `P` to paste. Kept for
+    /// the session only, never saved.
+    pub clipboard: Clipboard,
 }
 
 impl Vault {
@@ -107,6 +111,7 @@ impl Vault {
             notices,
             lookup: None,
             wad_folders: Vec::new(),
+            clipboard: Clipboard::default(),
         }
     }
 
@@ -281,6 +286,7 @@ mod tests {
             uzdoom: Some(OsString::from("/usr/bin/uzdoom")),
             ini: None,
             host_defaults: None,
+            uzdoom_args: None,
         };
         // the old profile layout, from before host defaults: a bare five-field array
         let old_profile = (
@@ -597,6 +603,70 @@ mod tests {
             fs::read(altar.file("data/brutal/saves/slot1")).unwrap(),
             b"my save"
         );
+    }
+
+    // 📇 where the cursor lands after a successful insert or remove
+
+    #[test]
+    fn inserting_in_the_middle_keeps_the_cursor_on_the_new_profile() {
+        let (altar, profile) = upgraded_altar("vault-insert-middle");
+        let mut vault = vault(&altar);
+        let mut index = 0;
+        vault.insert(&mut index, named("first")).unwrap();
+        assert_eq!(index, 0);
+        let names: Vec<_> = vault.profiles.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["first", &profile.name]);
+        assert_eq!(vault.config.profile_names, names);
+        assert!(altar.file("config/.profiles/first.rite").exists());
+    }
+
+    #[test]
+    fn inserting_on_the_new_profile_row_moves_the_cursor_down_with_it() {
+        let (altar, profile) = upgraded_altar("vault-insert-last");
+        let mut vault = vault(&altar);
+        // the `+` row sits just past the last profile
+        let mut index = vault.profiles.len();
+        vault.insert(&mut index, named("last")).unwrap();
+        assert_eq!(vault.profiles[1].name, "last");
+        assert_eq!(index, 2, "the cursor stays on the `+` row");
+        assert_eq!(vault.config.profile_names, [profile.name.as_str(), "last"]);
+        // and the order survives a restart
+        let names: Vec<_> = self::vault(&altar)
+            .profiles
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
+        assert_eq!(names, [profile.name.as_str(), "last"]);
+    }
+
+    #[test]
+    fn removing_keeps_the_cursor_in_range() {
+        let (altar, _) = upgraded_altar("vault-remove-ok");
+        let mut vault = vault(&altar);
+        let mut index = 1;
+        vault.insert(&mut index, named("second")).unwrap();
+        vault.insert(&mut index, named("third")).unwrap();
+        assert_eq!(index, 3);
+
+        // the last profile: the cursor moves up onto the one before it
+        let mut index = 2;
+        vault.remove(&mut index).unwrap();
+        assert_eq!(index, 1);
+        assert!(!altar.file("config/.profiles/third.rite").exists());
+        assert!(!altar.file("data/third").exists());
+
+        // one in the middle: the cursor stays, now on the profile that followed it
+        let mut index = 0;
+        vault.remove(&mut index).unwrap();
+        assert_eq!(index, 0);
+        assert_eq!(vault.profiles[0].name, "second");
+
+        // the only one left: the cursor stays at the top, on the `+` row
+        vault.remove(&mut index).unwrap();
+        assert_eq!(index, 0);
+        assert!(vault.profiles.is_empty());
+        assert!(vault.config.profile_names.is_empty());
+        assert!(self::vault(&altar).profiles.is_empty());
     }
 
     #[test]

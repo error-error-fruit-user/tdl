@@ -38,10 +38,14 @@ pub struct Config {
     /// Missing in older files, which count as none.
     #[serde(default, with = "paths")]
     pub wad_folders: Vec<OsString>,
+    /// Extra command-line arguments for UZDoom, split at spaces and passed on every launch, host
+    /// and join, before the wads. Set in the settings. Missing in older files, which count as none.
+    #[serde(default)]
+    pub uzdoom_args: String,
 }
 
 impl Edition for Config {
-    const UPGRADES: &[fn(Self) -> Self] = &[v0_to_v1, v1_to_v2];
+    const UPGRADES: &[fn(Self) -> Self] = &[v0_to_v1, v1_to_v2, v2_to_v3];
 }
 
 /// Edition 1 only wrapped the same data in a named, versioned map, so nothing needs fixing.
@@ -54,6 +58,15 @@ fn v0_to_v1(config: Config) -> Config {
 /// from reading a file they can't understand.
 fn v1_to_v2(config: Config) -> Config {
     config
+}
+
+/// Edition 3 fills in the global base wad's size if it was added before sizes were recorded, as
+/// [`crate::vault::profile`] does for every profile's wads.
+fn v2_to_v3(config: Config) -> Config {
+    Config {
+        base_wad: config.base_wad.map(Wad::with_size_backfilled),
+        ..config
+    }
 }
 
 impl Config {
@@ -81,6 +94,7 @@ mod tests {
         assert!(!config.skip_splash);
         assert_eq!(config.host_port, None);
         assert!(config.wad_folders.is_empty());
+        assert!(config.uzdoom_args.is_empty());
         assert_eq!(config.profile_names, ["brutal"]);
     }
 
@@ -155,8 +169,41 @@ mod tests {
         );
         assert_eq!(config.host_port, Some(9000));
         assert!(config.upgrade(&path).unwrap());
-        assert_eq!(Config::stored_version(&path), Some(2));
+        assert_eq!(Config::stored_version(&path), Some(Config::current()));
         let bytes = fs::read(&path).unwrap();
         assert!(!bytes.windows(4).any(|window| window == b"Unix"));
+    }
+
+    #[test]
+    fn a_config_saved_by_edition_two_gets_its_base_wads_size() {
+        use std::fs;
+
+        use crate::vault::scribe::tests::Altar;
+
+        let altar = Altar::new("config-edition-two");
+        fs::write(altar.file("DOOM2.WAD"), b"12345").unwrap();
+        let old = Config {
+            base_wad: Some(Wad::new(altar.file("DOOM2.WAD").into(), "ab".repeat(32), 0)),
+            profile_names: vec!["brutal".into()],
+            ..Config::default()
+        };
+        #[derive(Serialize)]
+        struct Sealed<'a> {
+            version: u32,
+            data: &'a Config,
+        }
+        let path = Config::path(&altar.file(""));
+        let bytes = rmp_serde::to_vec_named(&Sealed {
+            version: 2,
+            data: &old,
+        })
+        .unwrap();
+        fs::write(&path, bytes).unwrap();
+
+        let config = Config::open(&path).unwrap();
+        assert_eq!(config.base_wad.as_ref().map(|wad| wad.size), Some(5));
+        assert_eq!(config.profile_names, ["brutal"]);
+        assert!(config.upgrade(&path).unwrap());
+        assert_eq!(Config::stored_version(&path), Some(3));
     }
 }

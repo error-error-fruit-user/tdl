@@ -80,3 +80,21 @@ pub fn example_vault(altar: &Altar) -> PathBuf {
     }
     root
 }
+
+/// Leaves the example vault in `$TDL_SCREENSHOT_DIR`, for `screenshots.tape` to take the README's
+/// screenshots of. It isn't a check, so it only runs when asked:
+///
+/// ```sh
+/// TDL_SCREENSHOT_DIR=/tmp/tdl-shots cargo +nightly test screenshot_vault -- --ignored
+/// ```
+#[test]
+#[ignore = "writes the screenshot vault; see the doc comment"]
+fn screenshot_vault() {
+    let dir = PathBuf::from(std::env::var("TDL_SCREENSHOT_DIR").expect("TDL_SCREENSHOT_DIR"));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let altar = Altar(dir);
+    example_vault(&altar);
+    // 📸 kept, unlike every other altar: the screenshots are taken from it afterwards
+    std::mem::forget(altar);
+}

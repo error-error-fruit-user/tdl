@@ -6,7 +6,10 @@ use crate::{
     popups::{legend::Legend, warning::Warning},
     ritual::{Grimoire, Page, Phase, Ritual},
     theme,
-    widgets::form::{self, Field},
+    widgets::{
+        form::{self, Field},
+        text,
+    },
 };
 
 /// Prompts for where the host is: its IP address, the port its wads are served on, and the join
@@ -16,27 +19,34 @@ pub struct JoinAddressForm {
     port: String,
     code: String,
     focus: usize,
+    /// Where the cursor is in the focused field.
+    caret: usize,
 }
 
 impl JoinAddressForm {
     const TITLE: &str = "join";
     const BORDER_COLOR: Color = theme::MULTIPLAYER;
     const FIELDS: usize = 3;
+    /// Long enough for any IPv4 address.
+    const MAX_IP: usize = 15;
     const IP_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Launch"],
-        ["Tab/Backtab", "Traverse"],
+        ["Tab/↓, Backtab/↑", "Traverse"],
+        ["←/→/Home/End", "Move the Cursor"],
         ["0-9/.", "Input"],
         ["Esc", "Cancel"],
     ];
     const PORT_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Launch"],
-        ["Tab/Backtab", "Traverse"],
+        ["Tab/↓, Backtab/↑", "Traverse"],
+        ["←/→/Home/End", "Move the Cursor"],
         ["0-9", "Input"],
         ["Esc", "Cancel"],
     ];
     const CODE_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Launch"],
-        ["Tab/Backtab", "Traverse"],
+        ["Tab/↓, Backtab/↑", "Traverse"],
+        ["←/→/Home/End", "Move the Cursor"],
         ["a-z/0-9", "Input"],
         ["Esc", "Cancel"],
     ];
@@ -47,6 +57,7 @@ impl JoinAddressForm {
             port: String::new(),
             code: String::new(),
             focus: 0,
+            caret: 0,
         }
     }
 
@@ -99,18 +110,21 @@ impl Ritual for JoinAddressForm {
                 value: &self.ip,
                 placeholder: "ip address",
                 room: 15,
+                caret: (self.focus == 0).then_some(self.caret),
             },
             Field {
                 label: "port",
                 value: &self.port,
                 placeholder: &default_port,
                 room: 5,
+                caret: (self.focus == 1).then_some(self.caret),
             },
             Field {
                 label: "code",
                 value: &self.code,
                 placeholder: "from the host",
                 room: net::MAX_CODE_LENGTH as u16,
+                caret: (self.focus == 2).then_some(self.caret),
             },
         ];
         form::draw(page, Self::TITLE, Self::BORDER_COLOR, &fields, self.focus);
@@ -130,30 +144,7 @@ impl Ritual for JoinAddressForm {
                 }
             },
             KeyCode::Esc => Ok(Phase::Return(None)),
-            KeyCode::Tab => {
-                self.focus = (self.focus + 1) % Self::FIELDS;
-                Ok(Phase::Render)
-            }
-            KeyCode::BackTab => {
-                self.focus = (self.focus + Self::FIELDS - 1) % Self::FIELDS;
-                Ok(Phase::Render)
-            }
-            KeyCode::Char(c @ ('0'..='9' | '.')) if self.focus == 0 => {
-                self.ip.push(c);
-                Ok(Phase::Render)
-            }
-            KeyCode::Char(c @ '0'..='9') if self.focus == 1 && self.port.len() < 5 => {
-                self.port.push(c);
-                Ok(Phase::Render)
-            }
-            KeyCode::Char(c @ ('a'..='z' | 'A'..='Z' | '0'..='9'))
-                if self.focus == 2 && self.code.len() < net::MAX_CODE_LENGTH =>
-            {
-                self.code.push(c.to_ascii_lowercase());
-                Ok(Phase::Render)
-            }
-            KeyCode::Backspace => Ok(Phase::render_if(self.focused().pop().is_some())),
-            KeyCode::Char('?') => {
+            KeyCode::Char('?') | KeyCode::F(1) => {
                 Legend::summon(
                     grimoire,
                     match self.focus {
@@ -164,7 +155,42 @@ impl Ritual for JoinAddressForm {
                 )?;
                 Ok(Phase::Render)
             }
-            _ => Ok(Phase::Prompt),
+            key_code => Ok(self.edit(key_code)),
+        }
+    }
+}
+
+impl JoinAddressForm {
+    /// Moves to the field `by` away, wrapping around, with the cursor at the end of its text.
+    fn move_focus(&mut self, by: usize) -> Phase<Option<Address>> {
+        self.focus = (self.focus + by) % Self::FIELDS;
+        self.caret = text::end(self.focused());
+        Phase::Render
+    }
+
+    /// Every key but the ones that close the form or show the legend.
+    fn edit(&mut self, key_code: KeyCode) -> Phase<Option<Address>> {
+        match key_code {
+            KeyCode::Tab | KeyCode::Down => self.move_focus(1),
+            KeyCode::BackTab | KeyCode::Up => self.move_focus(Self::FIELDS - 1),
+            key_code => {
+                let (max, accept): (usize, fn(char) -> Option<char>) = match self.focus {
+                    0 => (Self::MAX_IP, |c| {
+                        (c.is_ascii_digit() || c == '.').then_some(c)
+                    }),
+                    1 => (5, |c| c.is_ascii_digit().then_some(c)),
+                    _ => (net::MAX_CODE_LENGTH, |c| {
+                        c.is_ascii_alphanumeric().then_some(c.to_ascii_lowercase())
+                    }),
+                };
+                let mut caret = self.caret;
+                let changed = text::edit(self.focused(), &mut caret, key_code, max, accept);
+                self.caret = caret;
+                match changed {
+                    Some(changed) => Phase::render_if(changed),
+                    None => Phase::Prompt,
+                }
+            }
         }
     }
 }
@@ -197,6 +223,30 @@ mod tests {
         );
         form.port = "9000".into();
         assert_eq!(form.address().map(|a| a.port), Ok(9000));
+    }
+
+    #[test]
+    fn the_arrows_move_between_fields_and_about_the_text() {
+        let mut form = JoinAddressForm::new();
+        for c in "10.0.2".chars() {
+            let _ = form.edit(KeyCode::Char(c));
+        }
+        // back two, and the missing `.0` goes in the middle
+        let _ = form.edit(KeyCode::Left);
+        let _ = form.edit(KeyCode::Left);
+        let _ = form.edit(KeyCode::Char('.'));
+        let _ = form.edit(KeyCode::Char('0'));
+        assert_eq!(form.ip, "10.0.0.2");
+        assert!(form.edit(KeyCode::Down) == Phase::Render);
+        assert_eq!(form.focus, 1);
+        let _ = form.edit(KeyCode::Up);
+        let _ = form.edit(KeyCode::Up);
+        assert_eq!(form.focus, 2, "wrapping around to the code");
+        let _ = form.edit(KeyCode::Char('A'));
+        assert_eq!(form.code, "a");
+        // letters don't go in the ip
+        let _ = form.edit(KeyCode::Down);
+        assert!(form.edit(KeyCode::Char('x')) == Phase::Prompt);
     }
 
     #[test]

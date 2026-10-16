@@ -12,6 +12,7 @@ use crate::{
     layout,
     ritual::{self, Page},
     theme,
+    widgets::text,
 };
 
 /// Blank rows between fields.
@@ -24,6 +25,10 @@ pub struct Field<'a> {
     pub placeholder: &'a str,
     /// The narrowest the value column gets, so there is room to type.
     pub room: u16,
+    /// Where the cursor is in the value, in characters, when the field has focus: see
+    /// [`crate::widgets::text`]. `None` for a field that isn't typed into (a choice, a file), which
+    /// shows no cursor, since there is nothing to type at.
+    pub caret: Option<usize>,
 }
 
 /// A button under the fields, pressed with Enter when it has focus.
@@ -116,8 +121,9 @@ pub fn render(
             value,
         ]);
         line.render(Rect::new(x, y, area.right().saturating_sub(x), 1), buffer);
-        if focused {
-            let column = x + label_width + 2 + layout::width(field.value);
+        if focused && let Some(caret) = field.caret {
+            let typed = text::before(field.value, caret);
+            let column = x + label_width + 2 + layout::width(typed);
             cursor = Some(Position::new(column.min(area.right().saturating_sub(1)), y));
         }
     }
@@ -125,7 +131,7 @@ pub fn render(
 }
 
 /// A whole form window: `fields` with a blank row above and below, centered on the page, the
-/// `[?]` hint underneath, and the cursor placed in the focused field.
+/// `[F1/?]` hint underneath, and the cursor placed in the focused field.
 pub fn draw(page: &mut Page, title: &str, border: Color, fields: &[Field], focus: usize) {
     draw_with_buttons(page, title, border, fields, &[], focus);
 }
@@ -177,12 +183,14 @@ mod tests {
                 value: "4",
                 placeholder: "",
                 room: 1,
+                caret: None,
             },
             Field {
                 label: "map",
                 value,
                 placeholder: "auto",
                 room: 8,
+                caret: Some(value.chars().count()),
             },
         ]
     }
@@ -202,6 +210,20 @@ mod tests {
         // labels are 7 wide, then two spaces, then "MAP07"
         assert_eq!(cursor, Some(Position::new(7 + 2 + 5, 2)));
         assert_eq!(render(&fields(""), None, area, &mut buffer), None);
+    }
+
+    #[test]
+    fn the_cursor_goes_where_the_caret_is_and_a_field_that_isnt_typed_into_has_none() {
+        let area = Rect::new(0, 0, 18, 3);
+        let mut buffer = Buffer::empty(area);
+        let mut middle = fields("MAP07");
+        middle[1].caret = Some(3);
+        assert_eq!(
+            render(&middle, Some(1), area, &mut buffer),
+            Some(Position::new(7 + 2 + 3, 2))
+        );
+        // "players" is a choice, with no caret, so focusing it shows no cursor
+        assert_eq!(render(&fields("MAP07"), Some(0), area, &mut buffer), None);
     }
 
     #[test]

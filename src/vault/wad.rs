@@ -131,6 +131,46 @@ impl Wad {
             .to_string_lossy()
     }
 
+    /// This wad with its size filled in from the file as it is now, if the size was never recorded
+    /// (0) and the file is there. Nothing is hashed, and the modified time stays unknown, so the
+    /// file is still never trusted without being read. Changes made before this point can't be
+    /// seen, but from now on a change in size is noticed.
+    pub fn with_size_backfilled(self) -> Self {
+        if self.size != 0 {
+            return self;
+        }
+        match fs::metadata(&self.path) {
+            Ok(metadata) if metadata.is_file() => Self {
+                size: metadata.len(),
+                ..self
+            },
+            _ => self,
+        }
+    }
+
+    /// Copies the file to `path`, which must not exist yet, and returns the copy as a wad of its
+    /// own with the same hash and settings, for pasting a wad whose name the profile already has.
+    /// The copy is only trusted without being read again (see [`Wad::is_unchanged`]) if the
+    /// original still could be, since otherwise its hash may already have been stale.
+    pub fn copied_to(&self, path: &Path) -> io::Result<Self> {
+        let trusted = self.is_unchanged();
+        // 🛑 never write over a file that is already there
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)?;
+        if let Err(error) = fs::copy(&self.path, path) {
+            let _ = fs::remove_file(path);
+            return Err(error);
+        }
+        let metadata = fs::metadata(path)?;
+        Ok(Self {
+            path: path.as_os_str().into(),
+            modified: if trusted { modified(&metadata) } else { 0 },
+            ..self.clone()
+        })
+    }
+
     /// What is wrong with the file this wad points at, if anything. One look at the disk, no hashing.
     /// A volatile wad is expected to change, so its size is not compared.
     pub fn check(&self) -> Option<Fault> {
@@ -332,6 +372,73 @@ mod tests {
         assert_ne!(fresh.hash, before);
         assert_eq!(fresh.size, 10);
         assert!(fresh.volatile);
+    }
+
+    #[test]
+    fn backfilling_fills_in_only_an_unknown_size_of_a_file_that_is_there() {
+        let altar = Altar::new("wad-backfill");
+        fs::write(altar.file("a.wad"), b"12345").unwrap();
+        let unknown = Wad::new(altar.file("a.wad").into(), "ab".into(), 0);
+        let backfilled = unknown.clone().with_size_backfilled();
+        assert_eq!(backfilled.size, 5);
+        assert_eq!(
+            backfilled.modified, 0,
+            "still not trusted without reading it"
+        );
+        // and now a change is noticed
+        fs::write(altar.file("a.wad"), b"123456789").unwrap();
+        assert!(matches!(backfilled.check(), Some(Fault::Changed { .. })));
+
+        // a known size is left alone, even if the file has since changed
+        let known = Wad::new(altar.file("a.wad").into(), "ab".into(), 3);
+        assert_eq!(known.clone().with_size_backfilled(), known);
+        // and so is a wad with nothing to measure
+        let gone = Wad::new(altar.file("gone.wad").into(), "ab".into(), 0);
+        assert_eq!(gone.clone().with_size_backfilled(), gone);
+        fs::create_dir(altar.file("folder.wad")).unwrap();
+        let folder = Wad::new(altar.file("folder.wad").into(), "ab".into(), 0);
+        assert_eq!(folder.clone().with_size_backfilled(), folder);
+    }
+
+    #[test]
+    fn a_copy_is_its_own_file_with_the_same_hash_and_settings() {
+        let altar = Altar::new("wad-copied");
+        fs::write(altar.file("brutal.pk3"), b"brutal bytes").unwrap();
+        let mut original = Wad::from_path(&altar.file("brutal.pk3")).unwrap();
+        original.volatile = true;
+        let copy = original.copied_to(&altar.file("brutal_2.pk3")).unwrap();
+        assert_eq!(copy.path, altar.file("brutal_2.pk3").into_os_string());
+        assert_eq!(
+            fs::read(altar.file("brutal_2.pk3")).unwrap(),
+            b"brutal bytes"
+        );
+        assert_eq!(
+            (copy.hash.as_str(), copy.size),
+            (original.hash.as_str(), original.size)
+        );
+        assert!(copy.volatile);
+        assert!(
+            copy.is_unchanged(),
+            "a faithful copy of a trusted file is trusted too"
+        );
+        assert_eq!(copy.check(), None);
+        // a stale original passes on its doubt
+        fs::write(altar.file("brutal.pk3"), b"changed!").unwrap();
+        let doubtful = original.copied_to(&altar.file("brutal_3.pk3")).unwrap();
+        assert_eq!(doubtful.modified, 0);
+    }
+
+    #[test]
+    fn copying_never_writes_over_a_file_and_a_missing_one_leaves_nothing() {
+        let altar = Altar::new("wad-copied-refused");
+        fs::write(altar.file("a.wad"), b"a").unwrap();
+        fs::write(altar.file("b.wad"), b"b").unwrap();
+        let a = Wad::from_path(&altar.file("a.wad")).unwrap();
+        assert!(a.copied_to(&altar.file("b.wad")).is_err());
+        assert_eq!(fs::read(altar.file("b.wad")).unwrap(), b"b");
+        fs::remove_file(altar.file("a.wad")).unwrap();
+        assert!(a.copied_to(&altar.file("c.wad")).is_err());
+        assert!(!altar.file("c.wad").exists());
     }
 
     #[test]

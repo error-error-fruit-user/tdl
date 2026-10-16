@@ -11,11 +11,11 @@ expression: "crate::testing::draw(60, 20, |page| editor.render(page))"
           ┃ wads ───────────────────────────── 0 ┃
           ┃          + add wads                  ┃
           ┃                                      ┃
-          ┃                                      ┃
           ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
                 ┏━━━━━━[ overrides ]━━━━━━┓
                 ┃   uzdoom □ global       ┃
                 ┃ base wad □ global       ┃
                 ┃      ini □ uzdoom's own ┃
+                ┃     args □ global       ┃
                 ┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
-                            [?]
+                          [F1/?]

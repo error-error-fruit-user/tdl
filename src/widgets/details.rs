@@ -120,6 +120,34 @@ fn file_line(
     }
 }
 
+/// The line for UZDoom's extra arguments: the profile's `own`, else the `global` ones, else
+/// `unset`, each said where it comes from, the way [`file_line`] does for files. Empty arguments
+/// count as none.
+fn args_line(own: Option<&str>, global: Option<&str>, unset: &str) -> Detail {
+    let (own, global) = (
+        own.filter(|args| !args.is_empty()),
+        global.filter(|args| !args.is_empty()),
+    );
+    let (args, source) = match (own, global) {
+        (Some(args), _) => (args, "own"),
+        (None, Some(args)) => (args, "global"),
+        (None, None) => {
+            return Detail {
+                label: "args",
+                state: State::Unset,
+                value: unset.to_string(),
+                note: Vec::new(),
+            };
+        }
+    };
+    Detail {
+        label: "args",
+        state: State::Good,
+        value: args.to_string(),
+        note: vec![(source.to_string(), State::Unset)],
+    }
+}
+
 /// The line for the wads: how many, and how many need a look.
 fn wads_line(wads: &[Wad], faults: impl Iterator<Item = Fault>) -> Detail {
     let (mut broken, mut changed) = (0, 0);
@@ -192,6 +220,11 @@ impl Details {
                 fault(Part::Ini),
                 "uzdoom's own",
             ),
+            args_line(
+                profile.uzdoom_args.as_deref(),
+                Some(&config.uzdoom_args),
+                "none",
+            ),
             wads_line(
                 &profile.wads,
                 faults
@@ -229,16 +262,7 @@ impl Details {
                 base_fault.as_ref(),
                 "auto",
             ),
-            Detail {
-                label: "splash",
-                state: if config.skip_splash {
-                    State::Unset
-                } else {
-                    State::Good
-                },
-                value: if config.skip_splash { "off" } else { "on" }.to_string(),
-                note: vec![],
-            },
+            args_line(None, Some(&config.uzdoom_args), "none"),
         ];
         // 🌐 everything here is global, so saying so on every line would only be noise
         let lines = lines
@@ -287,6 +311,7 @@ impl Details {
                 ini_fault.as_ref(),
                 "uzdoom's own",
             ),
+            args_line(profile.uzdoom_args.as_deref(), None, "global"),
         ];
         Self {
             title: "overrides",
@@ -389,6 +414,16 @@ mod tests {
 
     use super::*;
 
+    impl Details {
+        /// The line with this label, wherever it is in the panel.
+        fn line(&self, label: &str) -> &Detail {
+            self.lines
+                .iter()
+                .find(|line| line.label == label)
+                .unwrap_or_else(|| panic!("no {label} line"))
+        }
+    }
+
     impl Detail {
         fn note_text(&self) -> String {
             let parts: Vec<_> = self.note.iter().map(|(note, _)| note.as_str()).collect();
@@ -419,8 +454,9 @@ mod tests {
         assert_eq!(details.lines[0].value, "uzdoom");
         assert_eq!(details.lines[0].note_text(), "global");
         assert_eq!(details.lines[1].state, State::Unset);
-        assert_eq!(details.lines[3].value, "1 wad");
-        assert_eq!(details.lines[3].state, State::Good);
+        let wads = details.line("wads");
+        assert_eq!(wads.value, "1 wad");
+        assert_eq!(wads.state, State::Good);
     }
 
     #[test]
@@ -448,7 +484,7 @@ mod tests {
         fs::remove_file(altar.file("gone.pk3")).unwrap();
         fs::write(altar.file("grew.pk3"), b"123456").unwrap();
         let details = Details::launch(&profile, &config, &profile.faults(&config));
-        let wads = &details.lines[3];
+        let wads = details.line("wads");
         assert_eq!(wads.state, State::Bad);
         assert_eq!(wads.value, "3 wads");
         assert_eq!(wads.note_text(), "1 broken, 1 changed, 1 volatile");
@@ -471,6 +507,27 @@ mod tests {
     }
 
     #[test]
+    fn the_args_say_whether_they_are_the_profiles_own_the_global_ones_or_none() {
+        let line = |own, global| {
+            let detail = args_line(own, global, "none");
+            (detail.value.clone(), detail.note_text(), detail.state)
+        };
+        assert_eq!(
+            line(Some("+sv_cheats 1"), Some("-nomusic")),
+            ("+sv_cheats 1".into(), "own".into(), State::Good)
+        );
+        assert_eq!(
+            line(None, Some("-nomusic")),
+            ("-nomusic".into(), "global".into(), State::Good)
+        );
+        // nothing typed is the same as none at all
+        assert_eq!(
+            line(Some(""), Some("")),
+            ("none".into(), "".into(), State::Unset)
+        );
+    }
+
+    #[test]
     fn the_editor_shows_what_falls_back_on_the_globals() {
         let details = Details::overrides(&Profile::default());
         assert_eq!(details.title, "overrides");
@@ -489,7 +546,7 @@ mod tests {
                 .all(|l| l.spans[0].content.len() == LABEL_WIDTH + 1)
         );
         let (width, height) = details.size();
-        assert_eq!(height, 4);
+        assert_eq!(height, 5);
         assert_eq!(width, lines.iter().map(|l| l.width() as u16).max().unwrap());
     }
 

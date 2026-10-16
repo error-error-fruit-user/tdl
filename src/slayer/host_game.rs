@@ -85,9 +85,8 @@ pub fn summon(
         uzdoom,
         base_wad.map(Wad::deref),
         profile,
-        &settings.player_count,
-        settings.is_deathmatch,
-        &settings.map,
+        &settings,
+        profile.uzdoom_args(&vault.config),
         &vault.data_dir.join(&profile.name),
     )
     .and_then(|game| running::summon(grimoire, "hosting", &details, game));

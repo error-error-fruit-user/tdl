@@ -1,0 +1,21 @@
+---
+source: src/screens/settings.rs
+expression: "testing::draw(60, 18, |page| form.render(page))"
+---
+
+         ┏━━━━━━━━━━━━━━[ settings ]━━━━━━━━━━━━━━┓
+         ┃                                        ┃
+         ┃      splash  shown                     ┃
+         ┃                                        ┃
+         ┃       music  splash only               ┃
+         ┃                                        ┃
+         ┃       quips  shown                     ┃
+         ┃                                        ┃
+         ┃        song  e1m1.ogg                  ┃
+         ┃                                        ┃
+         ┃ uzdoom args  -nomusic +vid_fps 1       ┃
+         ┃                                        ┃
+         ┃ splash quip  #2                        ┃
+         ┃                                        ┃
+         ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                           [F1/?]

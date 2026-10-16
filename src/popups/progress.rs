@@ -87,7 +87,10 @@ impl<'a> Progress<'a> {
         let opened = Instant::now();
         Progress {
             grimoire,
-            count: Count::new(kind, max_file_count, opened, quips::seed()),
+            count: Count {
+                show_quip: quips::shown(),
+                ..Count::new(kind, max_file_count, opened, quips::seed())
+            },
             opened,
             drawn_at: None,
         }
@@ -119,17 +122,13 @@ impl<'a> Progress<'a> {
 impl Tally for Progress<'_> {
     /// Starts the next file: its size becomes the new 100% and the byte count restarts.
     fn count_file(&mut self, name: &OsStr, size: u64) -> Result<()> {
-        self.count.name = name.to_string_lossy().into_owned();
-        self.count.max_bytes = size;
-        self.count.files += 1;
-        self.count.bytes = 0;
+        self.count.start_file(name, size);
         self.render()
     }
 
     /// Adds `amount` bytes to the current file, and redraws if a frame has passed or it is done.
     fn count_bytes(&mut self, amount: u64) -> Result<()> {
-        self.count.bytes += amount;
-        self.count.received += amount;
+        self.count.add_bytes(amount);
         let now = Instant::now();
         self.count.sample(now);
         let due = self
@@ -160,6 +159,8 @@ struct Count {
     /// When the wait began and where it starts in the quips, which move on as it goes.
     started: Instant,
     seed: u32,
+    /// Whether there is a quip at all, which there isn't with the quips hidden.
+    show_quip: bool,
 }
 
 impl Count {
@@ -184,6 +185,31 @@ impl Count {
             footer: None,
             started: now,
             seed,
+            show_quip: true,
+        }
+    }
+
+    /// The next file starts: its size becomes the new 100% and the byte count restarts.
+    fn start_file(&mut self, name: &OsStr, size: u64) {
+        self.name = name.to_string_lossy().into_owned();
+        self.max_bytes = size;
+        self.files += 1;
+        self.bytes = 0;
+    }
+
+    /// `amount` more bytes of the current file are done.
+    fn add_bytes(&mut self, amount: u64) {
+        self.bytes += amount;
+        self.received += amount;
+    }
+
+    /// How full the gauge is, clamped because the gauge panics outside 0..=1, and a bad count
+    /// shouldn't take the UI down.
+    fn ratio(&self) -> f64 {
+        if self.max_bytes == 0 {
+            0.0
+        } else {
+            (self.bytes as f64 / self.max_bytes as f64).clamp(0.0, 1.0)
         }
     }
 
@@ -232,8 +258,9 @@ impl Count {
             .max(layout::width(&numbers))
             .max(self.footer.map_or(0, layout::width));
         let width = (widest + 4).clamp(Self::MIN_WIDTH, Self::MAX_WIDTH);
-        // the gauge, the numbers, a blank row and the quip, then a blank row and the footer
-        let rows = 4 + self.footer.map_or(0, |_| 2);
+        // the gauge and the numbers, then a blank row and the quip, then a blank row and the footer
+        let quip_rows = if self.show_quip { 2 } else { 0 };
+        let rows = 2 + quip_rows + self.footer.map_or(0, |_| 2);
         let (width, height) = layout::window(width, rows);
         let color = self.kind.color();
         let (window, window_area, ..) =
@@ -243,14 +270,8 @@ impl Count {
         let row =
             |offset: u16| Rect::new(inner.x, inner.y + offset, inner.width, 1).intersection(inner);
 
-        // clamped because the gauge panics outside 0..=1, and a bad count shouldn't take the UI down
-        let ratio = if self.max_bytes == 0 {
-            0.0
-        } else {
-            (self.bytes as f64 / self.max_bytes as f64).clamp(0.0, 1.0)
-        };
         let gauge = Gauge::default()
-            .ratio(ratio)
+            .ratio(self.ratio())
             .gauge_style(Style::new().fg(color).bg(theme::IRON))
             .label(Span::styled(label, Style::new().fg(theme::BONE)));
         page.render_widget(gauge, row(0));
@@ -258,18 +279,20 @@ impl Count {
             Line::styled(numbers, Style::new().fg(theme::MUTED)).centered(),
             row(1),
         );
-        page.render_widget(
-            Line::styled(
-                quip,
-                Style::new().fg(theme::QUIP).add_modifier(Modifier::ITALIC),
-            )
-            .centered(),
-            row(3),
-        );
+        if self.show_quip {
+            page.render_widget(
+                Line::styled(
+                    quip,
+                    Style::new().fg(theme::QUIP).add_modifier(Modifier::ITALIC),
+                )
+                .centered(),
+                row(3),
+            );
+        }
         if let Some(footer) = self.footer {
             page.render_widget(
                 Line::styled(footer, Style::new().fg(theme::MUTED)).centered(),
-                row(5),
+                row(3 + quip_rows),
             );
         }
     }
@@ -362,6 +385,73 @@ mod tests {
         // a few quips in, to show they move on
         let later = start + quips::EVERY * 2;
         assert_snapshot!(testing::draw(60, 14, |page| count.draw(page, later)));
+    }
+
+    /// Runs `sizes` through a count file by file, a chunk at a time, drawing after every step the
+    /// way the window does, and returns the gauge's fill after each file finishes.
+    fn count_through(sizes: &[u64]) -> Vec<f64> {
+        let start = Instant::now();
+        let mut count = Count::new(Kind::Downloading, sizes.len() as u64, start, 0);
+        let mut full = Vec::new();
+        for (i, &size) in sizes.iter().enumerate() {
+            count.start_file(OsStr::new(&format!("{i}.wad")), size);
+            assert_eq!(count.bytes, 0, "each file starts from nothing");
+            testing::draw(60, 14, |page| count.draw(page, start));
+            let mut left = size;
+            while left > 0 {
+                let chunk = left.min(64 * 1024);
+                count.add_bytes(chunk);
+                left -= chunk;
+                assert!((0.0..=1.0).contains(&count.ratio()));
+                testing::draw(60, 14, |page| count.draw(page, start));
+            }
+            // a reused download reports its whole size at once, and the last read is empty
+            count.add_bytes(0);
+            full.push(count.ratio());
+        }
+        assert_eq!(count.received, sizes.iter().sum::<u64>());
+        assert_eq!(count.files, sizes.len() as u64);
+        full
+    }
+
+    #[test]
+    fn several_files_count_up_in_any_size_order_without_overflowing_the_gauge() {
+        let (small, big) = (11, 200_000);
+        for sizes in [
+            vec![small, big],
+            vec![big, small],
+            vec![big, small, big],
+            vec![small, 0, big, 0],
+        ] {
+            let full = count_through(&sizes);
+            for (ratio, size) in full.iter().zip(&sizes) {
+                let expected = if *size == 0 { 0.0 } else { 1.0 };
+                assert_eq!(*ratio, expected, "{sizes:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn more_bytes_than_the_file_should_have_keep_the_gauge_full_rather_than_crash() {
+        let start = Instant::now();
+        let mut count = Count::new(Kind::Downloading, 2, start, 0);
+        count.start_file(OsStr::new("big.pk3"), 200_000);
+        count.add_bytes(200_000);
+        // the next file is smaller, and its bytes arrive before it is announced
+        count.add_bytes(50_000);
+        assert_eq!(count.ratio(), 1.0);
+        testing::draw(60, 14, |page| count.draw(page, start));
+        count.start_file(OsStr::new("small.wad"), 11);
+        assert_eq!(count.ratio(), 0.0);
+    }
+
+    #[test]
+    fn snapshot_a_download_with_the_quips_hidden() {
+        let start = Instant::now();
+        let mut count = halfway(Kind::Downloading, start);
+        count.footer = Some(CancelHandler::HINT);
+        count.show_quip = false;
+        assert_snapshot!(testing::draw(60, 14, |page| count.draw(page, start)));
     }
 
     #[test]

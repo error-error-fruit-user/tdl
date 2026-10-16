@@ -12,7 +12,7 @@ tdl stores two kinds of files: **config** (what you set up) and **data** (what t
 
 Pass `--vault /some/folder` to use `/some/folder/config` and `/some/folder/data` instead. The older form, the folder on its own (`tdl /some/folder`), still works. tdl then asks whether to open that vault every time; if you say yes, it is remembered in `global.rite` (below) and opened whenever tdl starts without `--vault`. If it has gone missing, tdl says so and opens the standard folders. `--vault-once /some/folder` opens a vault the same way without asking. `tdl --forget-vault` opens the standard folders and asks whether to forget the remembered vault.
 
-`global.rite` always lives in the standard config folder, whichever vault is open, since it is the one place every vault can find. It holds `vault` (the vault to open by default) and `wad_folders` (wad folders kept for every vault from `--wads`).
+`global.rite` always lives in the standard config folder, whichever vault is open, since it is the one place every vault can find. It holds `vault` (the vault to open by default), `wad_folders` (wad folders kept for every vault from `--wads`) `music` (`Off`, `Splash` or `Kept`: no music, music on the splash screen only, or music that keeps playing in the launcher; missing in older files, which count as `Splash`), `splash_quip` (the splash screen's quip: `Random`, or `Custom` with the text as typed, in which every `#<number>` stands for that built-in quip; missing in older files, which count as `Random`, and a number this tdl has no quip for shows a random one), `no_quips` (`true` to leave the quips out of every window; missing in older files, which count as `false`) and `song` (the path of a song to play instead of the built-in track, picked in the settings; missing in older files, which count as the built-in one).
 
 The macOS paths follow the `directories` crate's documentation and have not been tried on a Mac. On macOS the two folders are the same, so the files below share one folder. That is why the profiles folder and the downloads folder start with a dot: profile names can't contain one, so those folders can never be mistaken for a profile's data folder.
 
@@ -60,9 +60,10 @@ Every `.rite` file is MessagePack, a compact binary format, in a wrapper that re
 | `uzdoom` | Path to the UZDoom executable, used by profiles that don't set their own. |
 | `base_wad` | The default base wad (`path`, `hash`, `size`, `volatile` and `modified`), used by profiles that don't set their own. |
 | `profile_names` | The profiles in the order the launcher shows them. |
-| `skip_splash` | `true` to go straight to the launcher without the splash screen. Missing in older files, which count as `false`. Toggled with `S` in the launcher. |
+| `skip_splash` | `true` to go straight to the launcher without the splash screen. Missing in older files, which count as `false`. Set with **splash** in the settings (`O` in the launcher). |
 | `host_port` | The port the last game was hosted on, offered again in the host form. Empty for the default (8080). Missing in older files, which count as empty. |
 | `wad_folders` | Wad folders kept for this vault from `--wads`, used whenever tdl starts without it (before the global ones). Missing in older files, which count as none. |
+| `uzdoom_args` | Extra arguments for UZDoom, as one line of text split at spaces, passed on every launch, host and join before the wads. Missing in older files, which count as none. Set with **uzdoom args** in the settings. |
 
 **`.profiles/<name>.rite`** (`data`)
 
@@ -75,10 +76,13 @@ Every `.rite` file is MessagePack, a compact binary format, in a wrapper that re
 | `uzdoom` | Overrides the global UZDoom path. |
 | `ini` | A UZDoom config file to pass with `-config`. If unset, UZDoom uses its own global config. Press `I` in the editor to choose: **Global** (unset), **New** (an empty `uzdoom.ini` in the profile's data folder, which UZDoom fills in on first run) or **Select** (an existing file). A profile's own ini moves with it when the profile is renamed. |
 | `host_defaults` | What the host form starts with for this profile: `player_count`, `is_deathmatch`, `map`, `port` and `code`, set with **save as default** in the host form and removed with **clear default**. An empty `port` or `code` means the default port and a random code. A saved code is stored as plain text. Missing in older files, which count as none. |
+| `uzdoom_args` | Extra UZDoom arguments for this profile only, set with `G` in the editor, used instead of the global ones in `config.rite`. Missing (or empty) means the global ones. |
 
 Paths are saved as text (or, for the rare path that isn't valid UTF-8, in the saving OS's own form), so a profile or config file reads on any OS. The folders are still the ones on the machine that saved them, so a profile copied to another computer will show its wads as missing until they are found; the shared `.scroll` format (planned) leaves the folders out entirely.
 
 Files saved before edition 2 kept each wad's whole path as an OS-tagged string, which only the OS that wrote it could read. They still load, and the upgrade prompt rewrites them in the new shape.
+
+Edition 3 (profiles and `config.rite`) fills in the `size` of any wad saved with 0, the wads added before sizes were recorded, from the file as it is on disk when the file is upgraded, so a change from then on is marked. Wads whose file is missing keep 0. Nothing is hashed, and `modified` stays 0, so such a wad is still read again before it is trusted when joining.
 
 ## Scrolls
 
@@ -90,6 +94,7 @@ A `.scroll` is a profile sealed up to share (`X` in the launcher), written where
 | `wads` | The wads in load order, each only its `name`, `size` (0 if unknown), `hash` and `volatile`: no folders, no paths. |
 | `base_wad` | The profile's own base wad, the same way, if it has one. |
 | `host_defaults` | The profile's host defaults, with the join code left out. |
+| `settings` | The maker's `music`, `no_quips` and `splash_quip` from their `global.rite`, if they chose to seal them in. Never their song, vault or wad folders. Missing in older scrolls, which carry none. A splash quip over 120 characters or with control characters gets the scroll refused. |
 
 Importing (`I`) trusts nothing in it: there are at most 4096 wads, every name must be a plain file name (so `../x` can't reach outside a folder) and every hash a real BLAKE3 hash, or the scroll is refused.
 

@@ -1,10 +1,16 @@
 //! The command line:
 //! `tdl [--vault <folder> | --vault-once <folder> | --forget-vault] [--wads <folder>]...
-//! [--unseal <scroll>] [--no-splash] [--music]`.
+//! [--unseal <scroll>] [--no-splash] [--splash-quip <quip> | --no-quips]
+//! [[--music <song>] [--keep-music] | --no-music]`, or `tdl --list-quips`.
+
+use crate::quips;
 
 pub const USAGE: &str = "\
 Usage: tdl [--vault <folder> | --vault-once <folder> | --forget-vault]
-           [--wads <folder>]... [--unseal <scroll>] [--no-splash] [--music]
+           [--wads <folder>]... [--unseal <scroll>] [--no-splash]
+           [--splash-quip <quip> | --no-quips]
+           [[--music <song>] [--keep-music] | --no-music]
+       tdl --list-quips
 
 Options:
   --vault <folder>   Keep the config and data in <folder>/config and <folder>/data
@@ -21,7 +27,17 @@ Options:
   --unseal <scroll>  Import a shared .scroll as a new profile as soon as tdl
                      starts, looking for its wads in the wad folders
   --no-splash        Go straight to the launcher
-  --music            Keep the music playing after the splash screen
+  --splash-quip <quip>
+                     Show <quip> under the splash logo instead of a random one,
+                     just this once (plays the splash even if the settings skip
+                     it). Every #<n> in it is built-in quip n: `#12`, or
+                     `#12, hun!` with your own words after it; `##` is a plain #
+  --no-quips         Show no quips anywhere, just this once
+  --list-quips       List the built-in quips with their numbers, and exit
+  --music <song>     Play <song> (a wav, mp3, flac or ogg file) instead of the
+                     built-in track
+  --keep-music       Keep the music playing after the splash screen
+  --no-music         Play no music at all, just this once
   -h, --help         Show this help";
 
 /// What was asked for on the command line.
@@ -40,7 +56,15 @@ pub struct Cli {
     /// Skips the splash screen.
     pub no_splash: bool,
     /// Keeps the music playing in the launcher, not just on the splash screen.
-    pub music: bool,
+    pub keep_music: bool,
+    /// A song of the user's own to play instead of the built-in track.
+    pub music: Option<String>,
+    /// Plays no music at all this run.
+    pub no_music: bool,
+    /// The splash screen's quip from `--splash-quip`, its numbers already replaced by their quips.
+    pub quip: Option<String>,
+    /// Leaves the quips out of every window for this run.
+    pub no_quips: bool,
 }
 
 impl Cli {
@@ -54,14 +78,53 @@ impl Cli {
         let mut vault_once = false;
         let mut unseal = None;
         let mut no_splash = false;
-        let mut music = false;
+        let mut keep_music = false;
+        let mut no_music = false;
+        let mut music = None;
+        let mut quip = None;
+        let mut no_quips = false;
         while let Some(arg) = args.next() {
+            if arg == "--no-quips" {
+                no_quips = true;
+                continue;
+            }
+            if arg == "--splash-quip" || arg.starts_with("--splash-quip=") {
+                let given = match arg.strip_prefix("--splash-quip=") {
+                    Some(given) => given.to_string(),
+                    None => args.next().ok_or("--splash-quip needs a quip")?,
+                };
+                let expanded = quips::expand(&given)?;
+                if expanded.trim().is_empty() {
+                    return Err("--splash-quip needs a quip".to_string());
+                }
+                if quip.replace(expanded).is_some() {
+                    return Err("Only one quip can be shown at a time".to_string());
+                }
+                continue;
+            }
             if arg == "--no-splash" {
                 no_splash = true;
                 continue;
             }
-            if arg == "--music" {
-                music = true;
+            if arg == "--keep-music" {
+                keep_music = true;
+                continue;
+            }
+            if arg == "--no-music" {
+                no_music = true;
+                continue;
+            }
+            if arg == "--music" || arg.starts_with("--music=") {
+                let song = match arg.strip_prefix("--music=") {
+                    Some(song) => song.to_string(),
+                    None => args.next().ok_or("--music needs a song")?,
+                };
+                if song.is_empty() {
+                    return Err("--music needs a song".to_string());
+                }
+                if music.replace(song).is_some() {
+                    return Err("Only one song can be played at a time".to_string());
+                }
                 continue;
             }
             if arg == "--unseal" || arg.starts_with("--unseal=") {
@@ -111,6 +174,18 @@ impl Cli {
                     .to_string(),
             );
         }
+        if no_splash && quip.is_some() {
+            return Err(
+                "The quip is shown on the splash screen, so it can't go with --no-splash"
+                    .to_string(),
+            );
+        }
+        if no_music && (keep_music || music.is_some()) {
+            return Err("--no-music can't go with --music or --keep-music".to_string());
+        }
+        if no_quips && quip.is_some() {
+            return Err("--no-quips can't go with a quip to show".to_string());
+        }
         Ok(Self {
             vault,
             vault_once,
@@ -118,7 +193,11 @@ impl Cli {
             wads,
             unseal,
             no_splash,
+            keep_music,
             music,
+            no_music,
+            quip,
+            no_quips,
         })
     }
 }
@@ -154,10 +233,44 @@ mod tests {
     }
 
     #[test]
-    fn music_is_off_unless_asked_for() {
-        assert!(!parse(&[]).unwrap().music);
-        assert!(parse(&["--music"]).unwrap().music);
-        assert!(parse(&["--music", "--vault", "/tmp/v"]).unwrap().music);
+    fn keeping_the_music_is_off_unless_asked_for() {
+        assert!(!parse(&[]).unwrap().keep_music);
+        assert!(parse(&["--keep-music"]).unwrap().keep_music);
+        assert!(
+            parse(&["--keep-music", "--vault", "/tmp/v"])
+                .unwrap()
+                .keep_music
+        );
+    }
+
+    #[test]
+    fn no_music_is_its_own_flag_and_cannot_go_with_any_music() {
+        assert!(parse(&["--no-music"]).unwrap().no_music);
+        assert!(!parse(&[]).unwrap().no_music);
+        assert!(parse(&["--no-music", "--no-splash"]).unwrap().no_music);
+        assert!(parse(&["--no-music", "--keep-music"]).is_err());
+        assert!(parse(&["--music", "a.wav", "--no-music"]).is_err());
+    }
+
+    #[test]
+    fn a_song_of_your_own_is_given_with_music() {
+        let cli = parse(&["--music", "/songs/e1m1.mp3", "--keep-music"]).unwrap();
+        assert_eq!(cli.music.as_deref(), Some("/songs/e1m1.mp3"));
+        assert!(cli.keep_music);
+        assert_eq!(
+            parse(&["--music=/songs/e1m1.ogg"])
+                .unwrap()
+                .music
+                .as_deref(),
+            Some("/songs/e1m1.ogg")
+        );
+        // the song alone doesn't keep it playing past the splash
+        assert!(!parse(&["--music", "a.wav"]).unwrap().keep_music);
+        assert!(parse(&["--music"]).is_err());
+        assert!(parse(&["--music="]).is_err());
+        assert!(parse(&["--music", "a.wav", "--music", "b.wav"]).is_err());
+        // the song is not mistaken for a vault folder
+        assert_eq!(parse(&["--music", "a.wav"]).unwrap().vault, None);
     }
 
     #[test]
@@ -229,6 +342,64 @@ mod tests {
         // still only one vault, and still not with forgetting
         assert!(parse(&["--vault-once", "a", "--vault", "b"]).is_err());
         assert!(parse(&["--vault-once", "a", "--forget-vault"]).is_err());
+    }
+
+    #[test]
+    fn a_splash_quip_is_shown_as_given() {
+        let cli = parse(&["--splash-quip", "Rip and tear, Tyler!", "--vault", "/v"]).unwrap();
+        assert_eq!(cli.quip.as_deref(), Some("Rip and tear, Tyler!"));
+        assert_eq!(cli.vault, Some("/v".into()));
+        assert_eq!(
+            parse(&["--splash-quip=Hi"]).unwrap().quip.as_deref(),
+            Some("Hi")
+        );
+        // a quip that looks like a flag is still the quip
+        let flaggy = parse(&["--splash-quip", "--keep-music"]).unwrap();
+        assert_eq!(flaggy.quip.as_deref(), Some("--keep-music"));
+        assert!(!flaggy.keep_music);
+        assert_eq!(parse(&[]).unwrap().quip, None);
+    }
+
+    #[test]
+    fn every_number_in_a_splash_quip_is_replaced_by_its_quip() {
+        let first = quips::QUIPS[0];
+        let picked = parse(&["--splash-quip", "#1"]).unwrap();
+        assert_eq!(picked.quip.as_deref(), Some(first));
+        let added = parse(&["--splash-quip=#1message"]).unwrap();
+        assert_eq!(added.quip, Some(format!("{first}message")));
+        let last = quips::QUIPS.len();
+        assert_eq!(
+            parse(&["--splash-quip", &format!("#{last}")])
+                .unwrap()
+                .quip
+                .as_deref(),
+            quips::QUIPS.last().copied()
+        );
+        for wrong in ["#0", &format!("#{}", last + 1), "ok #0"] {
+            assert!(parse(&["--splash-quip", wrong]).is_err(), "{wrong:?}");
+        }
+    }
+
+    #[test]
+    fn only_one_quip_and_never_without_the_splash() {
+        assert!(parse(&["--splash-quip"]).is_err());
+        assert!(parse(&["--splash-quip", "  "]).is_err());
+        assert!(parse(&["--splash-quip", "a", "--splash-quip", "b"]).is_err());
+        assert!(parse(&["--splash-quip", "a", "--no-splash"]).is_err());
+        assert!(parse(&["--no-splash", "--splash-quip", "#2"]).is_err());
+        // the old flags are gone
+        assert!(parse(&["--quip", "a"]).is_err());
+        assert!(parse(&["--pick-quip", "2"]).is_err());
+    }
+
+    #[test]
+    fn no_quips_is_its_own_flag_and_cannot_go_with_a_quip() {
+        assert!(parse(&["--no-quips"]).unwrap().no_quips);
+        assert!(!parse(&[]).unwrap().no_quips);
+        // the splash can still be skipped too
+        assert!(parse(&["--no-quips", "--no-splash"]).unwrap().no_quips);
+        assert!(parse(&["--no-quips", "--splash-quip", "hi"]).is_err());
+        assert!(parse(&["--splash-quip", "#2", "--no-quips"]).is_err());
     }
 
     #[test]

@@ -1,0 +1,170 @@
+use ratatui::{crossterm::event::KeyCode, style::Color};
+
+use crate::{
+    error::Result,
+    popups::{legend::Legend, warning::Warning},
+    ritual::{Grimoire, Page, Phase, Ritual},
+    tag, theme,
+    widgets::{
+        form::{self, Field},
+        text,
+    },
+};
+
+/// Prompts for the file name of a pasted wad's copy. Only the part before the extension is typed;
+/// the extension stays the original's, so UZDoom still knows what kind of file it is. A name that
+/// `is_free` turns down (a file already there, or a wad the profile already has) is refused.
+pub struct WadNamer<F> {
+    stem: String,
+    /// Where the cursor is in the stem.
+    caret: usize,
+    extension: String,
+    title: String,
+    is_free: F,
+}
+
+impl<F: Fn(&str) -> bool> WadNamer<F> {
+    const BORDER_COLOR: Color = theme::SCREEN;
+    /// The longest a typed name gets, so it stays something a window can show.
+    const MAX_LENGTH: usize = 64;
+    const LEGEND: &[[&str; 2]] = &[
+        ["Enter", "Paste the Copy"],
+        ["A-Z/0-9/_-. ", "Input"],
+        ["←/→/Home/End", "Move the Cursor"],
+        ["Esc", "Skip It"],
+    ];
+
+    /// Asks for the copy's file name, starting from `suggested` (a whole file name, such as the
+    /// tagged one). The full file name, extension included, or `None` if skipped.
+    pub fn summon(grimoire: &mut Grimoire, suggested: &str, is_free: F) -> Result<Option<String>> {
+        Self::new(suggested, is_free).invoke(grimoire)
+    }
+
+    fn new(suggested: &str, is_free: F) -> Self {
+        let (stem, extension) = tag::split_extension(suggested);
+        Self {
+            stem: stem.to_string(),
+            caret: text::end(stem),
+            extension: extension.to_string(),
+            title: format!("name the copy ({})", extension_label(extension)),
+            is_free,
+        }
+    }
+
+    /// The file name as it stands.
+    fn file_name(&self) -> String {
+        format!("{}{}", self.stem, self.extension)
+    }
+
+    /// Whether `c` can go in a file name on every OS tdl runs on.
+    fn allowed(c: char) -> bool {
+        c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | ' ')
+    }
+
+    /// What Enter does with the name as it stands: the name, or why it can't be used.
+    fn check(&self) -> std::result::Result<String, &'static str> {
+        let name = self.file_name();
+        if self.stem.trim().is_empty() || self.stem.starts_with('.') {
+            Err("Type a name for the copy")
+        } else if !(self.is_free)(&name) {
+            Err("A file or wad of that name is already there")
+        } else {
+            Ok(name)
+        }
+    }
+}
+
+/// How the extension is named in the title: `.pk3`, or `no extension`.
+fn extension_label(extension: &str) -> &str {
+    if extension.is_empty() {
+        "no extension"
+    } else {
+        extension
+    }
+}
+
+impl<F: Fn(&str) -> bool> Ritual for WadNamer<F> {
+    type Return = Option<String>;
+
+    fn render(&mut self, page: &mut Page) {
+        let fields = [Field {
+            label: "name",
+            value: &self.stem,
+            placeholder: "type a name",
+            room: 20,
+            caret: Some(self.caret),
+        }];
+        form::draw(page, &self.title, Self::BORDER_COLOR, &fields, 0);
+    }
+
+    fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Tea>> {
+        match key_code {
+            KeyCode::Enter => match self.check() {
+                Ok(name) => Ok(Phase::Return(Some(name))),
+                Err(problem) => {
+                    Warning::summon(grimoire, problem)?;
+                    Ok(Phase::Render)
+                }
+            },
+            KeyCode::Esc => Ok(Phase::Return(None)),
+            KeyCode::Char('?') | KeyCode::F(1) => {
+                Legend::summon(grimoire, Self::LEGEND)?;
+                Ok(Phase::Render)
+            }
+            key_code => Ok(
+                match text::edit(
+                    &mut self.stem,
+                    &mut self.caret,
+                    key_code,
+                    Self::MAX_LENGTH,
+                    |c| Self::allowed(c).then_some(c),
+                ) {
+                    Some(changed) => Phase::render_if(changed),
+                    None => Phase::Prompt,
+                },
+            ),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_extension_is_kept_and_only_the_stem_is_typed() {
+        let namer = WadNamer::new("brutal_2.pk3", |_: &str| true);
+        assert_eq!(namer.stem, "brutal_2");
+        assert_eq!(namer.title, "name the copy (.pk3)");
+        assert_eq!(namer.check(), Ok("brutal_2.pk3".to_string()));
+        assert_eq!(
+            WadNamer::new("notes", |_: &str| true).title,
+            "name the copy (no extension)"
+        );
+    }
+
+    #[test]
+    fn a_name_in_use_or_an_empty_one_is_refused() {
+        let mut namer = WadNamer::new("brutal.pk3", |name: &str| name != "brutal.pk3");
+        assert!(namer.check().is_err());
+        namer.stem = "   ".into();
+        assert!(namer.check().is_err());
+        namer.stem = ".hidden".into();
+        assert!(namer.check().is_err());
+        namer.stem = "brutal dev".into();
+        assert_eq!(namer.check(), Ok("brutal dev.pk3".to_string()));
+    }
+
+    #[test]
+    fn only_characters_safe_in_any_file_name_can_be_typed() {
+        type Namer = WadNamer<fn(&str) -> bool>;
+        assert!(Namer::allowed('a') && Namer::allowed('-') && Namer::allowed(' '));
+        assert!(!Namer::allowed('/') && !Namer::allowed('\\') && !Namer::allowed(':'));
+    }
+
+    #[test]
+    fn snapshot_naming_a_copy() {
+        let mut namer = WadNamer::new("brutal_2.pk3", |_: &str| true);
+        insta::assert_snapshot!(crate::testing::draw(50, 10, |page| namer.render(page)));
+    }
+}

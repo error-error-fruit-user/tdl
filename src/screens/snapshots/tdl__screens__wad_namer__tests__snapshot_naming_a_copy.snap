@@ -1,0 +1,12 @@
+---
+source: src/screens/wad_namer.rs
+expression: "crate::testing::draw(50, 10, |page| namer.render(page))"
+---
+
+
+         ┏━━[ name the copy (.pk3) ]━━━┓
+         ┃                             ┃
+         ┃ name  brutal_2              ┃
+         ┃                             ┃
+         ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                     [F1/?]

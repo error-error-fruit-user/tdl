@@ -8,15 +8,16 @@ use std::{
 use directories::ProjectDirs;
 use ratatui::{
     crossterm::event::KeyCode,
-    layout::Constraint,
+    layout::{Constraint, Rect},
     style::{Color, Style},
     text::Line,
     widgets::{Paragraph, Row, Table, TableState},
 };
 
 use crate::{
+    clipboard::Clipboard,
     error::{Error, Result},
-    layout, picker,
+    layout, music, picker,
     popups::dialog::Dialog,
     popups::hashing,
     popups::legend::Legend,
@@ -25,10 +26,15 @@ use crate::{
     popups::status,
     popups::three_way_dialog::ThreeWayDialog,
     popups::warning::Warning,
+    quips,
     ritual::{self, Grimoire, Haunted, Page, Phase, Ritual},
-    screens::editor::Editor,
+    screens::editor::{self, Editor},
     screens::host_settings::HostSettingsForm,
     screens::join_address::JoinAddressForm,
+    screens::profile_namer::ProfileNamer,
+    screens::search::{self, Found, Search, Typed},
+    screens::selection::{self, Selection},
+    screens::settings::{Settings, SettingsForm},
     screens::splash,
     screens::wrap_around,
     slayer::host_game,
@@ -37,12 +43,14 @@ use crate::{
     theme, uzdoom,
     vault::Vault,
     vault::edition::{Edition, Loaded},
-    vault::global::Global,
+    vault::global::{Global, Music, Shared},
+    vault::profile::{Profile, tagged_name},
     vault::scribe,
     vault::wad::Wad,
     widgets::{
         details::Details,
         mark::{self, Mark},
+        notes,
     },
 };
 
@@ -54,6 +62,14 @@ pub struct Launcher {
     table_state: TableState,
     /// Whether to play the splash screen first.
     splash: bool,
+    /// The quip for the splash screen, from the command line, instead of a random one.
+    quip: Option<String>,
+    /// `--no-quips`: no quips anywhere this run, whatever the settings say.
+    no_quips: bool,
+    /// `--keep-music`: the music plays on past the splash this run, whatever the settings say.
+    keep_music: bool,
+    /// `--no-music`: no music at all this run, whatever the settings say.
+    no_music: bool,
     /// Each profile's mark, by position. A profile is only checked once its row is on screen, and
     /// the marks are forgotten whenever something could have changed them.
     marks: HashMap<usize, Option<Mark>>,
@@ -69,6 +85,12 @@ pub struct Launcher {
     global_path: PathBuf,
     /// False if `global.rite` is from a newer tdl, so it is never overwritten.
     global_writable: bool,
+    /// The search being typed, if one is.
+    search: Option<Search>,
+    /// The last search's matches, for `;` and `,` to step through.
+    found: Found,
+    /// The profiles picked to be copied together.
+    selection: Selection,
 }
 
 /// What the command line asked the launcher for.
@@ -83,6 +105,15 @@ pub struct Start {
     /// A scroll to import as soon as the launcher is up.
     pub unseal: Option<String>,
     pub splash: bool,
+    /// The splash screen's quip, instead of a random one. Plays the splash even if the settings
+    /// skip it, since asking for a quip is asking to see it.
+    pub quip: Option<String>,
+    /// Shows no quips anywhere for this run.
+    pub no_quips: bool,
+    /// Keeps the music playing past the splash for this run.
+    pub keep_music: bool,
+    /// Plays no music at all for this run.
+    pub no_music: bool,
 }
 
 /// `path` as an absolute path, so a folder kept from `tdl --wads .` still means the same folder
@@ -111,22 +142,24 @@ impl Launcher {
     const NEW_ROW: &str = "+ new profile";
     /// The wads column: a count.
     const WADS_WIDTH: u16 = 4;
+    /// The columns between the profile's panel and the global one beside it.
+    const PANEL_GAP: u16 = 1;
     const COLUMN_SPACING: u16 = 1;
     const LEGEND: &[[&str; 2]] = &[
         ["Enter", "Launch"],
         ["H", "Host"],
         ["N", "Join"],
-        ["J↓/K↑", "Traverse"],
-        ["}/{", "Swap"],
-        ["A", "Add"],
-        ["E", "Edit"],
-        ["D", "Delete"],
-        ["X", "Export Scroll"],
-        ["I", "Import Scroll"],
-        ["U", "Select UZDoom"],
-        ["W", "Select Base Wad"],
-        ["S", "Toggle Splash Screen"],
-        ["Esc", "Save and Quit"],
+        ["J↓/K↑/Home/End", "Traverse"],
+        Search::LEGEND,
+        ["}/{", "Swap (Selected, If Any)"],
+        Selection::LEGEND,
+        ["Y/Shift+Y", "Copy Selected/All Profiles"],
+        ["P", "Paste"],
+        ["A/E/D", "Add/Edit/Delete (Selected, If Any)"],
+        ["X/I", "Export/Import Scroll"],
+        ["U/W", "Select UZDoom/Base Wad"],
+        ["O", "Settings"],
+        ["Esc", "Save and Quit (unselects first)"],
     ];
 
     /// Opens the vault: `<vault>/{config,data}` when one is passed, the standard folders when
@@ -184,6 +217,10 @@ impl Launcher {
             vault,
             table_state: TableState::new().with_selected(0),
             splash: start.splash,
+            quip: start.quip,
+            no_quips: start.no_quips,
+            keep_music: start.keep_music,
+            no_music: start.no_music,
             marks: HashMap::new(),
             passed_vault,
             ask_about_vault: start.ask_about_vault,
@@ -193,6 +230,9 @@ impl Launcher {
             global,
             global_path,
             global_writable,
+            search: None,
+            found: Found::default(),
+            selection: Selection::default(),
         }
     }
 
@@ -301,6 +341,357 @@ impl Launcher {
         }
         Ok(())
     }
+
+    /// Opens the settings, and saves whatever was changed straight away, since the splash is the
+    /// first thing the next start shows: the vault's settings in `config.rite`, the quip in
+    /// `global.rite` (unless that is from a newer tdl, in which case the quip isn't kept).
+    fn change_settings(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+        let before = Settings::of(&self.vault.config, &self.global);
+        let Some(settings) = SettingsForm::summon(grimoire, before.clone())? else {
+            return Ok(());
+        };
+        if settings == before {
+            return Ok(());
+        }
+        let quip_changed = settings.music != before.music
+            || settings.quip != before.quip
+            || settings.quips != before.quips
+            || settings.song != before.song;
+        if !self.global_writable && quip_changed {
+            Warning::summon(
+                grimoire,
+                "The global settings are from a newer tdl, so the quips and the song can't be changed",
+            )?;
+        }
+        let kept_quip = self.global.splash_quip.clone();
+        let kept_no_quips = self.global.no_quips;
+        let kept_song = self.global.song.clone();
+        let kept_music = self.global.music;
+        if let Err(problem) = settings.apply(&mut self.vault.config, &mut self.global) {
+            return Warning::summon(grimoire, &problem);
+        }
+        if !self.global_writable {
+            self.global.splash_quip = kept_quip;
+            self.global.no_quips = kept_no_quips;
+            self.global.song = kept_song.clone();
+            self.global.music = kept_music;
+        }
+        // 🎶 the song and the music change now, as they were kept
+        if self.global.song != kept_song {
+            match &self.global.song {
+                Some(song) if music::use_song(Path::new(song)).is_ok() => {}
+                _ => music::forget_song(),
+            }
+            music::restart();
+        }
+        self.follow_music(kept_music, self.global.music);
+        // 💬 the quips come and go now, unless `--no-quips` said otherwise for this run
+        quips::show(!self.no_quips && !self.global.no_quips);
+        let config_saved = self
+            .vault
+            .config
+            .write(&self.vault.config_dir, &self.vault.profiles)
+            .is_ok();
+        let global_saved =
+            !quip_changed || !self.global_writable || self.global.keep(&self.global_path).is_ok();
+        if !config_saved || !global_saved {
+            Warning::save_failed(grimoire)?;
+        }
+        Ok(())
+    }
+
+    /// Changes the music now, from `before` to `after`. The splash is over by now, so **splash
+    /// only** means quiet, and **keeps playing** starts it again if it had stopped. `--no-music`
+    /// keeps it quiet whatever the settings say.
+    fn follow_music(&self, before: Music, after: Music) {
+        if before == after || self.no_music {
+            return;
+        }
+        match after {
+            Music::Off => music::mute(),
+            Music::Splash => {
+                music::unmute();
+                music::stop();
+            }
+            Music::Kept => {
+                music::unmute();
+                music::start(true);
+            }
+        }
+    }
+
+    /// Keeps the global settings that came with a scroll, and puts them to work straight away.
+    fn take_shared(&mut self, grimoire: &mut Grimoire, settings: Shared) -> Result<()> {
+        if !self.global_writable {
+            return Warning::summon(
+                grimoire,
+                "The global settings are from a newer tdl, so the scroll's can't be kept",
+            );
+        }
+        let before = self.global.music;
+        self.global.take_shared(settings);
+        self.follow_music(before, self.global.music);
+        quips::show(!self.no_quips && !self.global.no_quips);
+        if self.global.keep(&self.global_path).is_err() {
+            Warning::save_failed(grimoire)?;
+        }
+        Ok(())
+    }
+
+    /// Moves every selected profile one place down, or up, keeping them selected; nothing moves if
+    /// one is already at the end. The cursor goes along if it is on one of them.
+    fn shift_selection(&mut self, down: bool) -> Phase<()> {
+        let (cursor, count) = (self.cursor(), self.vault.profiles.len());
+        let rows = self.selection.rows(cursor, count);
+        let Some(moved) = selection::shift(&mut self.vault.profiles, &rows, down) else {
+            return Phase::Prompt;
+        };
+        if rows.contains(&cursor) {
+            self.table_state
+                .select(Some(if down { cursor + 1 } else { cursor - 1 }));
+        }
+        self.selection.select_rows(moved);
+        self.marks.clear();
+        self.found = Found::default();
+        Phase::Render
+    }
+
+    /// Deletes every selected profile, and its saves, after asking once.
+    fn delete_selection(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+        let rows = self
+            .selection
+            .rows(self.cursor(), self.vault.profiles.len());
+        let question = match rows.len() {
+            1 => format!(
+                "Are you sure you want to delete '{}'?",
+                self.vault.profiles[rows[0]].name
+            ),
+            n => format!(
+                "Are you sure you want to delete the {n} selected profiles, and their saves?"
+            ),
+        };
+        if !Dialog::summon(grimoire, &question)? {
+            return Ok(());
+        }
+        self.selection.clear();
+        self.marks.clear();
+        self.found = Found::default();
+        // 🪦 from the bottom up, so the rows still to go keep their places
+        for &row in rows.iter().rev() {
+            let mut at = row;
+            if self.vault.remove(&mut at).is_err() {
+                Warning::save_failed(grimoire)?;
+                break;
+            }
+        }
+        let first = rows.first().copied().unwrap_or(0);
+        self.table_state
+            .select(Some(first.min(self.vault.profiles.len())));
+        Ok(())
+    }
+
+    /// The row the cursor is on.
+    fn cursor(&self) -> usize {
+        self.table_state.selected().unwrap_or(0)
+    }
+
+    /// Takes a key while a search is being typed. Only Enter moves the cursor: to the best match.
+    fn search_key(&mut self, key_code: KeyCode) -> Phase<()> {
+        let Some(search) = &mut self.search else {
+            return Phase::Prompt;
+        };
+        match search.key(key_code) {
+            Typed::Typing => Phase::Render,
+            Typed::Ignored => Phase::Prompt,
+            Typed::Cancelled => {
+                self.search = None;
+                Phase::Render
+            }
+            Typed::Done(query) => {
+                self.search = None;
+                let profiles = &self.vault.profiles;
+                let ranked = search::rank(self.cursor(), profiles.len(), |row| {
+                    profile_score(&profiles[row], &query)
+                });
+                self.found = Found::new(ranked);
+                if let Some(row) = self.found.current() {
+                    self.table_state.select(Some(row));
+                }
+                Phase::Render
+            }
+        }
+    }
+
+    /// Moves the cursor to the next of the last search's matches, or with `back` the one before.
+    fn search_again(&mut self, back: bool) -> bool {
+        let row = if back {
+            self.found.previous()
+        } else {
+            self.found.next()
+        };
+        row.is_some_and(|row| {
+            self.table_state.select(Some(row));
+            true
+        })
+    }
+
+    /// Copies the picked profiles (see [`Selection`]), or with `all` every profile, onto the
+    /// clipboard, and lets go of the selection. Returns whether there was anything to copy.
+    fn copy_profiles(&mut self, all: bool) -> bool {
+        let count = self.vault.profiles.len();
+        let rows = if all {
+            (0..count).collect()
+        } else {
+            self.selection.rows(self.cursor(), count)
+        };
+        self.selection.clear();
+        if rows.is_empty() {
+            return false;
+        }
+        let copied = rows
+            .iter()
+            .map(|&row| self.vault.profiles[row].clone())
+            .collect();
+        self.vault.clipboard = Clipboard::Profiles(copied);
+        true
+    }
+
+    /// Pastes copies of `profiles` in front of the cursor (see [`paste_profiles`]), asking about
+    /// each name that is taken: Tag, Name or Skip. The cursor lands on the first copy.
+    fn paste_profiles(&mut self, grimoire: &mut Grimoire, profiles: Vec<Profile>) -> Result<()> {
+        let mut at = self.cursor();
+        let pasted = paste_profiles(
+            &mut self.vault,
+            &mut at,
+            profiles,
+            |profiles, name, tagged| ask_copy_name(grimoire, profiles, name, tagged),
+        )?;
+        if pasted.failed {
+            Warning::save_failed(grimoire)?;
+        }
+        if let Some(first) = pasted.first {
+            self.table_state.select(Some(first));
+        }
+        Ok(())
+    }
+
+    /// Adds the copied `wads` to the end of the profile under the cursor, after asking, or from the
+    /// new-profile row starts a new profile with them.
+    fn paste_wads(&mut self, grimoire: &mut Grimoire, wads: Vec<Wad>) -> Result<()> {
+        let mut index = self.cursor();
+        if index == self.vault.profiles.len() {
+            if let Some(profile) = Editor::summon_with(grimoire, &mut self.vault, wads)?
+                && self.vault.insert(&mut index, profile).is_err()
+            {
+                Warning::save_failed(grimoire)?;
+            }
+            self.table_state.select(Some(index));
+            return Ok(());
+        }
+        let mut profile = self.vault.profiles[index].clone();
+        let copied = match wads.len() {
+            1 => "the copied wad".to_string(),
+            n => format!("the {n} copied wads"),
+        };
+        let question = format!("Add {copied} to the end of '{}'?", profile.name);
+        if Dialog::summon(grimoire, &question)? {
+            let wads = editor::paste_asking(grimoire, &profile.wads, wads)?;
+            if wads.is_empty() {
+                return Ok(());
+            }
+            profile.wads.extend(wads);
+            if self.vault.replace(index, profile).is_err() {
+                Warning::save_failed(grimoire)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// What pasting profiles came to.
+#[derive(Debug, Default, PartialEq)]
+struct PastedProfiles {
+    /// Where the first copy went, if any did.
+    first: Option<usize>,
+    /// Whether any copy couldn't be saved, and was left out.
+    failed: bool,
+}
+
+/// Puts copies of `profiles` into the vault at `at`, in their order: in front of the profile there,
+/// or at the end from the new-profile row (where `at` moves down with the row). A copy keeps its
+/// name if no profile has it; otherwise `choose` is told the name and a tagged one (`brutal_2`) and
+/// gives the copy's name, or `None` to leave it out. The profiles so far are passed along, so a name
+/// can be checked against them.
+fn paste_profiles(
+    vault: &mut Vault,
+    at: &mut usize,
+    profiles: Vec<Profile>,
+    mut choose: impl FnMut(&[Profile], &str, &str) -> Result<Option<String>>,
+) -> Result<PastedProfiles> {
+    let mut pasted = PastedProfiles::default();
+    for profile in profiles {
+        let taken = |name: &str| vault.profiles.iter().any(|p| p.name == name);
+        let name = if taken(&profile.name) {
+            let tagged = tagged_name(&profile.name, &vault.profiles);
+            match choose(&vault.profiles, &profile.name, &tagged)? {
+                Some(name) if !taken(&name) => name,
+                Some(_) => {
+                    pasted.failed = true;
+                    continue;
+                }
+                None => continue,
+            }
+        } else {
+            profile.name.clone()
+        };
+        let Ok(copy) = profile.copied_as(name, &vault.data_dir) else {
+            pasted.failed = true;
+            continue;
+        };
+        let on_new_row = *at == vault.profiles.len();
+        let landed = *at;
+        if vault.insert(at, copy).is_err() {
+            pasted.failed = true;
+            continue;
+        }
+        // 📋 the next copy goes after this one; on the new-profile row `insert` moved along already
+        if !on_new_row {
+            *at += 1;
+        }
+        pasted.first.get_or_insert(landed);
+    }
+    Ok(pasted)
+}
+
+/// Asks what to call a pasted copy of the profile called `name`, which is taken: `tagged`, a name
+/// the user types (starting from `tagged`), or none, to skip it.
+fn ask_copy_name(
+    grimoire: &mut Grimoire,
+    profiles: &[Profile],
+    name: &str,
+    tagged: &str,
+) -> Result<Option<String>> {
+    let question = format!("'{name}' already exists. Paste it as '{tagged}', or name it?");
+    Ok(
+        match ThreeWayDialog::summon(grimoire, &question, ["Tag", "Name", "Skip"])? {
+            Some(0) => Some(tagged.to_string()),
+            Some(1) => ProfileNamer::summon_suggesting(grimoire, profiles, tagged)?,
+            _ => None,
+        },
+    )
+}
+
+/// How well the profile matches `query`: by its name, or with a `*` in front by the best of its
+/// wads' file names.
+fn profile_score(profile: &Profile, query: &str) -> Option<search::Score> {
+    match query.strip_prefix('*') {
+        Some(wad_query) => profile
+            .wads
+            .iter()
+            .filter_map(|wad| search::score(&wad.file_name(), wad_query))
+            .min(),
+        None => search::score(&profile.name, query),
+    }
 }
 
 impl Ritual for Launcher {
@@ -314,8 +705,32 @@ impl Ritual for Launcher {
         if layout::is_too_small(area.width, area.height) {
             resize::summon(grimoire)?;
         }
-        if self.splash && !self.vault.config.skip_splash {
-            splash::summon(grimoire)?;
+        quips::show(!self.no_quips && !self.global.no_quips);
+        // 🔇 nothing plays at all, not even on the splash
+        if self.no_music || self.global.music == Music::Off {
+            music::mute();
+        }
+        // 🎶 the song from the settings, unless `--music` already chose one; a song that has gone
+        // missing is said, and the built-in track plays instead
+        if !music::has_song()
+            && !self.no_music
+            && self.global.music != Music::Off
+            && let Some(song) = &self.global.song
+            && let Err(problem) = music::use_song(Path::new(song))
+        {
+            Warning::summon(grimoire, &problem)?;
+        }
+        // 🎵 music kept on plays from the start, through the splash and past it
+        if self.keep_music || self.global.music == Music::Kept {
+            music::start(true);
+        }
+        if self.splash && (!self.vault.config.skip_splash || self.quip.is_some()) {
+            // 💬 the command line's quip, or else the one kept in the settings, or else a random one
+            let kept = quips::shown()
+                .then(|| self.global.splash_quip.text())
+                .flatten();
+            let quip = self.quip.clone().or(kept);
+            splash::summon(grimoire, quip.as_deref())?;
         }
         if self.vault.is_too_new() {
             Warning::files_too_new(grimoire)?;
@@ -345,7 +760,12 @@ impl Ritual for Launcher {
             // 📜 the new profile goes last, and the cursor lands on it
             let before = self.vault.profiles.len();
             let mut index = before;
-            share::unseal_file(grimoire, &mut self.vault, &mut index, &scroll)?;
+            let current = self.global.shared();
+            if let Some(settings) =
+                share::unseal_file(grimoire, &mut self.vault, &mut index, &scroll, &current)?
+            {
+                self.take_shared(grimoire, settings)?;
+            }
             if self.vault.profiles.len() > before {
                 self.table_state.select(Some(before));
             }
@@ -354,17 +774,23 @@ impl Ritual for Launcher {
     }
 
     /// The profile list, each row with its badge, and under it a panel for whatever the cursor is
-    /// on: what that profile would launch with, or the global settings on the new-profile row.
+    /// on: what that profile would launch with, with the global settings beside it while the
+    /// terminal is wide enough, or the global settings alone on the new-profile row.
     fn render(&mut self, page: &mut Page) {
         let selected = self.table_state.selected();
         let profile = selected.and_then(|i| self.vault.profiles.get(i));
-        let details = match profile {
-            Some(profile) => Details::launch(
-                profile,
-                &self.vault.config,
-                &profile.faults(&self.vault.config),
+        let global = Details::global(&self.vault.config);
+        let global_panel = layout::window(global.size().0, global.size().1);
+        let (details, beside) = match profile {
+            Some(profile) => (
+                Details::launch(
+                    profile,
+                    &self.vault.config,
+                    &profile.faults(&self.vault.config),
+                ),
+                Some(global),
             ),
-            None => Details::global(&self.vault.config),
+            None => (global, None),
         };
         let is_broken = profile.is_some() && details.is_broken();
 
@@ -383,7 +809,17 @@ impl Ritual for Launcher {
         ])
         .style(theme::HEADER);
         let (details_width, details_height) = details.size();
-        let panel = layout::window(details_width, details_height);
+        let own_panel = layout::window(details_width, details_height);
+        // 🌐 the global panel goes to the right of the profile's, if both fit across the terminal
+        let room = page.area().width.saturating_sub(2 * layout::MARGIN);
+        let beside = beside.filter(|_| own_panel.0 + Self::PANEL_GAP + global_panel.0 <= room);
+        let panel = match beside {
+            Some(_) => (
+                own_panel.0 + Self::PANEL_GAP + global_panel.0,
+                own_panel.1.max(global_panel.1),
+            ),
+            None => own_panel,
+        };
         // the badge, the name and the count, then the header, the profiles and the new-profile row
         let list_width = mark::WIDTH + name_width + Self::WADS_WIDTH + 2 * Self::COLUMN_SPACING;
         let (width, height) = layout::window(list_width, self.vault.profiles.len() as u16 + 2);
@@ -406,6 +842,7 @@ impl Ritual for Launcher {
         }
 
         // 🩸 a broken profile's row is discolored as well as badged, as in the editor
+        let (cursor, count) = (selected.unwrap_or(0), self.vault.profiles.len());
         let rows = self
             .vault
             .profiles
@@ -418,6 +855,8 @@ impl Ritual for Launcher {
                     Line::from(p.wads.len().to_string()).right_aligned(),
                 ]);
                 match self.marks.get(&i) {
+                    // 📋 picked to be copied: the badge still says what else is going on
+                    _ if self.selection.contains(i, cursor, count) => row.style(theme::SELECTED),
                     Some(Some(Mark::Broken)) => row.style(theme::BROKEN_ROW),
                     _ => row,
                 }
@@ -453,12 +892,63 @@ impl Ritual for Launcher {
             }
         }
 
-        let panel = ritual::conjure_banner(details.title, theme::PANEL, details.title_color);
-        let fitting = details.lines_fitting(panel.inner(details_area).width);
-        page.render_widget(Paragraph::new(fitting).block(panel), details_area);
+        let (own_area, global_area) = match beside {
+            Some(_) => {
+                let own = Rect {
+                    width: own_panel.0.min(details_area.width),
+                    ..details_area
+                };
+                let global = Rect {
+                    x: own.right() + Self::PANEL_GAP,
+                    width: details_area
+                        .right()
+                        .saturating_sub(own.right() + Self::PANEL_GAP),
+                    ..details_area
+                };
+                (own, Some(global))
+            }
+            None => (details_area, None),
+        };
+        for (details, area) in [
+            (Some(&details), Some(own_area)),
+            (beside.as_ref(), global_area),
+        ] {
+            let (Some(details), Some(area)) = (details, area) else {
+                continue;
+            };
+            let panel = ritual::conjure_banner(details.title, theme::PANEL, details.title_color);
+            let fitting = details.lines_fitting(panel.inner(area).width);
+            page.render_widget(Paragraph::new(fitting).block(panel), area);
+        }
 
         let (sigil, sigil_area) = ritual::conjure_sigil(details_area);
-        page.render_widget(sigil, sigil_area);
+        // 📏 the search and the clipboard's note get the row as wide as the main window
+        let hint_row = Rect {
+            x: list_area.x,
+            width: list_area.width,
+            ..sigil_area
+        };
+        match &self.search {
+            Some(search) => {
+                let matches = self
+                    .vault
+                    .profiles
+                    .iter()
+                    .filter(|profile| profile_score(profile, &search.query).is_some())
+                    .count();
+                search.render(matches, "a profile, or *a wad", hint_row, page);
+            }
+            None => {
+                page.render_widget(sigil, sigil_area);
+                let picked = self.selection.picked(cursor, count);
+                notes::render(
+                    selection::note(picked),
+                    self.vault.clipboard.note(),
+                    hint_row,
+                    page,
+                );
+            }
+        }
     }
 
     fn prompt(
@@ -466,13 +956,43 @@ impl Ritual for Launcher {
         grimoire: &mut Grimoire,
         key_code: KeyCode,
     ) -> Result<Phase<Self::Return>> {
-        // 🧹 moving the cursor changes nothing on disk; anything else might, so the marks are redone
+        // 🔎 a search being typed takes every key until it is kept or called off
+        if self.search.is_some() {
+            return Ok(self.search_key(key_code));
+        }
+        // 📋 Esc lets go of a selection before it offers to quit
+        if key_code == KeyCode::Esc && self.selection.is_active() {
+            self.selection.clear();
+            return Ok(Phase::Render);
+        }
+        // 📋 with rows selected, moving and deleting act on every one of them
+        if self.selection.is_active() {
+            match key_code {
+                KeyCode::Char('}') => return Ok(self.shift_selection(true)),
+                KeyCode::Char('{') => return Ok(self.shift_selection(false)),
+                KeyCode::Char('d') => {
+                    self.delete_selection(grimoire)?;
+                    return Ok(Phase::Render);
+                }
+                _ => {}
+            }
+        }
+        // 🧹 moving the cursor changes nothing on disk; anything else might, so the marks are
+        // redone, and the selection and the search's matches are let go, since rows could move
         if !matches!(
             key_code,
-            KeyCode::Char('j' | 'k' | '?') | KeyCode::Up | KeyCode::Down
+            KeyCode::Char('j' | 'k' | '?' | '/' | ';' | ',' | 'V' | 'm' | 'y' | 'Y')
+                | KeyCode::F(1)
+                | KeyCode::Up
+                | KeyCode::Down
+                | KeyCode::Home
+                | KeyCode::End
         ) {
             self.marks.clear();
+            self.selection.clear();
+            self.found = Found::default();
         }
+        let count = self.vault.profiles.len();
         let index = self.table_state.selected_mut().as_mut().unwrap();
         match key_code {
             KeyCode::Enter => {
@@ -486,6 +1006,7 @@ impl Ritual for Launcher {
                                 uzdoom,
                                 profile.base_wad(&self.vault.config).map(Wad::deref),
                                 profile,
+                                profile.uzdoom_args(&self.vault.config),
                                 &self.vault.data_dir.join(&profile.name),
                             )
                             .and_then(|game| {
@@ -498,7 +1019,7 @@ impl Ritual for Launcher {
                     }
                     Ok(Phase::Render)
                 } else {
-                    if let Some(profile) = Editor::summon_blank(grimoire, &self.vault)?
+                    if let Some(profile) = Editor::summon_blank(grimoire, &mut self.vault)?
                         && self.vault.insert(index, profile).is_err()
                     {
                         Warning::save_failed(grimoire)?;
@@ -536,6 +1057,22 @@ impl Ritual for Launcher {
                 self.table_state.selected_mut(),
                 self.vault.profiles.len() + 1,
             ))),
+            KeyCode::Home => Ok(Phase::render_if_then(*index != 0, || *index = 0)),
+            KeyCode::End => Ok(Phase::render_if_then(*index != count, || *index = count)),
+            KeyCode::Char('/') => {
+                self.search = Some(Search::default());
+                Ok(Phase::Render)
+            }
+            KeyCode::Char(';') => Ok(Phase::render_if(self.search_again(false))),
+            KeyCode::Char(',') => Ok(Phase::render_if(self.search_again(true))),
+            KeyCode::Char('V') => {
+                self.selection.toggle_range(*index, count);
+                Ok(Phase::Render)
+            }
+            KeyCode::Char('m') => {
+                self.selection.toggle_mark(*index, count);
+                Ok(Phase::Render)
+            }
             KeyCode::Char('}') => Ok(Phase::render_if_then(
                 self.vault.profiles.len() != 1 && *index != self.vault.profiles.len(),
                 || {
@@ -553,10 +1090,23 @@ impl Ritual for Launcher {
                 },
             )),
             KeyCode::Char('a') => {
-                if let Some(profile) = Editor::summon_blank(grimoire, &self.vault)?
+                if let Some(profile) = Editor::summon_blank(grimoire, &mut self.vault)?
                     && self.vault.insert(index, profile).is_err()
                 {
                     Warning::save_failed(grimoire)?;
+                }
+                Ok(Phase::Render)
+            }
+            KeyCode::Char('y') => Ok(Phase::render_if(self.copy_profiles(false))),
+            KeyCode::Char('Y') => Ok(Phase::render_if(self.copy_profiles(true))),
+            KeyCode::Char('p') => {
+                if self.vault.clipboard.is_empty() {
+                    return Ok(Phase::Prompt);
+                }
+                match self.vault.clipboard.clone() {
+                    Clipboard::Empty => {}
+                    Clipboard::Wads(wads) => self.paste_wads(grimoire, wads)?,
+                    Clipboard::Profiles(profiles) => self.paste_profiles(grimoire, profiles)?,
                 }
                 Ok(Phase::Render)
             }
@@ -564,11 +1114,14 @@ impl Ritual for Launcher {
                 if *index == self.vault.profiles.len() {
                     return Ok(Phase::Prompt);
                 }
-                share::seal(grimoire, &self.vault, *index)?;
+                share::seal(grimoire, &self.vault, *index, self.global.shared())?;
                 Ok(Phase::Render)
             }
             KeyCode::Char('i') => {
-                share::unseal(grimoire, &mut self.vault, index)?;
+                let current = self.global.shared();
+                if let Some(settings) = share::unseal(grimoire, &mut self.vault, index, &current)? {
+                    self.take_shared(grimoire, settings)?;
+                }
                 Ok(Phase::Render)
             }
             KeyCode::Char('e') => {
@@ -610,17 +1163,8 @@ impl Ritual for Launcher {
                 }
                 Ok(Phase::Prompt)
             }
-            KeyCode::Char('s') => {
-                self.vault.config.skip_splash = !self.vault.config.skip_splash;
-                // 💾 saved right away: the splash is the first thing the next start shows
-                if self
-                    .vault
-                    .config
-                    .write(&self.vault.config_dir, &self.vault.profiles)
-                    .is_err()
-                {
-                    Warning::save_failed(grimoire)?;
-                }
+            KeyCode::Char('o') => {
+                self.change_settings(grimoire)?;
                 Ok(Phase::Render)
             }
             KeyCode::Esc => {
@@ -640,7 +1184,7 @@ impl Ritual for Launcher {
                     Ok(Phase::Render)
                 }
             }
-            KeyCode::Char('?') => {
+            KeyCode::Char('?') | KeyCode::F(1) => {
                 Legend::summon(grimoire, Self::LEGEND)?;
                 Ok(Phase::Render)
             }
@@ -695,6 +1239,195 @@ mod tests {
         let altar = Altar::new("snap-launcher-small");
         let mut launcher = launcher(&altar, 1);
         assert_snapshot!(testing::draw(40, 20, |page| launcher.render(page)));
+    }
+
+    // 🔎 searching and copying profiles
+
+    fn names(profiles: &[Profile]) -> Vec<&str> {
+        profiles.iter().map(|p| p.name.as_str()).collect()
+    }
+
+    #[test]
+    fn a_search_is_of_profile_names_unless_it_starts_with_a_star() {
+        let wad = |name: &str| Wad::new(format!("/wads/{name}").into(), String::new(), 1);
+        let profile = Profile::new(
+            "nightmare".into(),
+            vec![wad("brutalv22.pk3"), wad("brutal.wad")],
+        );
+        assert!(profile_score(&profile, "night").is_some());
+        assert_eq!(profile_score(&profile, "brutal"), None);
+        // with a star, the best of its wads counts: here the exact `brutal.wad`
+        assert_eq!(
+            profile_score(&profile, "*brutal"),
+            search::score("brutal.wad", "brutal")
+        );
+        assert_eq!(profile_score(&profile, "*night"), None);
+        assert_eq!(profile_score(&profile, "*"), None);
+    }
+
+    #[test]
+    fn enter_takes_the_cursor_to_the_best_profile_and_esc_leaves_it() {
+        let altar = Altar::new("launcher-search");
+        let mut launcher = launcher(&altar, 0);
+        let all = launcher.vault.profiles.clone();
+        let last = all.len() - 1;
+        launcher.search = Some(Search::default());
+        for c in all[last].name.chars() {
+            assert!(launcher.search_key(KeyCode::Char(c)) == Phase::Render);
+        }
+        assert_eq!(
+            launcher.table_state.selected(),
+            Some(0),
+            "nothing moves while typing"
+        );
+        let _ = launcher.search_key(KeyCode::Enter);
+        assert_eq!(launcher.table_state.selected(), Some(last));
+
+        launcher.search = Some(Search::default());
+        let _ = launcher.search_key(KeyCode::Char('x'));
+        let _ = launcher.search_key(KeyCode::Esc);
+        assert!(launcher.search.is_none());
+        assert_eq!(launcher.table_state.selected(), Some(last));
+    }
+
+    #[test]
+    fn pasted_profiles_go_in_front_of_the_cursor_tagged_named_or_skipped() {
+        let altar = Altar::new("launcher-paste-profiles");
+        let mut launcher = launcher(&altar, 0);
+        let all = launcher.vault.profiles.clone();
+        let copies = vec![all[0].clone(), all[1].clone(), all[2].clone()];
+        let mut answers = vec![
+            Some(format!("{}_2", all[0].name)),
+            None,
+            Some("my_copy".to_string()),
+        ]
+        .into_iter();
+        let mut asked = Vec::new();
+        let mut at = 1;
+        let pasted = paste_profiles(&mut launcher.vault, &mut at, copies, |_, name, tagged| {
+            asked.push((name.to_string(), tagged.to_string()));
+            Ok(answers.next().unwrap())
+        })
+        .unwrap();
+        // every original is still here, so each name was asked about, with its tag
+        assert_eq!(
+            asked[0],
+            (all[0].name.clone(), format!("{}_2", all[0].name))
+        );
+        assert_eq!(asked.len(), 3);
+        assert_eq!(
+            pasted,
+            PastedProfiles {
+                first: Some(1),
+                failed: false
+            }
+        );
+        let names: Vec<_> = launcher
+            .vault
+            .profiles
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
+        let first_copy = format!("{}_2", all[0].name);
+        assert_eq!(
+            names,
+            [
+                all[0].name.as_str(),
+                &first_copy,
+                "my_copy",
+                &all[1].name,
+                &all[2].name
+            ]
+        );
+        // a copy has the original's wads, and is saved
+        assert_eq!(launcher.vault.profiles[2].wads, all[2].wads);
+        assert!(Profile::path(&launcher.vault.config_dir, "my_copy").exists());
+        assert_eq!(at, 3);
+    }
+
+    #[test]
+    fn pasting_on_the_new_profile_row_adds_at_the_end_and_a_free_name_is_kept() {
+        let altar = Altar::new("launcher-paste-end");
+        let mut launcher = launcher(&altar, 0);
+        let count = launcher.vault.profiles.len();
+        let fresh = Profile {
+            name: "fresh".into(),
+            ..launcher.vault.profiles[0].clone()
+        };
+        let mut at = count;
+        let pasted = paste_profiles(&mut launcher.vault, &mut at, vec![fresh], |_, _, _| {
+            panic!("a free name isn't asked about")
+        })
+        .unwrap();
+        assert_eq!(pasted.first, Some(count));
+        assert_eq!(launcher.vault.profiles[count].name, "fresh");
+        assert_eq!(at, count + 1, "the cursor stays on the new-profile row");
+    }
+
+    #[test]
+    fn a_name_given_for_a_copy_that_is_taken_after_all_leaves_it_out() {
+        let altar = Altar::new("launcher-paste-taken");
+        let mut launcher = launcher(&altar, 0);
+        let all = launcher.vault.profiles.clone();
+        let mut at = 0;
+        let pasted = paste_profiles(
+            &mut launcher.vault,
+            &mut at,
+            vec![all[0].clone()],
+            |_, _, _| Ok(Some(all[1].name.clone())),
+        )
+        .unwrap();
+        assert_eq!(
+            pasted,
+            PastedProfiles {
+                first: None,
+                failed: true
+            }
+        );
+        assert_eq!(launcher.vault.profiles, all);
+    }
+
+    #[test]
+    fn a_selection_of_profiles_moves_together() {
+        let altar = Altar::new("launcher-shift");
+        let mut launcher = launcher(&altar, 0);
+        let all = launcher.vault.profiles.clone();
+        launcher.selection.toggle_mark(0, all.len());
+        launcher.selection.toggle_mark(1, all.len());
+        assert!(launcher.shift_selection(true) == Phase::Render);
+        let names: Vec<_> = launcher.vault.profiles.iter().map(|p| &p.name).collect();
+        assert_eq!(names, [&all[2].name, &all[0].name, &all[1].name]);
+        assert_eq!(
+            launcher.table_state.selected(),
+            Some(1),
+            "the cursor went along"
+        );
+        assert!(
+            launcher.shift_selection(true) == Phase::Prompt,
+            "already at the bottom"
+        );
+        assert!(launcher.shift_selection(false) == Phase::Render);
+        assert_eq!(launcher.vault.profiles, all);
+    }
+
+    #[test]
+    fn copying_picked_profiles_puts_them_on_the_clipboard_in_list_order() {
+        let altar = Altar::new("launcher-copy");
+        let mut launcher = launcher(&altar, 2);
+        let all = launcher.vault.profiles.clone();
+        launcher.selection.toggle_mark(2, all.len());
+        launcher.selection.toggle_mark(0, all.len());
+        assert!(launcher.copy_profiles(false));
+        match &launcher.vault.clipboard {
+            Clipboard::Profiles(copied) => assert_eq!(names(copied), [&all[0].name, &all[2].name]),
+            other => panic!("expected profiles, found {other:?}"),
+        }
+        assert!(!launcher.selection.is_active());
+        // the new-profile row alone has nothing to copy, and leaves the clipboard be
+        launcher.table_state.select(Some(all.len()));
+        assert!(!launcher.copy_profiles(false));
+        assert!(launcher.copy_profiles(true));
+        assert_eq!(launcher.vault.clipboard, Clipboard::Profiles(all));
     }
 
     // 🚪 what the command line opens, and what is kept from it

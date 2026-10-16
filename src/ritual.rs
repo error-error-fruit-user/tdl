@@ -254,7 +254,7 @@ fn beckon<T>(
 
 // 🩸 colors come from the theme now: a ritual only ever asks for a role, never for a hue
 
-/// returns the veil (the bordered window), its plot, and the `[?]` sigil drawn just below it.
+/// returns the veil (the bordered window), its plot, and the `[F1/?]` sigil drawn just below it.
 /// The window is `width` x `height`, borders included, centered, and smaller if the page is.
 pub fn conjure_window<'a>(
     title: &'a str,
@@ -306,12 +306,16 @@ pub fn conjure_banner(title: &str, border_color: Hex, title_color: Hex) -> Veil<
         .padding(Cushion::horizontal(layout::PADDING))
 }
 
-/// 🔣 the `[?]` sigil, on the row just under `window_area`, promising a legend to whoever asks
+/// 🔣 the `[F1/?]` sigil, on the row just under `window_area`, promising a legend to whoever asks
+/// with either key (F1 too, for the fields where `?` is something to type)
 pub fn conjure_sigil(window_area: Plot) -> (Verse<'static>, Plot) {
     let bracket = Rouge::new().fg(theme::MUTED);
+    let key = Rouge::new().fg(theme::KEY);
     let sigil = [
         Syllable::styled("[", bracket),
-        Syllable::styled("?", Rouge::new().fg(theme::KEY)),
+        Syllable::styled("F1", key),
+        Syllable::styled("/", bracket),
+        Syllable::styled("?", key),
         Syllable::styled("]", bracket),
     ]
     .into_iter()

@@ -4,7 +4,6 @@ expression: "testing::draw(40, 20, |page| launcher.render(page))"
 ---
 
 
-
        ┏━━━━━━[ launcher ]━━━━━━┓
        ┃     profile       wads ┃
        ┃     brutal_doom      3 ┃
@@ -16,6 +15,7 @@ expression: "testing::draw(40, 20, |page| launcher.render(page))"
  ┃   uzdoom ■ uzdoom.sh  global       ┃
  ┃ base wad ■ DOOM2.WAD  global       ┃
  ┃      ini □ uzdoom's own            ┃
+ ┃     args □ none                    ┃
  ┃     wads ■ 4 wads  1 broken…       ┃
  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-                  [?]
+                 [F1/?]

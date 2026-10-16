@@ -78,6 +78,17 @@ impl Fire {
         }
     }
 
+    /// A fire filling `area` that has already burned long enough to reach its full height, so it
+    /// is at its peak from the first frame instead of climbing up from the bottom. Heat rises one
+    /// pixel per [`Fire::step`], so a step for every pixel of height gets the flames to the top.
+    pub fn kindled(area: Rect, seed: u32) -> Self {
+        let mut fire = Self::new(area, seed);
+        for _ in 0..fire.height {
+            fire.step();
+        }
+        fire
+    }
+
     /// Whether this fire was made for an area of this size.
     pub fn fits(&self, area: Rect) -> bool {
         (self.width, self.height) == (area.width as usize, area.height as usize * 2)
@@ -139,6 +150,28 @@ mod tests {
     use super::*;
 
     const AREA: Rect = Rect::new(0, 0, 20, 8);
+
+    #[test]
+    fn a_kindled_fire_is_already_as_tall_as_it_gets() {
+        let area = Rect::new(0, 0, 40, 12);
+        let top_half_heat = |fire: &Fire| -> u32 {
+            let half = fire.width * fire.height / 2;
+            fire.heat[..half].iter().map(|&h| u32::from(h)).sum()
+        };
+        assert_eq!(top_half_heat(&Fire::new(area, 7)), 0);
+        let kindled = Fire::kindled(area, 7);
+        assert!(
+            top_half_heat(&kindled) > 0,
+            "the flames reach the top half already"
+        );
+        // and it has settled: burning on doesn't make it any taller
+        let mut later = Fire::kindled(area, 7);
+        for _ in 0..later.height * 4 {
+            later.step();
+        }
+        let reach = |fire: &Fire| fire.heat.iter().position(|&h| h > 0).unwrap() / fire.width;
+        assert!(reach(&kindled) <= reach(&later) + 2);
+    }
 
     #[test]
     fn a_new_fire_burns_only_at_the_bottom() {

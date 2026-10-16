@@ -16,6 +16,7 @@ use crate::{
     tally::Tally,
     vault::{
         edition::Edition,
+        global::Shared,
         hash,
         host_settings::HostSettings,
         profile::Profile,
@@ -29,7 +30,8 @@ pub const EXTENSION: &str = "scroll";
 /// is only read from disk, but still a bound, since it comes from someone else.
 pub const MAX_WADS: usize = 4096;
 
-/// A shared profile: its name, its wads in load order, its base wad, and its host defaults.
+/// A shared profile: its name, its wads in load order, its base wad, its host defaults, and, if its
+/// maker chose to, their global settings.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct Scroll {
     pub name: String,
@@ -39,6 +41,10 @@ pub struct Scroll {
     /// Shared without the join code, which is the host's password.
     #[serde(default)]
     pub host_defaults: Option<HostSettings>,
+    /// The maker's music and quip settings, if they chose to share them. Never their song. Missing
+    /// in older scrolls, which carry none.
+    #[serde(default)]
+    pub settings: Option<Shared>,
 }
 
 /// One wad on a scroll.
@@ -98,6 +104,7 @@ impl Scroll {
                 code: String::new(),
                 ..defaults
             }),
+            settings: None,
         })
     }
 
@@ -114,6 +121,9 @@ impl Scroll {
             .all(|wad| net::is_safe(&wad.name, &wad.hash))
         {
             return Err("The scroll lists a wad with a name or hash that isn't safe");
+        }
+        if let Some(settings) = &self.settings {
+            settings.check()?;
         }
         Ok(())
     }
@@ -204,6 +214,7 @@ mod tests {
             wads,
             base_wad: None,
             host_defaults: None,
+            settings: None,
         }
     }
 
@@ -351,6 +362,57 @@ mod tests {
             ..scroll(vec![])
         };
         assert!(sneaky.check().is_err());
+    }
+
+    #[test]
+    fn settings_that_would_garble_the_screen_are_refused_with_the_scroll() {
+        use crate::vault::global::SplashQuip;
+
+        let garbled = Scroll {
+            settings: Some(Shared {
+                splash_quip: SplashQuip::Custom("\x07".into()),
+                ..Shared::default()
+            }),
+            ..scroll(vec![])
+        };
+        assert!(garbled.check().is_err());
+        let fine = Scroll {
+            settings: Some(Shared::default()),
+            ..scroll(vec![])
+        };
+        assert!(fine.check().is_ok());
+    }
+
+    #[test]
+    fn a_scroll_from_before_settings_could_be_shared_carries_none() {
+        #[derive(Serialize)]
+        struct Before {
+            name: String,
+            wads: Vec<Inscribed>,
+            base_wad: Option<Inscribed>,
+            host_defaults: Option<HostSettings>,
+        }
+        #[derive(Serialize)]
+        struct Sealed {
+            version: u32,
+            data: Before,
+        }
+        let altar = Altar::new("scroll-before-settings");
+        let path = altar.file("old.scroll");
+        let bytes = rmp_serde::to_vec_named(&Sealed {
+            version: Scroll::current(),
+            data: Before {
+                name: "old".into(),
+                wads: Vec::new(),
+                base_wad: None,
+                host_defaults: None,
+            },
+        })
+        .unwrap();
+        fs::write(&path, bytes).unwrap();
+        let scroll = Scroll::open(&path).unwrap();
+        assert_eq!(scroll.settings, None);
+        assert_eq!(scroll.name, "old");
     }
 
     #[test]

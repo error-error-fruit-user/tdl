@@ -12,6 +12,7 @@ use crate::{
     vault::{
         Vault,
         edition::Edition,
+        global::Shared,
         profile::Profile,
         scroll::{self, Scroll},
     },
@@ -19,13 +20,21 @@ use crate::{
 
 const FILTER: picker::Filter = ("scroll", &[scroll::EXTENSION]);
 
-/// Saves the profile at `index` as a scroll, wherever the user picks.
-pub fn seal(grimoire: &mut Grimoire, vault: &Vault, index: usize) -> Result<()> {
+/// Saves the profile at `index` as a scroll, wherever the user picks, with `settings` (the user's
+/// global settings, never their song) on it too if they agree.
+pub fn seal(grimoire: &mut Grimoire, vault: &Vault, index: usize, settings: Shared) -> Result<()> {
     let profile = &vault.profiles[index];
-    let scroll = match Scroll::of(profile) {
+    let mut scroll = match Scroll::of(profile) {
         Ok(scroll) => scroll,
         Err(problem) => return Warning::summon(grimoire, &problem),
     };
+    let question = format!(
+        "Seal your global settings in too? ({}; never your song)",
+        settings.summary()
+    );
+    if Dialog::summon(grimoire, &question)? {
+        scroll.settings = Some(settings);
+    }
     let Some(path) = picker::save(grimoire, Some(FILTER), &Scroll::file_name(&profile.name))?
     else {
         return Ok(());
@@ -61,11 +70,19 @@ fn with_extension(path: PathBuf) -> PathBuf {
 
 /// Reads a scroll the user picks and makes a profile from it at `index`. Its wads are looked for
 /// in the session's wad folders only; with none, the user is asked for a folder to look in.
-pub fn unseal(grimoire: &mut Grimoire, vault: &mut Vault, index: &mut usize) -> Result<()> {
+///
+/// If the scroll carries its maker's global settings and they differ from `current`, the user is
+/// asked whether to take them; the ones they agree to are returned, for the caller to keep.
+pub fn unseal(
+    grimoire: &mut Grimoire,
+    vault: &mut Vault,
+    index: &mut usize,
+    current: &Shared,
+) -> Result<Option<Shared>> {
     let Some(path) = picker::file(grimoire, Some(FILTER), None)? else {
-        return Ok(());
+        return Ok(None);
     };
-    unseal_file(grimoire, vault, index, &path)
+    unseal_file(grimoire, vault, index, &path, current)
 }
 
 /// [`unseal`], for the scroll at `path` rather than one picked, as `--unseal` asks for.
@@ -74,19 +91,20 @@ pub fn unseal_file(
     vault: &mut Vault,
     index: &mut usize,
     path: &Path,
-) -> Result<()> {
+    current: &Shared,
+) -> Result<Option<Shared>> {
     let Some(scroll) = read(grimoire, path)? else {
-        return Ok(());
+        return Ok(None);
     };
     let Some(folders) = folders_to_look_in(grimoire, vault)? else {
-        return Ok(());
+        return Ok(None);
     };
     let total = scroll.wads.len() + usize::from(scroll.base_wad.is_some());
     let Some(unsealed) = hashing::watch_as(grimoire, Kind::Unsealing, total, |tally| {
         scroll.unseal(&folders, tally)
     })?
     else {
-        return Ok(());
+        return Ok(None);
     };
     if unsealed.missing > 0 {
         Warning::summon_lines(
@@ -100,7 +118,7 @@ pub fn unseal_file(
     }
     let Some(name) = ProfileNamer::summon_suggesting(grimoire, &vault.profiles, &scroll.name)?
     else {
-        return Ok(());
+        return Ok(None);
     };
     // 🧭 a base wad that is the global one already is left to the global setting
     let base_wad = unsealed.base_wad.filter(|wad| {
@@ -117,8 +135,19 @@ pub fn unseal_file(
     };
     if vault.insert(index, profile).is_err() {
         Warning::save_failed(grimoire)?;
+        return Ok(None);
     }
-    Ok(())
+    // ⚙️ only once the profile is in: backing out of the import shouldn't change any settings
+    match scroll.settings {
+        Some(settings) if settings != *current => {
+            let question = format!(
+                "The scroll carries its maker's settings: {}. Use them?",
+                settings.summary()
+            );
+            Ok(Dialog::summon(grimoire, &question)?.then_some(settings))
+        }
+        _ => Ok(None),
+    }
 }
 
 /// The scroll at `path`, checked as safe to break, or `None` after telling the user why not.

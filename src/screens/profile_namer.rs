@@ -6,12 +6,17 @@ use crate::{
     ritual::{Grimoire, Page, Phase, Ritual},
     theme,
     vault::profile::Profile,
-    widgets::form::{self, Field},
+    widgets::{
+        form::{self, Field},
+        text,
+    },
 };
 
 /// Prompts for a name for a new profile (downloaded or imported), rejecting empty and taken names.
 pub struct ProfileNamer<'a> {
     profile_name: String,
+    /// Where the cursor is in the name.
+    caret: usize,
     used_profiles: &'a [Profile],
 }
 
@@ -21,8 +26,11 @@ impl<'a> ProfileNamer<'a> {
     const LEGEND: &[[&str; 2]] = &[
         ["Enter", "Save Profile"],
         ["A-Z/0-9/_", "Input"],
+        ["←/→/Home/End", "Move the Cursor"],
         ["Esc", "Cancel"],
     ];
+    /// The longest a name may be typed.
+    const MAX_LENGTH: usize = 64;
 
     pub fn summon(grimoire: &mut Grimoire, used_profiles: &'a [Profile]) -> Result<Option<String>> {
         Self::new(used_profiles, "").invoke(grimoire)
@@ -39,11 +47,13 @@ impl<'a> ProfileNamer<'a> {
     }
 
     fn new(used_profiles: &'a [Profile], suggested: &str) -> Self {
+        let profile_name: String = suggested
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
         Self {
-            profile_name: suggested
-                .chars()
-                .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
-                .collect(),
+            caret: text::end(&profile_name),
+            profile_name,
             used_profiles,
         }
     }
@@ -58,6 +68,7 @@ impl Ritual for ProfileNamer<'_> {
             value: &self.profile_name,
             placeholder: "type a name",
             room: 16,
+            caret: Some(self.caret),
         }];
         form::draw(page, Self::TITLE, Self::BORDER_COLOR, &fields, 0);
     }
@@ -83,20 +94,28 @@ impl Ritual for ProfileNamer<'_> {
                     Ok(Phase::Return(Some(self.profile_name.clone())))
                 }
             }
-            KeyCode::Char(c @ 'a'..='z' | c @ 'A'..='Z' | c @ '0'..='9' | c @ '_') => {
-                self.profile_name.push(c);
-                Ok(Phase::Render)
-            }
-            KeyCode::Backspace => {
-                self.profile_name.pop();
-                Ok(Phase::Render)
-            }
             KeyCode::Esc => Ok(Phase::Return(None)),
-            KeyCode::Char('?') => {
+            KeyCode::Char('?') | KeyCode::F(1) => {
                 Legend::summon(grimoire, Self::LEGEND)?;
                 Ok(Phase::Render)
             }
-            _ => Ok(Phase::Prompt),
+            key_code => Ok(
+                match text::edit(
+                    &mut self.profile_name,
+                    &mut self.caret,
+                    key_code,
+                    Self::MAX_LENGTH,
+                    name_character,
+                ) {
+                    Some(changed) => Phase::render_if(changed),
+                    None => Phase::Prompt,
+                },
+            ),
         }
     }
+}
+
+/// A character a profile name may hold: it is also a file and folder name, so only `A-Z a-z 0-9 _`.
+pub fn name_character(c: char) -> Option<char> {
+    (c.is_ascii_alphanumeric() || c == '_').then_some(c)
 }

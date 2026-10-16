@@ -53,9 +53,10 @@ const FRAME: Duration = Duration::from_millis(33);
 const FIRE_TOP_PERCENT: u16 = 45;
 
 /// Plays the splash, fading in from black, until a key is pressed, then fades it to black along
-/// with the music.
+/// with the music. `quip` (from `--splash-quip` or the settings) replaces the usual random
+/// one, which is left out when the quips are hidden.
 /// Ctrl+C still quits.
-pub fn summon(grimoire: &mut Grimoire) -> Result<()> {
+pub fn summon(grimoire: &mut Grimoire, quip: Option<&str>) -> Result<()> {
     music::start(false);
     let seed = quips::seed();
     let mut fire: Option<Fire> = None;
@@ -75,14 +76,19 @@ pub fn summon(grimoire: &mut Grimoire) -> Result<()> {
         grimoire.bewitch(|page| {
             let area = page.area();
             let flames = fire_area(area);
-            // 🔥 a new fire whenever the terminal changes size, since the old one no longer fits
+            // 🔥 a new fire whenever the terminal changes size, since the old one no longer fits,
+            // kindled first so it is roaring from the first frame rather than climbing up
             let fire = match &mut fire {
                 Some(fire) if fire.fits(flames) => fire,
-                _ => fire.insert(Fire::new(flames, seed)),
+                _ => fire.insert(Fire::kindled(flames, seed)),
             };
             fire.step();
-            let quip = quips::pick(seed, area.width);
-            paint(fire, elapsed, area, quip, page.buffer_mut());
+            let quip = match quip {
+                Some(quip) => quips::fit(quip, area.width),
+                None if quips::shown() => quips::pick(seed, area.width).map(str::to_string),
+                None => None,
+            };
+            paint(fire, elapsed, area, quip.as_deref(), page.buffer_mut());
             dim(page.buffer_mut(), brightness);
         })?;
         if event::poll(FRAME)? {
@@ -161,7 +167,7 @@ fn paint(fire: &Fire, elapsed: Duration, area: Rect, quip: Option<&str>, buffer:
 
     // ✨ the quip sits centered between the logo and the tagline
     if let Some(quip) = quip {
-        let x = area.x + area.width.saturating_sub(quip.len() as u16) / 2;
+        let x = area.x + area.width.saturating_sub(quip.chars().count() as u16) / 2;
         let style = Style::new().fg(flare(elapsed)).add_modifier(Modifier::BOLD);
         for (j, character) in quip.chars().enumerate() {
             stamp(

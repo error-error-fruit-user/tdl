@@ -56,7 +56,7 @@ pub fn grow(width: u16, height: u16, below: u16, area: Rect) -> (u16, u16) {
 }
 
 /// Windows of the given sizes stacked top to bottom, each centered across the page and the stack
-/// centered down it, with one row left under the last for its `[?]` hint. When the terminal is too
+/// centered down it, with one row left under the last for its `[F1/?]` hint. When the terminal is too
 /// short, the first window (the list, which can scroll) gives up rows first.
 pub fn stack(sizes: &[(u16, u16)], area: Rect) -> Vec<Rect> {
     let usable = usable(area);

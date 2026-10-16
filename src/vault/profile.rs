@@ -41,6 +41,8 @@ pub struct Profile {
     /// What the host form starts with for this profile, saved from that form. Missing in older
     /// files, which count as none.
     pub host_defaults: Option<HostSettings>,
+    /// Overrides [`Config::uzdoom_args`]: extra arguments for UZDoom, for this profile only.
+    pub uzdoom_args: Option<String>,
 }
 
 /// A profile as it is saved. The field order is the layout of edition 0, where this was a bare
@@ -59,6 +61,9 @@ struct SavedProfile {
     /// whose wads all carry their whole path.
     #[serde(default)]
     folders: Vec<SavedPath>,
+    /// Missing in files from before profiles had arguments of their own, which count as none.
+    #[serde(default)]
+    uzdoom_args: Option<String>,
 }
 
 /// One wad in a saved profile.
@@ -119,6 +124,7 @@ impl From<Profile> for SavedProfile {
             ini: profile.ini.as_deref().map(SavedPath::from),
             host_defaults: profile.host_defaults,
             folders,
+            uzdoom_args: profile.uzdoom_args,
         }
     }
 }
@@ -164,8 +170,15 @@ impl TryFrom<SavedProfile> for Profile {
             uzdoom: saved.uzdoom.map(OsString::from),
             ini: saved.ini.map(OsString::from),
             host_defaults: saved.host_defaults,
+            uzdoom_args: saved.uzdoom_args,
         })
     }
+}
+
+/// `name` with a number on the end that no profile in `profiles` has yet: `brutal_2`, then
+/// `brutal_3` (see [`crate::tag::tagged`]).
+pub fn tagged_name(name: &str, profiles: &[Profile]) -> String {
+    crate::tag::tagged(name, |tagged| profiles.iter().all(|p| p.name != tagged))
 }
 
 /// Which piece of a profile a [`Fault`] was found in.
@@ -179,7 +192,7 @@ pub enum Part {
 }
 
 impl Edition for Profile {
-    const UPGRADES: &[fn(Self) -> Self] = &[v0_to_v1, v1_to_v2];
+    const UPGRADES: &[fn(Self) -> Self] = &[v0_to_v1, v1_to_v2, v2_to_v3];
 }
 
 /// Edition 1 only wrapped the same data in a named, versioned map, so nothing needs fixing.
@@ -194,6 +207,21 @@ fn v1_to_v2(profile: Profile) -> Profile {
     profile
 }
 
+/// Edition 3 fills in the size of every wad added before sizes were recorded (saved as 0), from
+/// the file as it is now, so a change from here on is marked as one. Wads whose file is gone keep
+/// 0. Nothing is hashed, so this stays quick.
+fn v2_to_v3(profile: Profile) -> Profile {
+    Profile {
+        wads: profile
+            .wads
+            .into_iter()
+            .map(Wad::with_size_backfilled)
+            .collect(),
+        base_wad: profile.base_wad.map(Wad::with_size_backfilled),
+        ..profile
+    }
+}
+
 impl Profile {
     /// A profile with no overrides, as created when downloading from a host.
     pub fn new(name: String, wads: Vec<Wad>) -> Self {
@@ -204,6 +232,7 @@ impl Profile {
             uzdoom: None,
             ini: None,
             host_defaults: None,
+            uzdoom_args: None,
         }
     }
 
@@ -242,6 +271,11 @@ impl Profile {
             .collect()
     }
 
+    /// The extra arguments for UZDoom: the profile's own, falling back to the global ones.
+    pub fn uzdoom_args<'a>(&'a self, config: &'a Config) -> &'a str {
+        self.uzdoom_args.as_deref().unwrap_or(&config.uzdoom_args)
+    }
+
     /// The profile's own base wad, falling back to the global one.
     pub fn base_wad<'a>(&'a self, config: &'a Config) -> Option<&'a Wad> {
         self.base_wad.as_ref().or(config.base_wad.as_ref())
@@ -272,6 +306,30 @@ impl Profile {
         }
         let _ = std::fs::remove_dir_all(data_dir.join(&self.name));
         scribe::burn(&Self::path(config_dir, &self.name));
+    }
+
+    /// A copy of this profile called `name`, for pasting: the same wads and overrides, and its own
+    /// ini copied into the new profile's data folder if it had one there, so changing one profile's
+    /// settings in UZDoom doesn't change the other's. Saves are not copied.
+    pub fn copied_as(&self, name: String, data_dir: &Path) -> io::Result<Self> {
+        let mut copy = Self {
+            name,
+            ..self.clone()
+        };
+        let own_ini = self
+            .ini
+            .as_ref()
+            .and_then(|ini| Path::new(ini).strip_prefix(data_dir.join(&self.name)).ok())
+            .map(Path::to_path_buf);
+        if let (Some(ini), Some(rest)) = (&self.ini, own_ini) {
+            let copied = data_dir.join(&copy.name).join(rest);
+            if let Some(folder) = copied.parent() {
+                std::fs::create_dir_all(folder)?;
+            }
+            std::fs::copy(ini, &copied)?;
+            copy.ini = Some(copied.into());
+        }
+        Ok(copy)
     }
 
     /// After the data folder moved from `old_name` to this profile's name, an ini that lived inside
@@ -375,6 +433,25 @@ mod tests {
     }
 
     #[test]
+    fn a_profiles_own_arguments_win_over_the_global_ones() {
+        let config = Config {
+            uzdoom_args: "-nomusic".into(),
+            ..Config::default()
+        };
+        assert_eq!(Profile::default().uzdoom_args(&config), "-nomusic");
+        let own = Profile {
+            uzdoom_args: Some("+sv_cheats 1".into()),
+            ..Profile::default()
+        };
+        assert_eq!(own.uzdoom_args(&config), "+sv_cheats 1");
+        // and they are saved with it
+        let altar = Altar::new("profile-own-args");
+        let path = altar.file("own.rite");
+        own.save(&path).unwrap();
+        assert_eq!(Profile::open(&path), Some(own));
+    }
+
+    #[test]
     fn an_ini_inside_the_data_folder_follows_a_rename() {
         let data = Path::new("/data");
         let mut profile = Profile {
@@ -399,6 +476,60 @@ mod tests {
         let mut none = Profile::default();
         none.follow_rename(Path::new("/data"), "old");
         assert_eq!(none.ini, None);
+    }
+
+    // 📋 copies, for pasting
+
+    fn named(name: &str) -> Profile {
+        Profile {
+            name: name.into(),
+            ..Profile::default()
+        }
+    }
+
+    #[test]
+    fn a_tag_skips_the_names_profiles_already_have() {
+        let profiles = [named("brutal"), named("brutal_2"), named("brutal_4")];
+        assert_eq!(tagged_name("brutal", &profiles), "brutal_3");
+        assert_eq!(tagged_name("brutal_4", &profiles), "brutal_5");
+    }
+
+    #[test]
+    fn a_copy_gets_its_own_ini_and_none_of_the_saves() {
+        let altar = Altar::new("profile-copy");
+        let data = altar.file("data");
+        let ini = data.join("brutal/uzdoom.ini");
+        fs::create_dir_all(data.join("brutal/saves")).unwrap();
+        fs::write(&ini, b"[Doom.Player]").unwrap();
+        fs::write(data.join("brutal/saves/slot1"), b"save").unwrap();
+        let original = Profile {
+            name: "brutal".into(),
+            ini: Some(ini.clone().into()),
+            ..spread_out()
+        };
+        let copy = original.copied_as("brutal_2".into(), &data).unwrap();
+        assert_eq!(copy.name, "brutal_2");
+        assert_eq!(copy.wads, original.wads);
+        assert_eq!(copy.uzdoom, original.uzdoom);
+        let copied_ini = data.join("brutal_2/uzdoom.ini");
+        assert_eq!(copy.ini, Some(copied_ini.clone().into()));
+        assert_eq!(fs::read(copied_ini).unwrap(), b"[Doom.Player]");
+        assert!(!data.join("brutal_2/saves/slot1").exists());
+        // the original's ini is left where it was
+        assert_eq!(fs::read(ini).unwrap(), b"[Doom.Player]");
+    }
+
+    #[test]
+    fn a_copy_shares_an_ini_kept_somewhere_else() {
+        let altar = Altar::new("profile-copy-shared-ini");
+        let original = Profile {
+            ini: Some("/home/me/uzdoom.ini".into()),
+            ..named("brutal")
+        };
+        let copy = original
+            .copied_as("brutal_2".into(), &altar.file("data"))
+            .unwrap();
+        assert_eq!(copy.ini, original.ini);
     }
 
     // 📜 the saved shape: folders listed once, names as text, and every older shape still read
@@ -535,8 +666,48 @@ mod tests {
         assert_eq!(loaded, expected);
         // and upgrading rewrites it in the new shape, which reads back the same
         assert!(loaded.upgrade(&path).unwrap());
-        assert_eq!(Profile::stored_version(&path), Some(2));
+        assert_eq!(Profile::stored_version(&path), Some(Profile::current()));
         assert_eq!(Profile::open(&path), Some(expected));
+    }
+
+    #[test]
+    fn a_profile_saved_by_edition_two_gets_the_sizes_it_never_recorded() {
+        let altar = Altar::new("profile-edition-two");
+        fs::write(altar.file("there.wad"), b"1234567").unwrap();
+        fs::write(altar.file("known.pk3"), b"12").unwrap();
+        fs::write(altar.file("base.wad"), b"123").unwrap();
+        let wad = |name: &str, size| Wad::new(altar.file(name).into(), "ab".repeat(32), size);
+        let old = Profile {
+            base_wad: Some(wad("base.wad", 0)),
+            ..Profile::new(
+                "old".into(),
+                vec![wad("there.wad", 0), wad("gone.wad", 0), wad("known.pk3", 9)],
+            )
+        };
+        // edition 2 saved exactly today's shape, only with an older number on it
+        #[derive(Serialize)]
+        struct Sealed<'a> {
+            version: u32,
+            data: &'a Profile,
+        }
+        let path = altar.file("old.rite");
+        let bytes = rmp_serde::to_vec_named(&Sealed {
+            version: 2,
+            data: &old,
+        })
+        .unwrap();
+        fs::write(&path, bytes).unwrap();
+
+        let loaded = Profile::open(&path).unwrap();
+        let sizes: Vec<_> = loaded.wads.iter().map(|wad| wad.size).collect();
+        // the unknown sizes come from the files; a missing file stays unknown, a known size stays
+        assert_eq!(sizes, [7, 0, 9]);
+        assert_eq!(loaded.base_wad.as_ref().map(|wad| wad.size), Some(3));
+        assert!(loaded.wads.iter().all(|wad| wad.modified == 0));
+        // the upgrade is written as the new edition and reads back the same
+        assert!(loaded.upgrade(&path).unwrap());
+        assert_eq!(Profile::stored_version(&path), Some(3));
+        assert_eq!(Profile::open(&path), Some(loaded));
     }
 
     #[test]

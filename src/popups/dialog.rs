@@ -7,16 +7,21 @@ use crate::{
     theme,
 };
 
-/// A yes/no popup, answered with `y` or `n`.
+/// A yes/no popup, answered with `y` or `n`, or by picking an answer with `←`/`→` and `Enter`.
 pub struct Dialog<'a> {
     message: &'a str,
+    /// The answer picked with the arrows, if any: 0 for yes, 1 for no.
+    selected: Option<usize>,
 }
 
 impl<'a> Dialog<'a> {
     const TITLE: &str = "dialogue";
 
     pub fn new(message: &'a str) -> Self {
-        Self { message }
+        Self {
+            message,
+            selected: None,
+        }
     }
 }
 
@@ -28,11 +33,18 @@ impl Ritual for Dialog<'_> {
             .into_iter()
             .map(|line| Line::styled(line, Style::new().fg(theme::TEXT)))
             .collect();
-        let answers = popups::answers(&["Yes", "No"]);
+        let answers = popups::answers(&["Yes", "No"], self.selected);
         popups::draw(page, Self::TITLE, theme::DIALOG, &lines, Some(answers));
     }
 
     fn prompt(&mut self, _: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Return>> {
+        if let Some(phase) = popups::pick(&mut self.selected, 2, key_code) {
+            return Ok(match phase {
+                Phase::Return(answer) => Phase::Return(answer == 0),
+                Phase::Render => Phase::Render,
+                Phase::Prompt => Phase::Prompt,
+            });
+        }
         match key_code {
             KeyCode::Char('y') => Ok(Phase::Return(true)),
             KeyCode::Char('n') => Ok(Phase::Return(false)),

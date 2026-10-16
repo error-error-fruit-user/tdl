@@ -18,11 +18,11 @@ expression: "crate::testing::draw(90, 28, |page| editor.render(page))"
               ┃                                                           ┃
               ┃                                                           ┃
               ┃                                                           ┃
-              ┃                                                           ┃
               ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
                                ┏━━━━━━[ overrides ]━━━━━━┓
                                ┃   uzdoom □ global       ┃
                                ┃ base wad □ global       ┃
                                ┃      ini □ uzdoom's own ┃
+                               ┃     args □ global       ┃
                                ┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
-                                           [?]
+                                         [F1/?]

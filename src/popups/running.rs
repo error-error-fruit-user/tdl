@@ -48,6 +48,7 @@ pub fn summon(
             latest: game.latest_line(),
             elapsed: started.elapsed(),
             seed,
+            show_quip: quips::shown(),
         };
         grimoire.bewitch(|page| waiting.draw(page))?;
         if event::poll(FRAME)? {
@@ -64,6 +65,8 @@ struct Waiting<'a> {
     latest: String,
     elapsed: Duration,
     seed: u32,
+    /// Whether there is a quip at all, which there isn't with the quips hidden.
+    show_quip: bool,
 }
 
 impl Waiting<'_> {
@@ -100,11 +103,13 @@ impl Waiting<'_> {
                     .map(|detail| Line::styled(detail.clone(), Style::new().fg(theme::TEXT))),
             );
         }
-        lines.push(Line::raw(""));
-        lines.push(Line::styled(
-            quips::cycling(self.seed, self.elapsed),
-            Style::new().fg(theme::QUIP).add_modifier(Modifier::ITALIC),
-        ));
+        if self.show_quip {
+            lines.push(Line::raw(""));
+            lines.push(Line::styled(
+                quips::cycling(self.seed, self.elapsed),
+                Style::new().fg(theme::QUIP).add_modifier(Modifier::ITALIC),
+            ));
+        }
         lines.push(Line::raw(""));
         lines.push(Line::styled(HINT, Style::new().fg(theme::MUTED)));
 
@@ -148,8 +153,27 @@ mod tests {
             latest: "W_Init: Init WADfiles.".into(),
             elapsed: Duration::from_secs(75),
             seed: 0,
+            show_quip: true,
         };
         assert_snapshot!(testing::draw(60, 16, |page| waiting.draw(page)));
+    }
+
+    #[test]
+    fn with_the_quips_hidden_there_is_no_quip_or_room_for_one() {
+        let waiting = |show_quip| Waiting {
+            title: "launching",
+            details: &[],
+            latest: "W_Init: Init WADfiles.".into(),
+            elapsed: Duration::ZERO,
+            seed: 0,
+            show_quip,
+        };
+        let shown = testing::draw(60, 14, |page| waiting(true).draw(page));
+        let hidden = testing::draw(60, 14, |page| waiting(false).draw(page));
+        assert!(shown.contains(quips::cycling(0, Duration::ZERO)));
+        assert!(!hidden.contains(quips::cycling(0, Duration::ZERO)));
+        let rows = |screen: &str| screen.lines().filter(|line| line.contains('┃')).count();
+        assert_eq!(rows(&shown), rows(&hidden) + 2);
     }
 
     #[test]
@@ -160,6 +184,7 @@ mod tests {
             latest: String::new(),
             elapsed: Duration::ZERO,
             seed: 0,
+            show_quip: true,
         };
         let screen = testing::draw(60, 14, |page| waiting.draw(page));
         assert!(screen.contains("Starting UZDoom · 0:00"));
