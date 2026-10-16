@@ -23,6 +23,8 @@ use crate::{
 pub enum Kind {
     Downloading,
     Hashing,
+    /// Breaking a scroll's seal: looking for each of its wads in the wad folders.
+    Unsealing,
 }
 
 impl Kind {
@@ -30,6 +32,7 @@ impl Kind {
         match self {
             Self::Downloading => "downloading",
             Self::Hashing => "hashing",
+            Self::Unsealing => "unsealing",
         }
     }
 
@@ -38,6 +41,7 @@ impl Kind {
         match self {
             Self::Downloading => theme::BUSY,
             Self::Hashing => theme::HASHING,
+            Self::Unsealing => theme::UNSEALING,
         }
     }
 
@@ -46,6 +50,7 @@ impl Kind {
         match self {
             Self::Downloading => "",
             Self::Hashing => "hashing ",
+            Self::Unsealing => "looking for ",
         }
     }
 
@@ -54,7 +59,7 @@ impl Kind {
     fn hidden_for(self) -> Duration {
         match self {
             Self::Downloading => Duration::ZERO,
-            Self::Hashing => Duration::from_millis(250),
+            Self::Hashing | Self::Unsealing => Duration::from_millis(250),
         }
     }
 }

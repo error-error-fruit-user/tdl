@@ -7,6 +7,7 @@ pub mod lookup;
 pub mod profile;
 pub mod saved;
 pub mod scribe;
+pub mod scroll;
 pub mod wad;
 
 use std::path::PathBuf;

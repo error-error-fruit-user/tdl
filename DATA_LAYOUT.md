@@ -80,6 +80,19 @@ Paths are saved as text (or, for the rare path that isn't valid UTF-8, in the sa
 
 Files saved before edition 2 kept each wad's whole path as an OS-tagged string, which only the OS that wrote it could read. They still load, and the upgrade prompt rewrites them in the new shape.
 
+## Scrolls
+
+A `.scroll` is a profile sealed up to share (`X` in the launcher), written wherever you choose. Like the other files it is MessagePack in an edition wrapper, holding:
+
+| Field | Meaning |
+| --- | --- |
+| `name` | The profile's name, offered (and checked for clashes) when the scroll is imported. |
+| `wads` | The wads in load order, each only its `name`, `size` (0 if unknown), `hash` and `volatile`: no folders, no paths. |
+| `base_wad` | The profile's own base wad, the same way, if it has one. |
+| `host_defaults` | The profile's host defaults, with the join code left out. |
+
+Importing (`I`) trusts nothing in it: there are at most 4096 wads, every name must be a plain file name (so `../x` can't reach outside a folder) and every hash a real BLAKE3 hash, or the scroll is refused.
+
 ## How the files are written
 
 - **Atomic saves.** A file is written to `<file>.tmp`, synced to disk, and only then renamed over the real file, so a crash leaves either the old file or the new one, never half of one.

@@ -9,7 +9,7 @@ use crate::{
     widgets::form::{self, Field},
 };
 
-/// Prompts for a name for a downloaded profile, rejecting empty and taken names.
+/// Prompts for a name for a new profile (downloaded or imported), rejecting empty and taken names.
 pub struct ProfileNamer<'a> {
     profile_name: String,
     used_profiles: &'a [Profile],
@@ -25,12 +25,25 @@ impl<'a> ProfileNamer<'a> {
     ];
 
     pub fn summon(grimoire: &mut Grimoire, used_profiles: &'a [Profile]) -> Result<Option<String>> {
-        Self::new(used_profiles).invoke(grimoire)
+        Self::new(used_profiles, "").invoke(grimoire)
     }
 
-    fn new(used_profiles: &'a [Profile]) -> Self {
+    /// Like [`ProfileNamer::summon`], with `suggested` typed in already (as far as it is a
+    /// name tdl allows), so it can be taken with Enter or changed. A taken name is still refused.
+    pub fn summon_suggesting(
+        grimoire: &mut Grimoire,
+        used_profiles: &'a [Profile],
+        suggested: &str,
+    ) -> Result<Option<String>> {
+        Self::new(used_profiles, suggested).invoke(grimoire)
+    }
+
+    fn new(used_profiles: &'a [Profile], suggested: &str) -> Self {
         Self {
-            profile_name: String::new(),
+            profile_name: suggested
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect(),
             used_profiles,
         }
     }

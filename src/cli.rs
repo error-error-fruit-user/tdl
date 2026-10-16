@@ -1,10 +1,10 @@
 //! The command line:
 //! `tdl [--vault <folder> | --vault-once <folder> | --forget-vault] [--wads <folder>]...
-//! [--no-splash] [--music]`.
+//! [--unseal <scroll>] [--no-splash] [--music]`.
 
 pub const USAGE: &str = "\
 Usage: tdl [--vault <folder> | --vault-once <folder> | --forget-vault]
-           [--wads <folder>]... [--no-splash] [--music]
+           [--wads <folder>]... [--unseal <scroll>] [--no-splash] [--music]
 
 Options:
   --vault <folder>   Keep the config and data in <folder>/config and <folder>/data
@@ -18,6 +18,8 @@ Options:
   --wads <folder>    Where your wads are: file pickers open here, and joining looks
                      here for wads it already has. Give it more than once for more
                      folders. tdl asks whether to keep them
+  --unseal <scroll>  Import a shared .scroll as a new profile as soon as tdl
+                     starts, looking for its wads in the wad folders
   --no-splash        Go straight to the launcher
   --music            Keep the music playing after the splash screen
   -h, --help         Show this help";
@@ -33,6 +35,8 @@ pub struct Cli {
     pub forget_vault: bool,
     /// Folders the user keeps wads in, in the order given.
     pub wads: Vec<String>,
+    /// A scroll to import on startup.
+    pub unseal: Option<String>,
     /// Skips the splash screen.
     pub no_splash: bool,
     /// Keeps the music playing in the launcher, not just on the splash screen.
@@ -48,6 +52,7 @@ impl Cli {
         let mut wads = Vec::new();
         let mut forget_vault = false;
         let mut vault_once = false;
+        let mut unseal = None;
         let mut no_splash = false;
         let mut music = false;
         while let Some(arg) = args.next() {
@@ -57,6 +62,16 @@ impl Cli {
             }
             if arg == "--music" {
                 music = true;
+                continue;
+            }
+            if arg == "--unseal" || arg.starts_with("--unseal=") {
+                let scroll = match arg.strip_prefix("--unseal=") {
+                    Some(scroll) => scroll.to_string(),
+                    None => args.next().ok_or("--unseal needs a scroll")?,
+                };
+                if unseal.replace(scroll).is_some() {
+                    return Err("Only one scroll can be unsealed at a time".to_string());
+                }
                 continue;
             }
             if arg == "--forget-vault" {
@@ -101,6 +116,7 @@ impl Cli {
             vault_once,
             forget_vault,
             wads,
+            unseal,
             no_splash,
             music,
         })
@@ -213,5 +229,20 @@ mod tests {
         // still only one vault, and still not with forgetting
         assert!(parse(&["--vault-once", "a", "--vault", "b"]).is_err());
         assert!(parse(&["--vault-once", "a", "--forget-vault"]).is_err());
+    }
+
+    #[test]
+    fn a_scroll_to_unseal_goes_with_the_wad_folders() {
+        let cli = parse(&["--unseal", "shared.scroll", "--wads", "/w"]).unwrap();
+        assert_eq!(cli.unseal, Some("shared.scroll".into()));
+        assert_eq!(cli.wads, ["/w"]);
+        assert_eq!(
+            parse(&["--unseal=shared.scroll"]).unwrap().unseal,
+            Some("shared.scroll".into())
+        );
+        assert!(parse(&["--unseal"]).is_err());
+        assert!(parse(&["--unseal", "a.scroll", "--unseal", "b.scroll"]).is_err());
+        // the scroll is not mistaken for a vault folder
+        assert_eq!(parse(&["--unseal", "a.scroll"]).unwrap().vault, None);
     }
 }

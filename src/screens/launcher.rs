@@ -33,6 +33,7 @@ use crate::{
     screens::wrap_around,
     slayer::host_game,
     slayer::join_game,
+    slayer::share,
     theme, uzdoom,
     vault::Vault,
     vault::edition::{Edition, Loaded},
@@ -62,6 +63,8 @@ pub struct Launcher {
     ask_about_vault: bool,
     forget_vault: bool,
     passed_wads: Vec<PathBuf>,
+    /// The scroll from `--unseal`, until it has been imported.
+    passed_scroll: Option<PathBuf>,
     global: Global,
     global_path: PathBuf,
     /// False if `global.rite` is from a newer tdl, so it is never overwritten.
@@ -77,6 +80,8 @@ pub struct Start {
     /// Opens the standard vault and offers to forget the remembered one.
     pub forget_vault: bool,
     pub wads: Vec<String>,
+    /// A scroll to import as soon as the launcher is up.
+    pub unseal: Option<String>,
     pub splash: bool,
 }
 
@@ -116,6 +121,8 @@ impl Launcher {
         ["A", "Add"],
         ["E", "Edit"],
         ["D", "Delete"],
+        ["X", "Export Scroll"],
+        ["I", "Import Scroll"],
         ["U", "Select UZDoom"],
         ["W", "Select Base Wad"],
         ["S", "Toggle Splash Screen"],
@@ -182,6 +189,7 @@ impl Launcher {
             ask_about_vault: start.ask_about_vault,
             forget_vault: start.forget_vault,
             passed_wads,
+            passed_scroll: start.unseal.as_deref().map(absolute),
             global,
             global_path,
             global_writable,
@@ -333,6 +341,15 @@ impl Ritual for Launcher {
         }
         self.offer_to_keep(grimoire)?;
         picker::set_wad_folders(&self.vault.wad_folders);
+        if let Some(scroll) = self.passed_scroll.take() {
+            // 📜 the new profile goes last, and the cursor lands on it
+            let before = self.vault.profiles.len();
+            let mut index = before;
+            share::unseal_file(grimoire, &mut self.vault, &mut index, &scroll)?;
+            if self.vault.profiles.len() > before {
+                self.table_state.select(Some(before));
+            }
+        }
         Ok(())
     }
 
@@ -365,23 +382,6 @@ impl Ritual for Launcher {
             Line::from(Self::HEADER[1]).right_aligned(),
         ])
         .style(theme::HEADER);
-        let rows = self
-            .vault
-            .profiles
-            .iter()
-            .map(|p| {
-                Row::new([
-                    Line::default(),
-                    Line::from(p.name.as_str()),
-                    Line::from(p.wads.len().to_string()).right_aligned(),
-                ])
-            })
-            .chain([Row::new([
-                Line::default(),
-                Line::styled(Self::NEW_ROW, Style::new().fg(theme::MUTED)),
-                Line::default(),
-            ])]);
-
         let (details_width, details_height) = details.size();
         let panel = layout::window(details_width, details_height);
         // the badge, the name and the count, then the header, the profiles and the new-profile row
@@ -404,6 +404,29 @@ impl Ritual for Launcher {
                 .entry(i)
                 .or_insert_with(|| Mark::of_profile(&self.vault.profiles[i], &self.vault.config));
         }
+
+        // 🩸 a broken profile's row is discolored as well as badged, as in the editor
+        let rows = self
+            .vault
+            .profiles
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let row = Row::new([
+                    Line::default(),
+                    Line::from(p.name.as_str()),
+                    Line::from(p.wads.len().to_string()).right_aligned(),
+                ]);
+                match self.marks.get(&i) {
+                    Some(Some(Mark::Broken)) => row.style(theme::BROKEN_ROW),
+                    _ => row,
+                }
+            })
+            .chain([Row::new([
+                Line::default(),
+                Line::styled(Self::NEW_ROW, Style::new().fg(theme::MUTED)),
+                Line::default(),
+            ])]);
 
         let table = Table::new(
             rows,
@@ -535,6 +558,17 @@ impl Ritual for Launcher {
                 {
                     Warning::save_failed(grimoire)?;
                 }
+                Ok(Phase::Render)
+            }
+            KeyCode::Char('x') => {
+                if *index == self.vault.profiles.len() {
+                    return Ok(Phase::Prompt);
+                }
+                share::seal(grimoire, &self.vault, *index)?;
+                Ok(Phase::Render)
+            }
+            KeyCode::Char('i') => {
+                share::unseal(grimoire, &mut self.vault, index)?;
                 Ok(Phase::Render)
             }
             KeyCode::Char('e') => {

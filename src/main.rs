@@ -45,6 +45,7 @@ fn main() {
             ask_about_vault: !cli.vault_once,
             forget_vault: cli.forget_vault,
             wads: cli.wads,
+            unseal: cli.unseal,
             splash: !cli.no_splash,
         };
         Launcher::summon(grimoire, start)

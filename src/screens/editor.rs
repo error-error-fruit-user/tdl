@@ -369,7 +369,9 @@ impl Ritual for Editor<'_> {
             KeyCode::Char(' ') if self.editing_wads => {
                 let index = *index;
                 if let Some(Some(fault)) = self.faults.get(index) {
-                    let lines = inspect_lines(&self.profile.wads[index], fault);
+                    let wad = &self.profile.wads[index];
+                    let found = found_elsewhere(wad, fault, &picker::wad_folders());
+                    let lines = inspect_lines(wad, fault, found.as_deref());
                     Warning::summon_styled(grimoire, lines)?;
                     Ok(Phase::Render)
                 } else {
@@ -385,11 +387,30 @@ impl Ritual for Editor<'_> {
             }
             KeyCode::Char('r') if self.editing_wads && *index != self.profile.wads.len() => {
                 let index = *index;
-                // 📂 start where the wad used to live, since it probably only moved a little
-                let start = Path::new(&self.profile.wads[index].path).parent();
-                let Some(path) = picker::file(grimoire, Some(("wads", Wad::EXTENSIONS)), start)?
-                else {
-                    return Ok(Phase::Prompt);
+                let wad = &self.profile.wads[index];
+                // 🔎 a missing wad with a file of its name in a wad folder is offered that file
+                let found = self.faults[index]
+                    .as_ref()
+                    .and_then(|fault| found_elsewhere(wad, fault, &picker::wad_folders()));
+                let use_found = match &found {
+                    Some(found) => Dialog::summon(
+                        grimoire,
+                        &format!("Use {}?", layout::tail(&found.to_string_lossy(), 40)),
+                    )?,
+                    None => false,
+                };
+                let path = match found {
+                    Some(found) if use_found => found,
+                    _ => {
+                        // 📂 start where the wad used to live, since it probably only moved a little
+                        let start = Path::new(&self.profile.wads[index].path).parent();
+                        let Some(path) =
+                            picker::file(grimoire, Some(("wads", Wad::EXTENSIONS)), start)?
+                        else {
+                            return Ok(Phase::Render);
+                        };
+                        path
+                    }
                 };
                 let Some(replacement) = hashing::wad(grimoire, &path)? else {
                     return Ok(Phase::Render);
@@ -545,9 +566,23 @@ fn check_wads(wads: &[Wad]) -> Vec<Option<Fault>> {
     wads.iter().map(Wad::check).collect()
 }
 
+/// A file with a missing wad's name in one of `wad_folders`, the first one there is. It's only a
+/// direct join of the name onto each folder, never a search, and the file isn't read: whether it
+/// really is the wad is checked by its hash once it's picked.
+fn found_elsewhere(wad: &Wad, fault: &Fault, wad_folders: &[PathBuf]) -> Option<PathBuf> {
+    if *fault != Fault::Missing {
+        return None;
+    }
+    let name = Path::new(&wad.path).file_name()?;
+    wad_folders
+        .iter()
+        .map(|folder| folder.join(name))
+        .find(|path| path.is_file() && path.as_os_str() != wad.path)
+}
+
 /// What to tell the user about a wad with a fault: its name, where it should be, what is wrong,
-/// and what to do about it.
-fn inspect_lines(wad: &Wad, fault: &Fault) -> Vec<Line<'static>> {
+/// and what to do about it. `found` is a file of its name in a wad folder, to offer instead.
+fn inspect_lines(wad: &Wad, fault: &Fault, found: Option<&Path>) -> Vec<Line<'static>> {
     let (color, advice) = if fault.is_blocking() {
         (theme::BAD, "press R to pick the file again")
     } else {
@@ -557,7 +592,7 @@ fn inspect_lines(wad: &Wad, fault: &Fault) -> Vec<Line<'static>> {
         )
     };
     let path = wad.path.to_string_lossy();
-    vec![
+    let mut lines = vec![
         Line::styled(
             wad.file_name().into_owned(),
             Style::new().fg(theme::TEXT).add_modifier(Modifier::BOLD),
@@ -567,8 +602,25 @@ fn inspect_lines(wad: &Wad, fault: &Fault) -> Vec<Line<'static>> {
             Style::new().fg(theme::MUTED),
         ),
         Line::styled(format!("It {fault}."), Style::new().fg(color)),
-        Line::styled(advice, Style::new().fg(theme::MUTED)),
-    ]
+    ];
+    match found {
+        Some(found) => {
+            let found = found.to_string_lossy();
+            lines.push(Line::styled(
+                format!(
+                    "found at {}",
+                    layout::tail(&found, popups::MAX_TEXT_WIDTH as usize - 9)
+                ),
+                Style::new().fg(theme::GOOD),
+            ));
+            lines.push(Line::styled(
+                "press R to use it",
+                Style::new().fg(theme::MUTED),
+            ));
+        }
+        None => lines.push(Line::styled(advice, Style::new().fg(theme::MUTED))),
+    }
+    lines
 }
 
 #[cfg(test)]
@@ -651,7 +703,7 @@ mod tests {
     #[test]
     fn the_inspect_popup_names_the_file_the_path_and_the_problem() {
         let wad = Wad::new("/wads/moved/brutal.pk3".into(), "ab".repeat(32), 4);
-        let lines: Vec<_> = inspect_lines(&wad, &Fault::Missing)
+        let lines: Vec<_> = inspect_lines(&wad, &Fault::Missing, None)
             .iter()
             .map(ToString::to_string)
             .collect();
@@ -735,7 +787,47 @@ mod tests {
     #[test]
     fn snapshot_inspecting_a_missing_wad() {
         let wad = Wad::new("/wads/moved/gone.pk3".into(), "ab".repeat(32), 4);
-        let mut warning = Warning::styled(inspect_lines(&wad, &Fault::Missing));
+        let mut warning = Warning::styled(inspect_lines(&wad, &Fault::Missing, None));
         insta::assert_snapshot!(crate::testing::draw(70, 14, |page| warning.render(page)));
+    }
+
+    // 🔎 a missing wad that is sitting in a wad folder under its own name
+
+    #[test]
+    fn a_missing_wad_is_found_by_name_in_the_first_wad_folder_that_has_it() {
+        let altar = Altar::new("editor-found-elsewhere");
+        let (empty, first, second) = (
+            altar.file("empty"),
+            altar.file("first"),
+            altar.file("second"),
+        );
+        for folder in [&empty, &first, &second] {
+            fs::create_dir_all(folder).unwrap();
+        }
+        fs::write(first.join("moved.wad"), b"moved").unwrap();
+        fs::write(second.join("moved.wad"), b"moved").unwrap();
+        let wad = Wad::new(altar.file("old/moved.wad").into(), "ab".repeat(32), 5);
+        let folders = [empty, first.clone(), second];
+        assert_eq!(
+            found_elsewhere(&wad, &Fault::Missing, &folders),
+            Some(first.join("moved.wad"))
+        );
+        // only a missing wad is offered another file
+        assert_eq!(found_elsewhere(&wad, &Fault::NotAFile, &folders), None);
+        // and never the very path it is already missing from
+        let here = Wad::new(first.join("moved.wad").into(), "ab".repeat(32), 5);
+        assert_eq!(found_elsewhere(&here, &Fault::Missing, &folders[..2]), None);
+    }
+
+    #[test]
+    fn the_inspect_popup_says_where_the_wad_was_found() {
+        let wad = Wad::new("/gone/moved.wad".into(), "ab".repeat(32), 5);
+        let text: Vec<String> =
+            inspect_lines(&wad, &Fault::Missing, Some(Path::new("/wads/moved.wad")))
+                .iter()
+                .map(|line| line.to_string())
+                .collect();
+        assert!(text.contains(&"found at /wads/moved.wad".to_string()));
+        assert!(text.contains(&"press R to use it".to_string()));
     }
 }

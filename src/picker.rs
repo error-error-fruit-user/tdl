@@ -56,6 +56,29 @@ pub fn files(
     Ok(dialog(grimoire, filter, start)?.and_then(|dialog| dialog.pick_files()))
 }
 
+/// Asks where to save a file, offering `file_name`. `None` if the user cancels, or if there is no
+/// folder to open the dialog in.
+pub fn save(
+    grimoire: &mut Grimoire,
+    filter: Option<Filter>,
+    file_name: &str,
+) -> Result<Option<PathBuf>> {
+    #[cfg(debug_assertions)]
+    if let Some(picked) = stand_in() {
+        return Ok(picked.and_then(|paths| paths.into_iter().next()));
+    }
+    Ok(dialog(grimoire, filter, None)?
+        .and_then(|dialog| dialog.set_file_name(file_name).save_file()))
+}
+
+/// The session's wad folders, as set by [`set_wad_folders`].
+pub fn wad_folders() -> Vec<PathBuf> {
+    WAD_FOLDERS
+        .read()
+        .map(|folders| folders.clone())
+        .unwrap_or_default()
+}
+
 /// Asks for a folder. `None` if the user cancels, or if there is no folder to open the dialog in.
 pub fn folder(grimoire: &mut Grimoire, start: Option<&Path>) -> Result<Option<PathBuf>> {
     #[cfg(debug_assertions)]
@@ -88,10 +111,7 @@ fn dialog(
     start: Option<&Path>,
 ) -> Result<Option<FileDialog>> {
     let downloads = UserDirs::new().and_then(|dirs| dirs.download_dir().map(Path::to_path_buf));
-    let wad_folders = WAD_FOLDERS
-        .read()
-        .map(|folders| folders.clone())
-        .unwrap_or_default();
+    let wad_folders = wad_folders();
     let working = std::env::current_dir().ok();
     let Some(folder) = start_folder(start, &wad_folders, working, downloads) else {
         Warning::no_folder_to_open(grimoire)?;

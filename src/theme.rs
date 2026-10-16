@@ -51,6 +51,8 @@ pub const BUSY: Color = HELLFIRE;
 /// The border and bar of the window that shows wads being hashed, kept apart from the download
 /// window's so the two are never mistaken for each other.
 pub const HASHING: Color = NUKAGE;
+/// The border and bar of the window that shows a scroll being unsealed.
+pub const UNSEALING: Color = SOUL;
 /// A quip in a window that is busy.
 pub const QUIP: Color = FLAME;
 

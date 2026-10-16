@@ -51,11 +51,12 @@ On first run, press `U` to select your UZDoom executable and `W` to select a bas
 ### Command line
 
 ```sh
-tdl [--vault <folder> | --vault-once <folder> | --forget-vault] [--wads <folder>]... [--no-splash] [--music]
+tdl [--vault <folder> | --vault-once <folder> | --forget-vault] [--wads <folder>]... [--unseal <scroll>] [--no-splash] [--music]
 ```
 
 - `--vault <folder>` keeps everything in `<folder>/config` and `<folder>/data` instead of the standard folders. tdl asks whether to open that vault every time it starts.
 - `--vault-once <folder>` opens a vault the same way, just for this run, without asking.
+- `--unseal <scroll>` imports a shared `.scroll` as soon as tdl starts, just like `I` in the launcher, looking for its wads in the wad folders: `tdl --unseal shared.scroll --wads ~/wads`.
 - `--forget-vault` opens the standard vault, and asks whether to stop opening the one remembered from `--vault`.
 - `--wads <folder>` (as many times as you like) says where your wads are: file pickers open there instead of the current directory, and joining looks there for wads you already have. tdl asks whether to keep the folders for this **[S]ession** only, **[G]lobal**ly for every vault, or for this **[V]ault**. Kept folders are used whenever tdl starts without `--wads`: the vault's own first, then the global ones.
 
@@ -69,6 +70,8 @@ tdl [--vault <folder> | --vault-once <folder> | --forget-vault] [--wads <folder>
 | `A` | Add a profile |
 | `E` | Edit a profile |
 | `D` | Delete a profile |
+| `X` | Export the profile as a `.scroll` to share |
+| `I` | Import a `.scroll` as a new profile |
 | `U` | Select the UZDoom executable |
 | `W` | Select the base wad |
 | `S` | Toggle the splash screen on startup |
@@ -76,6 +79,10 @@ tdl [--vault <folder> | --vault-once <folder> | --forget-vault] [--wads <folder>
 | `?` | Show the keys for the current screen |
 
 Inside the profile editor, `Tab` switches between the name and the wad list, where `A` adds a wad, `F` imports a folder, `D` removes one, `}`/`{` reorder, and `U`/`W`/`I` set the profile's own UZDoom, base wad and ini.
+
+### Sharing profiles
+
+`X` seals the selected profile into a `.scroll` file: each wad's file name, size and hash, the base wad, and the host defaults (without the join code), but no paths, so it means the same thing on any computer. Send it to someone with the same wads and they press `I` to break the seal: tdl looks for each wad by name in their wad folders (from `--wads`, or kept from it; with none, it asks for a folder), takes a file only if its size and then its hash match, and makes a new profile from what it finds. Wads it can't find are left as placeholders in the editor, where `Space` says where they were looked for and `R` picks them.
 
 ### Multiplayer
 

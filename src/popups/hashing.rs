@@ -45,8 +45,17 @@ pub fn watch<T>(
     files: usize,
     work: impl FnOnce(&mut Watched) -> Result<T>,
 ) -> Result<Option<T>> {
-    let progress =
-        Progress::new(grimoire, Kind::Hashing, files as u64).with_footer(CancelHandler::HINT);
+    watch_as(grimoire, Kind::Hashing, files, work)
+}
+
+/// [`watch`], in a window of another `kind`, for work that does more than hash.
+pub fn watch_as<T>(
+    grimoire: &mut Grimoire,
+    kind: Kind,
+    files: usize,
+    work: impl FnOnce(&mut Watched) -> Result<T>,
+) -> Result<Option<T>> {
+    let progress = Progress::new(grimoire, kind, files as u64).with_footer(CancelHandler::HINT);
     match work(&mut Watched(progress)) {
         Ok(done) => Ok(Some(done)),
         Err(Error::Cancelled) => Ok(None),

@@ -259,10 +259,17 @@ impl Entry {
     // name and hash become path components when downloading, so a host must not choose them freely
     /// Whether `name` is a bare file name and `hash` a BLAKE3 hex digest.
     fn is_safe(&self) -> bool {
-        Path::new(&self.name).file_name() == Some(OsStr::new(&self.name))
-            && self.hash.len() == 64
-            && self.hash.bytes().all(|b| b.is_ascii_hexdigit())
+        is_safe(&self.name, &self.hash)
     }
+}
+
+/// Whether a wad's `name` and `hash` from someone else (a host's manifest, a shared scroll) are
+/// safe to join onto a real folder: the name a bare file name, so `../../x` can't climb out of
+/// the folder, and the hash a BLAKE3 hex digest, since it becomes a folder name in the downloads.
+pub fn is_safe(name: &str, hash: &str) -> bool {
+    Path::new(name).file_name() == Some(OsStr::new(name))
+        && hash.len() == 64
+        && hash.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// An HTTP agent with timeouts short enough that an unreachable host fails quickly.
