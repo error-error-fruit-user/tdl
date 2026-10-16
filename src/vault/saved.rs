@@ -57,6 +57,24 @@ pub mod optional_path {
     }
 }
 
+/// For `#[serde(with)]` on a `Vec<OsString>` field: saved as a list of [`SavedPath`]s.
+pub mod paths {
+    use super::*;
+
+    pub fn serialize<S: Serializer>(paths: &[OsString], serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(paths.iter().map(|path| SavedPath::from(path.as_os_str())))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Vec<OsString>, D::Error> {
+        Ok(Vec::<SavedPath>::deserialize(deserializer)?
+            .into_iter()
+            .map(OsString::from)
+            .collect())
+    }
+}
+
 /// A wad saved on its own, with its whole path: the global base wad, and any wad in a profile that
 /// can't be split into a folder and a text file name.
 ///

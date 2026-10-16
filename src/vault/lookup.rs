@@ -3,7 +3,7 @@
 //!
 //! Nothing here searches the disk. A wad is looked for in three places, each a direct join and a
 //! `stat`: the wads profiles already use (by hash), the downloads folder (stored by hash), and the
-//! host's file name in every folder any profile has a wad in.
+//! host's file name in the session's wad folders and every folder any profile has a wad in.
 
 use std::{
     collections::HashMap,
@@ -25,7 +25,7 @@ pub struct Lookup {
     /// Every wad in a profile, or a base wad, by hash. Volatile wads are left out, since their
     /// stored hash is expected to be out of date.
     known: HashMap<String, Vec<Wad>>,
-    /// Every folder a profile has a wad in, each once, in the order first seen.
+    /// The session's wad folders, then every folder a profile has a wad in, each once.
     folders: Vec<PathBuf>,
     downloads_dir: PathBuf,
 }
@@ -44,7 +44,13 @@ pub enum Local {
 impl Lookup {
     pub fn build(vault: &Vault) -> Self {
         let mut known: HashMap<String, Vec<Wad>> = HashMap::new();
+        // 📂 the folders the user named come first: that's where they said their wads are
         let mut folders = Vec::new();
+        for folder in &vault.wad_folders {
+            if !folders.contains(folder) {
+                folders.push(folder.clone());
+            }
+        }
         let wads = vault
             .profiles
             .iter()
@@ -215,5 +221,20 @@ mod tests {
             panic!("the download should be found");
         };
         assert_eq!(wad.path, folder.join("dl.wad").into_os_string());
+    }
+
+    #[test]
+    fn the_wad_folders_are_looked_in_too() {
+        let altar = Altar::new("lookup-wad-folders");
+        let wads = altar.file("wads");
+        fs::create_dir_all(&wads).unwrap();
+        fs::write(wads.join("loose.wad"), b"loose").unwrap();
+        let mut vault = vault_with(&altar, vec![]);
+        vault.wad_folders = vec![wads.clone()];
+        let loose = Wad::from_path(&wads.join("loose.wad")).unwrap();
+        assert_eq!(
+            Lookup::build(&vault).check(&entry_for(&loose)),
+            Local::Maybe(vec![wads.join("loose.wad")])
+        );
     }
 }

@@ -1,4 +1,9 @@
-use std::{collections::HashMap, ops::Deref, path::Path};
+use std::{
+    collections::HashMap,
+    ffi::OsString,
+    ops::Deref,
+    path::{Path, PathBuf},
+};
 
 use directories::ProjectDirs;
 use ratatui::{
@@ -18,6 +23,7 @@ use crate::{
     popups::resize,
     popups::running,
     popups::status,
+    popups::three_way_dialog::ThreeWayDialog,
     popups::warning::Warning,
     ritual::{self, Grimoire, Haunted, Page, Phase, Ritual},
     screens::editor::Editor,
@@ -29,6 +35,8 @@ use crate::{
     slayer::join_game,
     theme, uzdoom,
     vault::Vault,
+    vault::edition::{Edition, Loaded},
+    vault::global::Global,
     vault::scribe,
     vault::wad::Wad,
     widgets::{
@@ -48,6 +56,46 @@ pub struct Launcher {
     /// Each profile's mark, by position. A profile is only checked once its row is on screen, and
     /// the marks are forgotten whenever something could have changed them.
     marks: HashMap<usize, Option<Mark>>,
+    /// What was passed on the command line, made absolute, for the startup questions about
+    /// keeping it.
+    passed_vault: Option<PathBuf>,
+    ask_about_vault: bool,
+    forget_vault: bool,
+    passed_wads: Vec<PathBuf>,
+    global: Global,
+    global_path: PathBuf,
+    /// False if `global.rite` is from a newer tdl, so it is never overwritten.
+    global_writable: bool,
+}
+
+/// What the command line asked the launcher for.
+#[derive(Default)]
+pub struct Start {
+    pub vault: Option<String>,
+    /// Whether to ask about opening the passed vault every time; off for `--vault-once`.
+    pub ask_about_vault: bool,
+    /// Opens the standard vault and offers to forget the remembered one.
+    pub forget_vault: bool,
+    pub wads: Vec<String>,
+    pub splash: bool,
+}
+
+/// `path` as an absolute path, so a folder kept from `tdl --wads .` still means the same folder
+/// when tdl is started from somewhere else.
+fn absolute(path: &str) -> PathBuf {
+    std::path::absolute(path).unwrap_or_else(|_| PathBuf::from(path))
+}
+
+/// The wad folders to use when none are passed: the vault's own, then the global ones, each once.
+fn remembered_folders(vault: &[OsString], global: &[OsString]) -> Vec<PathBuf> {
+    let mut folders: Vec<PathBuf> = Vec::new();
+    for folder in vault.iter().chain(global) {
+        let folder = PathBuf::from(folder);
+        if !folders.contains(&folder) {
+            folders.push(folder);
+        }
+    }
+    folders
 }
 
 impl Launcher {
@@ -74,30 +122,176 @@ impl Launcher {
         ["Esc", "Save and Quit"],
     ];
 
-    /// Uses `<vault_dir>/{config,data}` when given, otherwise the platform's standard directories.
-    pub fn new(vault_dir: Option<String>, splash: bool) -> Self {
-        let (config_dir, data_dir) = if let Some(pass) = vault_dir {
-            let pass = Path::new(&pass);
-            (pass.join("config"), pass.join("data"))
+    /// Opens the vault: `<vault>/{config,data}` when one is passed, the standard folders when
+    /// asked to forget the kept one, otherwise the one kept in the global settings if it still
+    /// exists, otherwise the standard folders (`standard_config_dir`
+    /// and `standard_data_dir`, which also hold `global.rite`). The wad folders are the passed
+    /// ones, or else the ones kept for this vault and then the global ones.
+    pub fn new(start: Start, standard_config_dir: &Path, standard_data_dir: &Path) -> Self {
+        let global_path = Global::path(standard_config_dir);
+        let mut notices = Vec::new();
+        let mut global_writable = true;
+        let global = match Global::load(&global_path) {
+            Loaded::Fine(global) => global,
+            Loaded::Missing => Global::default(),
+            Loaded::Restored(global) => {
+                notices.push("Restored your global settings from their backup".to_string());
+                global
+            }
+            Loaded::Lost => {
+                notices.push("Your global settings were unreadable, saved as .corrupt".to_string());
+                Global::default()
+            }
+            Loaded::TooNew => {
+                global_writable = false;
+                Global::default()
+            }
+        };
+        let passed_vault = start.vault.as_deref().map(absolute);
+        let kept_vault = global.vault.as_ref().map(PathBuf::from).filter(|kept| {
+            if start.forget_vault {
+                return false;
+            }
+            let there = kept.is_dir();
+            if !there && passed_vault.is_none() {
+                notices.push(format!(
+                    "Your usual vault {} is missing, so the standard one is open",
+                    kept.display()
+                ));
+            }
+            there
+        });
+        let (config_dir, data_dir) = match passed_vault.clone().or(kept_vault) {
+            Some(root) => (root.join("config"), root.join("data")),
+            None => (standard_config_dir.into(), standard_data_dir.into()),
+        };
+        let mut vault = Vault::new(config_dir, data_dir);
+        vault.notices.extend(notices);
+        let passed_wads: Vec<_> = start.wads.iter().map(|folder| absolute(folder)).collect();
+        vault.wad_folders = if passed_wads.is_empty() {
+            remembered_folders(&vault.config.wad_folders, &global.wad_folders)
         } else {
-            let project_dirs = ProjectDirs::from("error.error.fruit", "eef", "tdl")
-                .expect("Could not find home directory!");
-            (
-                project_dirs.config_dir().to_path_buf(),
-                project_dirs.data_dir().to_path_buf(),
-            )
+            passed_wads.clone()
         };
         Self {
-            vault: Vault::new(config_dir, data_dir),
+            vault,
             table_state: TableState::new().with_selected(0),
-            splash,
+            splash: start.splash,
             marks: HashMap::new(),
+            passed_vault,
+            ask_about_vault: start.ask_about_vault,
+            forget_vault: start.forget_vault,
+            passed_wads,
+            global,
+            global_path,
+            global_writable,
         }
     }
 
-    /// Builds the launcher and runs it until the user quits, after the splash screen if `splash`.
-    pub fn summon(grimoire: &mut Grimoire, vault_dir: Option<String>, splash: bool) -> Result<()> {
-        Self::new(vault_dir, splash).invoke(grimoire)
+    /// Builds the launcher and runs it until the user quits, after the splash screen if asked.
+    pub fn summon(grimoire: &mut Grimoire, start: Start) -> Result<()> {
+        let project_dirs = ProjectDirs::from("error.error.fruit", "eef", "tdl")
+            .expect("Could not find home directory!");
+        Self::new(start, project_dirs.config_dir(), project_dirs.data_dir()).invoke(grimoire)
+    }
+
+    /// The startup questions about what was passed on the command line: whether to open the
+    /// passed vault every time, and whether to keep the passed wad folders for this session,
+    /// globally, or for this vault. Folders that don't exist are dropped first, with a warning.
+    fn offer_to_keep(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+        let missing: Vec<_> = self
+            .passed_wads
+            .iter()
+            .filter(|folder| !folder.is_dir())
+            .map(|folder| folder.display().to_string())
+            .collect();
+        if !missing.is_empty() {
+            Warning::summon(
+                grimoire,
+                &format!("Not a folder, so left out: {}", missing.join(", ")),
+            )?;
+            self.passed_wads.retain(|folder| folder.is_dir());
+            // 📂 none of them left: the kept folders are better than none
+            self.vault.wad_folders = if self.passed_wads.is_empty() {
+                remembered_folders(&self.vault.config.wad_folders, &self.global.wad_folders)
+            } else {
+                self.passed_wads.clone()
+            };
+        }
+
+        if self.forget_vault {
+            match self.global.vault.clone() {
+                Some(kept) if self.global_writable => {
+                    let question =
+                        format!("Stop opening {} by default?", Path::new(&kept).display());
+                    if Dialog::summon(grimoire, &question)? {
+                        self.global.vault = None;
+                        if self.global.keep(&self.global_path).is_err() {
+                            Warning::save_failed(grimoire)?;
+                        }
+                    }
+                }
+                Some(_) => Warning::summon(grimoire, "The global settings are from a newer tdl")?,
+                None => Warning::summon(grimoire, "No vault was being opened by default")?,
+            }
+        }
+
+        if let Some(passed) = &self.passed_vault
+            && self.ask_about_vault
+            && self.global_writable
+            && self.global.vault.as_deref() != Some(passed.as_os_str())
+            && Dialog::summon(
+                grimoire,
+                &format!("Open {} every time tdl starts?", passed.display()),
+            )?
+        {
+            self.global.vault = Some(passed.clone().into_os_string());
+            if self.global.keep(&self.global_path).is_err() {
+                Warning::save_failed(grimoire)?;
+            }
+        }
+
+        let passed: Vec<OsString> = self
+            .passed_wads
+            .iter()
+            .map(|folder| folder.clone().into_os_string())
+            .collect();
+        let remembered =
+            remembered_folders(&self.vault.config.wad_folders, &self.global.wad_folders);
+        if passed.is_empty() || self.passed_wads == remembered {
+            return Ok(());
+        }
+        let list = self
+            .passed_wads
+            .iter()
+            .map(|folder| folder.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let question = format!("Keep the wad folders {list}?");
+        let options = ["Session", "Global", "Vault"];
+        match ThreeWayDialog::summon(grimoire, &question, options)? {
+            Some(1) if self.global_writable => {
+                self.global.wad_folders = passed;
+                if self.global.keep(&self.global_path).is_err() {
+                    Warning::save_failed(grimoire)?;
+                }
+            }
+            Some(1) => Warning::summon(grimoire, "The global settings are from a newer tdl")?,
+            Some(2) => {
+                self.vault.config.wad_folders = passed;
+                if self
+                    .vault
+                    .config
+                    .write(&self.vault.config_dir, &self.vault.profiles)
+                    .is_err()
+                {
+                    Warning::save_failed(grimoire)?;
+                }
+            }
+            // 🕯️ just for tonight: nothing is written
+            _ => {}
+        }
+        Ok(())
     }
 }
 
@@ -137,6 +331,8 @@ impl Ritual for Launcher {
                 upgraded.iter().for_each(|path| scribe::retire(path));
             }
         }
+        self.offer_to_keep(grimoire)?;
+        picker::set_wad_folders(&self.vault.wad_folders);
         Ok(())
     }
 
@@ -421,6 +617,8 @@ impl Ritual for Launcher {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use insta::assert_snapshot;
 
     use super::*;
@@ -428,7 +626,11 @@ mod tests {
 
     fn launcher(altar: &Altar, row: usize) -> Launcher {
         let vault = testing::example_vault(altar);
-        let mut launcher = Launcher::new(Some(vault.to_string_lossy().into_owned()), false);
+        let start = Start {
+            vault: Some(vault.to_string_lossy().into_owned()),
+            ..Start::default()
+        };
+        let mut launcher = Launcher::new(start, &altar.file("standard"), &altar.file("standard"));
         launcher.table_state.select(Some(row));
         launcher
     }
@@ -459,5 +661,112 @@ mod tests {
         let altar = Altar::new("snap-launcher-small");
         let mut launcher = launcher(&altar, 1);
         assert_snapshot!(testing::draw(40, 20, |page| launcher.render(page)));
+    }
+
+    // 🚪 what the command line opens, and what is kept from it
+
+    #[test]
+    fn kept_folders_are_the_vaults_then_the_global_ones_each_once() {
+        let folders = remembered_folders(
+            &["/v1".into(), "/both".into()],
+            &["/both".into(), "/g1".into()],
+        );
+        let folders: Vec<_> = folders.iter().map(|f| f.to_str().unwrap()).collect();
+        assert_eq!(folders, ["/v1", "/both", "/g1"]);
+    }
+
+    #[test]
+    fn passed_folders_are_made_absolute_and_replace_the_kept_ones() {
+        let altar = Altar::new("launcher-passed-wads");
+        let standard = altar.file("standard");
+        Global {
+            wad_folders: vec!["/kept".into()],
+            ..Global::default()
+        }
+        .keep(&Global::path(&standard))
+        .unwrap();
+
+        let kept = Launcher::new(Start::default(), &standard, &standard);
+        assert_eq!(kept.vault.wad_folders, [PathBuf::from("/kept")]);
+
+        let start = Start {
+            wads: vec!["relative/wads".into()],
+            ..Start::default()
+        };
+        let passed = Launcher::new(start, &standard, &standard);
+        let folder = &passed.vault.wad_folders[0];
+        assert!(folder.is_absolute());
+        assert!(folder.ends_with("relative/wads"));
+        assert_eq!(passed.vault.wad_folders.len(), 1);
+    }
+
+    #[test]
+    fn the_kept_vault_opens_unless_another_is_passed() {
+        let altar = Altar::new("launcher-kept-vault");
+        let standard = altar.file("standard");
+        let kept = altar.file("kept");
+        fs::create_dir_all(&kept).unwrap();
+        Global {
+            vault: Some(kept.clone().into_os_string()),
+            ..Global::default()
+        }
+        .keep(&Global::path(&standard))
+        .unwrap();
+
+        let opened = Launcher::new(Start::default(), &standard, &standard);
+        assert_eq!(opened.vault.config_dir, kept.join("config"));
+
+        let other = altar.file("other");
+        let start = Start {
+            vault: Some(other.to_string_lossy().into_owned()),
+            ..Start::default()
+        };
+        let passed = Launcher::new(start, &standard, &standard);
+        assert_eq!(passed.vault.config_dir, other.join("config"));
+        assert_eq!(passed.passed_vault, Some(other));
+    }
+
+    #[test]
+    fn a_kept_vault_that_is_gone_falls_back_to_the_standard_one_and_says_so() {
+        let altar = Altar::new("launcher-gone-vault");
+        let standard = altar.file("standard");
+        Global {
+            vault: Some(altar.file("gone").into_os_string()),
+            ..Global::default()
+        }
+        .keep(&Global::path(&standard))
+        .unwrap();
+        let opened = Launcher::new(Start::default(), &standard, &standard);
+        assert_eq!(opened.vault.config_dir, standard);
+        assert!(
+            opened
+                .vault
+                .notices
+                .iter()
+                .any(|n| n.contains("is missing"))
+        );
+    }
+
+    #[test]
+    fn forgetting_opens_the_standard_vault_even_with_one_kept() {
+        let altar = Altar::new("launcher-forget-vault");
+        let standard = altar.file("standard");
+        let kept = altar.file("kept");
+        fs::create_dir_all(&kept).unwrap();
+        Global {
+            vault: Some(kept.into_os_string()),
+            ..Global::default()
+        }
+        .keep(&Global::path(&standard))
+        .unwrap();
+        let start = Start {
+            forget_vault: true,
+            ..Start::default()
+        };
+        let opened = Launcher::new(start, &standard, &standard);
+        assert_eq!(opened.vault.config_dir, standard);
+        // nothing is forgotten yet: that waits for the question
+        assert!(opened.global.vault.is_some());
+        assert!(opened.vault.notices.is_empty());
     }
 }

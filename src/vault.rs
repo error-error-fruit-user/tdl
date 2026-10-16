@@ -1,5 +1,6 @@
 pub mod config;
 pub mod edition;
+pub mod global;
 pub mod hash;
 pub mod host_settings;
 pub mod lookup;
@@ -36,6 +37,10 @@ pub struct Vault {
     /// Where wads already on this machine are, built the first time it is asked for and thrown
     /// away whenever the profiles change, so it is never out of date.
     lookup: Option<Lookup>,
+    /// Folders the user keeps wads in, for this session: the ones passed with `--wads`, or else
+    /// the ones kept for this vault and then the global ones. Joining looks in them for wads it
+    /// already has.
+    pub wad_folders: Vec<PathBuf>,
 }
 
 impl Vault {
@@ -100,6 +105,7 @@ impl Vault {
             profiles,
             notices,
             lookup: None,
+            wad_folders: Vec::new(),
         }
     }
 

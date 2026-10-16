@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Requires **nightly** Rust (`#![feature(associated_type_defaults)]`, edition 2024).
 
-- Build / run: `cargo +nightly build --release`, `cargo +nightly run -- [--vault DIR] [--no-splash] [--music]` (`--help` for the full list; flags are parsed in `src/cli.rs`)
+- Build / run: `cargo +nightly build --release`, `cargo +nightly run -- [--vault DIR | --vault-once DIR | --forget-vault] [--wads DIR]... [--no-splash] [--music]` (`--help` for the full list; flags are parsed in `src/cli.rs`)
 - Tests: `cargo +nightly test`; single test: `cargo +nightly test <name_substring>`
 - UI tests are `insta` snapshots (`src/**/snapshots/*.snap`). Review changes with `cargo insta review` (or `INSTA_UPDATE`) rather than hand-editing.
 - `./publish.sh` cross-builds the Windows release (`x86_64-pc-windows-gnu`) into `published/` and generates `THIRD_PARTY_LICENSES.txt` (needs `cargo-license`).

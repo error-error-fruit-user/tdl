@@ -10,7 +10,9 @@ tdl stores two kinds of files: **config** (what you set up) and **data** (what t
 | macOS | `~/Library/Application Support/error.error.fruit.eef.tdl` | same folder as config |
 | Windows | `%APPDATA%\eef\tdl\config` | `%APPDATA%\eef\tdl\data` |
 
-Pass `--vault /some/folder` to use `/some/folder/config` and `/some/folder/data` instead. The older form, the folder on its own (`tdl /some/folder`), still works.
+Pass `--vault /some/folder` to use `/some/folder/config` and `/some/folder/data` instead. The older form, the folder on its own (`tdl /some/folder`), still works. tdl then asks whether to open that vault every time; if you say yes, it is remembered in `global.rite` (below) and opened whenever tdl starts without `--vault`. If it has gone missing, tdl says so and opens the standard folders. `--vault-once /some/folder` opens a vault the same way without asking. `tdl --forget-vault` opens the standard folders and asks whether to forget the remembered vault.
+
+`global.rite` always lives in the standard config folder, whichever vault is open, since it is the one place every vault can find. It holds `vault` (the vault to open by default) and `wad_folders` (wad folders kept for every vault from `--wads`).
 
 The macOS paths follow the `directories` crate's documentation and have not been tried on a Mac. On macOS the two folders are the same, so the files below share one folder. That is why the profiles folder and the downloads folder start with a dot: profile names can't contain one, so those folders can never be mistaken for a profile's data folder.
 
@@ -20,6 +22,7 @@ The macOS paths follow the `directories` crate's documentation and have not been
 <config folder>/
 ├── config.rite                 global settings and the order of profiles
 ├── config.rite.bak             the config as it was before the last save
+├── global.rite                 (standard config folder only) the default vault and global wad folders
 └── .profiles/                  (the dot keeps it from ever matching a profile's name)
     ├── brutal.rite             one file per profile, named after the profile
     ├── brutal.rite.bak         that profile as it was before the last save
@@ -59,6 +62,7 @@ Every `.rite` file is MessagePack, a compact binary format, in a wrapper that re
 | `profile_names` | The profiles in the order the launcher shows them. |
 | `skip_splash` | `true` to go straight to the launcher without the splash screen. Missing in older files, which count as `false`. Toggled with `S` in the launcher. |
 | `host_port` | The port the last game was hosted on, offered again in the host form. Empty for the default (8080). Missing in older files, which count as empty. |
+| `wad_folders` | Wad folders kept for this vault from `--wads`, used whenever tdl starts without it (before the global ones). Missing in older files, which count as none. |
 
 **`.profiles/<name>.rite`** (`data`)
 

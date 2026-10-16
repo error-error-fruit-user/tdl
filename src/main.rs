@@ -2,7 +2,10 @@
 
 use std::io::Write;
 
-use crate::{cli::Cli, screens::launcher::Launcher};
+use crate::{
+    cli::Cli,
+    screens::launcher::{Launcher, Start},
+};
 
 mod cli;
 mod error;
@@ -36,9 +39,16 @@ fn main() {
     if cli.music {
         music::start(true);
     }
-    if let Err(error) =
-        ratatui::run(|grimoire| Launcher::summon(grimoire, cli.vault, !cli.no_splash))
-    {
+    if let Err(error) = ratatui::run(|grimoire| {
+        let start = Start {
+            vault: cli.vault,
+            ask_about_vault: !cli.vault_once,
+            forget_vault: cli.forget_vault,
+            wads: cli.wads,
+            splash: !cli.no_splash,
+        };
+        Launcher::summon(grimoire, start)
+    }) {
         eprintln!("{error}");
         std::io::stderr().flush().unwrap();
     }

@@ -7,7 +7,10 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    vault::edition::Edition, vault::profile::Profile, vault::saved::optional_path, vault::wad::Wad,
+    vault::edition::Edition,
+    vault::profile::Profile,
+    vault::saved::{optional_path, paths},
+    vault::wad::Wad,
 };
 
 const FILE: &str = "config.rite";
@@ -31,6 +34,10 @@ pub struct Config {
     /// until a game is hosted on a port other than the default.
     #[serde(default)]
     pub host_port: Option<u16>,
+    /// Wad folders kept for this vault from `--wads`, used whenever tdl starts without it.
+    /// Missing in older files, which count as none.
+    #[serde(default, with = "paths")]
+    pub wad_folders: Vec<OsString>,
 }
 
 impl Edition for Config {
@@ -73,6 +80,7 @@ mod tests {
         let config: Config = rmp_serde::from_slice(&old).unwrap();
         assert!(!config.skip_splash);
         assert_eq!(config.host_port, None);
+        assert!(config.wad_folders.is_empty());
         assert_eq!(config.profile_names, ["brutal"]);
     }
 

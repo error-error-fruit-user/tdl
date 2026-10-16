@@ -1,5 +1,7 @@
 # tdl
 
+> **AI notice:** this project is developed with the help of AI. Much of the code and documentation was written with [Claude](https://claude.ai) (Anthropic), working under my direction and review. Commits that Claude helped write carry a `Co-Authored-By: Claude` trailer, so you can see which ones in the history.
+
 A terminal launcher for [UZDoom](https://github.com/UZDoom/UZDoom). Group your wads into named profiles, launch them in one keypress, and host or join multiplayer games, with missing wads downloaded automatically from the host.
 
 ![The tdl splash screen: the title over the Doom fire](demo.gif)
@@ -45,6 +47,17 @@ cargo +nightly build --release
 ## Usage
 
 On first run, press `U` to select your UZDoom executable and `W` to select a base wad, then `A` to create a profile.
+
+### Command line
+
+```sh
+tdl [--vault <folder> | --vault-once <folder> | --forget-vault] [--wads <folder>]... [--no-splash] [--music]
+```
+
+- `--vault <folder>` keeps everything in `<folder>/config` and `<folder>/data` instead of the standard folders. tdl asks whether to open that vault every time it starts.
+- `--vault-once <folder>` opens a vault the same way, just for this run, without asking.
+- `--forget-vault` opens the standard vault, and asks whether to stop opening the one remembered from `--vault`.
+- `--wads <folder>` (as many times as you like) says where your wads are: file pickers open there instead of the current directory, and joining looks there for wads you already have. tdl asks whether to keep the folders for this **[S]ession** only, **[G]lobal**ly for every vault, or for this **[V]ault**. Kept folders are used whenever tdl starts without `--wads`: the vault's own first, then the global ones.
 
 | Key | Action |
 | --- | --- |
