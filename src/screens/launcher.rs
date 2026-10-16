@@ -13,8 +13,10 @@ use crate::{
     error::{Error, Result},
     layout, picker,
     popups::dialog::Dialog,
+    popups::hashing,
     popups::legend::Legend,
     popups::resize,
+    popups::running,
     popups::status,
     popups::warning::Warning,
     ritual::{self, Grimoire, Haunted, Page, Phase, Ritual},
@@ -260,12 +262,16 @@ impl Ritual for Launcher {
                     if let Some(uzdoom) = profile.uzdoom(&self.vault.config) {
                         // 🚧 a profile with a broken part is not fixed for you, but it isn't launched either
                         if !Warning::faults(grimoire, &profile.faults(&self.vault.config))? {
+                            let details = [format!("profile {}", profile.name)];
                             let result = uzdoom::launch(
                                 uzdoom,
                                 profile.base_wad(&self.vault.config).map(Wad::deref),
                                 profile,
                                 &self.vault.data_dir.join(&profile.name),
-                            );
+                            )
+                            .and_then(|game| {
+                                running::summon(grimoire, "launching", &details, game)
+                            });
                             Warning::report_spawn(grimoire, result)?;
                         }
                     } else {
@@ -287,9 +293,10 @@ impl Ritual for Launcher {
                     if profile.uzdoom(&self.vault.config).is_none() {
                         Warning::uzdoom_not_selected(grimoire)?;
                     } else if !Warning::faults(grimoire, &profile.faults(&self.vault.config))?
-                        && let Some(settings) = HostSettingsForm::summon(grimoire)?
+                        && let Some(settings) =
+                            HostSettingsForm::summon(grimoire, &mut self.vault, *index)?
                     {
-                        host_game::summon(grimoire, &self.vault, *index, settings)?;
+                        host_game::summon(grimoire, &mut self.vault, *index, settings)?;
                     }
                     Ok(Phase::Render)
                 } else {
@@ -297,8 +304,8 @@ impl Ritual for Launcher {
                 }
             }
             KeyCode::Char('n') => {
-                if let Some(ip) = JoinAddressForm::summon(grimoire)? {
-                    join_game::summon(grimoire, &mut self.vault, index, &ip)?;
+                if let Some(address) = JoinAddressForm::summon(grimoire)? {
+                    join_game::summon(grimoire, &mut self.vault, index, &address)?;
                 }
                 Ok(Phase::Render)
             }
@@ -364,7 +371,12 @@ impl Ritual for Launcher {
                 if let Some(path) =
                     picker::file(grimoire, Some(("base wad", Wad::EXTENSIONS)), None)?
                 {
-                    self.vault.config.base_wad = Some(Wad::from_path(&path)?);
+                    // 🖼️ redrawn either way, since the hashing window may have covered the launcher
+                    if let Some(wad) = hashing::wad(grimoire, &path)? {
+                        self.vault.config.base_wad = Some(wad);
+                        self.vault.forget_lookup();
+                    }
+                    return Ok(Phase::Render);
                 }
                 Ok(Phase::Prompt)
             }

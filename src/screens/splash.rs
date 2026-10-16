@@ -1,7 +1,7 @@
-//! The first thing on screen: the title over the fire from the PlayStation port of Doom.
-//! It burns until a key is pressed.
+//! The first thing on screen: the title over the fire from the PlayStation port of Doom, with a
+//! quip under it, the way Minecraft's title screen has one. It burns until a key is pressed.
 
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use ratatui::{
     buffer::Buffer,
@@ -12,7 +12,7 @@ use ratatui::{
 
 use crate::{
     error::{Error, Result},
-    music,
+    music, quips,
     ritual::{Grimoire, Haunted},
     theme,
     widgets::fire::Fire,
@@ -42,6 +42,9 @@ const TAGLINE: &str = "t e r m i n a l   d o o m   l a u n c h e r";
 const NARROW_TAGLINE: &str = "terminal doom launcher";
 
 const HINT: &str = "press any key";
+
+/// How long the quip takes to flare and settle, quicker than the hint, to catch the eye.
+const QUIP_PULSE: Duration = Duration::from_millis(700);
 /// How long the hint takes to fade from bright to dim and back.
 const PULSE: Duration = Duration::from_millis(1600);
 /// One frame of the animation.
@@ -54,9 +57,7 @@ const FIRE_TOP_PERCENT: u16 = 45;
 /// Ctrl+C still quits.
 pub fn summon(grimoire: &mut Grimoire) -> Result<()> {
     music::start(false);
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(1, |time| time.subsec_nanos());
+    let seed = quips::seed();
     let mut fire: Option<Fire> = None;
     let start = Instant::now();
     // when a key was pressed, which starts the fade
@@ -80,7 +81,8 @@ pub fn summon(grimoire: &mut Grimoire) -> Result<()> {
                 _ => fire.insert(Fire::new(flames, seed)),
             };
             fire.step();
-            paint(fire, elapsed, area, page.buffer_mut());
+            let quip = quips::pick(seed, area.width);
+            paint(fire, elapsed, area, quip, page.buffer_mut());
             dim(page.buffer_mut(), brightness);
         })?;
         if event::poll(FRAME)? {
@@ -128,9 +130,10 @@ fn fire_area(area: Rect) -> Rect {
     Rect::new(area.x, area.y + top, area.width, area.height - top)
 }
 
-/// Draws one frame: the fire, then the logo, the tagline and the hint just above the flames.
-/// `elapsed` is how long the splash has been up, which sets where the hint is in its pulse.
-fn paint(fire: &Fire, elapsed: Duration, area: Rect, buffer: &mut Buffer) {
+/// Draws one frame: the fire, then the logo, the quip, the tagline and the hint just above the
+/// flames. `elapsed` is how long the splash has been up, which sets where the hint and the quip
+/// are in their pulses.
+fn paint(fire: &Fire, elapsed: Duration, area: Rect, quip: Option<&str>, buffer: &mut Buffer) {
     let flames = fire_area(area);
     fire.render(flames, buffer);
 
@@ -150,6 +153,22 @@ fn paint(fire: &Fire, elapsed: Duration, area: Rect, buffer: &mut Buffer) {
                 area,
                 logo_x + j as u16,
                 logo_y + i as u16,
+                character,
+                style,
+            );
+        }
+    }
+
+    // ✨ the quip sits centered between the logo and the tagline
+    if let Some(quip) = quip {
+        let x = area.x + area.width.saturating_sub(quip.len() as u16) / 2;
+        let style = Style::new().fg(flare(elapsed)).add_modifier(Modifier::BOLD);
+        for (j, character) in quip.chars().enumerate() {
+            stamp(
+                buffer,
+                area,
+                x + j as u16,
+                logo_y + LOGO.len() as u16,
                 character,
                 style,
             );
@@ -192,11 +211,21 @@ fn paint(fire: &Fire, elapsed: Duration, area: Rect, buffer: &mut Buffer) {
 
 /// The hint's color at `elapsed`: a slow breath between ash and bone.
 fn pulse(elapsed: Duration) -> Color {
-    let phase = (elapsed.as_millis() % PULSE.as_millis()) as f32 / PULSE.as_millis() as f32;
+    breathe(elapsed, PULSE, theme::ASH, theme::BONE)
+}
+
+/// The quip's color at `elapsed`: a quick flare between hellfire and the yellow of the flame tips.
+fn flare(elapsed: Duration) -> Color {
+    breathe(elapsed, QUIP_PULSE, theme::HELLFIRE, theme::FLAME)
+}
+
+/// Goes from `from` to `to` and back once every `period`.
+fn breathe(elapsed: Duration, period: Duration, from: Color, to: Color) -> Color {
+    let phase = (elapsed.as_millis() % period.as_millis()) as f32 / period.as_millis() as f32;
     let brightness = 1.0 - (phase * 2.0 - 1.0).abs();
     let mix = |from: u8, to: u8| (from as f32 + (to as f32 - from as f32) * brightness) as u8;
-    let (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) = (theme::ASH, theme::BONE) else {
-        return theme::BONE;
+    let (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) = (from, to) else {
+        return to;
     };
     Color::Rgb(mix(r1, r2), mix(g1, g2), mix(b1, b2))
 }
@@ -244,7 +273,13 @@ mod tests {
             let mut fire = Fire::new(fire_area(area), 3);
             fire.step();
             let mut buffer = Buffer::empty(area);
-            paint(&fire, Duration::ZERO, area, &mut buffer);
+            paint(
+                &fire,
+                Duration::ZERO,
+                area,
+                quips::pick(3, width),
+                &mut buffer,
+            );
         }
     }
 
@@ -253,7 +288,7 @@ mod tests {
         let area = Rect::new(0, 0, 40, 20);
         let fire = Fire::new(fire_area(area), 3);
         let mut buffer = Buffer::empty(area);
-        paint(&fire, Duration::ZERO, area, &mut buffer);
+        paint(&fire, Duration::ZERO, area, Some("Minecraft?"), &mut buffer);
         let row = |y: u16| (0..40).map(|x| buffer[(x, y)].symbol()).collect::<String>();
         let top = (0..20).find(|&y| row(y).contains('█')).unwrap();
         assert!(top >= 1, "the logo needs a row above it");
@@ -263,6 +298,14 @@ mod tests {
         assert_eq!(row(tagline + 2).trim(), HINT);
         // 40 columns is too narrow for the spaced tagline, so the plain one is used, whole
         assert_eq!(row(tagline).trim(), NARROW_TAGLINE);
+        // the quip sits between the logo and the tagline
+        assert_eq!(row(tagline - 1).trim(), "Minecraft?");
+    }
+
+    #[test]
+    fn the_quip_flares_between_hellfire_and_flame() {
+        assert_eq!(flare(Duration::ZERO), theme::HELLFIRE);
+        assert_eq!(flare(QUIP_PULSE / 2), theme::FLAME);
     }
 
     #[test]
@@ -270,7 +313,7 @@ mod tests {
         let area = Rect::new(0, 0, 80, 24);
         let fire = Fire::new(fire_area(area), 3);
         let mut buffer = Buffer::empty(area);
-        paint(&fire, Duration::ZERO, area, &mut buffer);
+        paint(&fire, Duration::ZERO, area, None, &mut buffer);
         let row = |y: u16| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>();
         assert!((0..24).any(|y| row(y).trim() == TAGLINE));
     }
@@ -290,7 +333,13 @@ mod tests {
             fire.step();
         }
         let snapshot = crate::testing::draw(80, 24, |page| {
-            paint(&fire, Duration::ZERO, area, page.buffer_mut())
+            paint(
+                &fire,
+                Duration::ZERO,
+                area,
+                Some("Minecraft?"),
+                page.buffer_mut(),
+            )
         });
         insta::assert_snapshot!(snapshot);
     }

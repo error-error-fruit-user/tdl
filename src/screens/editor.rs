@@ -13,7 +13,7 @@ use crate::{
     layout, picker,
     popups::legend::Legend,
     popups::warning::Warning,
-    popups::{self, dialog::Dialog},
+    popups::{self, dialog::Dialog, hashing},
     ritual::{self, Grimoire, Page, Phase, Ritual},
     screens::{
         config_selector::{ConfigSelector, IniChoice},
@@ -391,7 +391,9 @@ impl Ritual for Editor<'_> {
                 else {
                     return Ok(Phase::Prompt);
                 };
-                let replacement = Wad::from_path(&path)?;
+                let Some(replacement) = hashing::wad(grimoire, &path)? else {
+                    return Ok(Phase::Render);
+                };
                 let replaced = self.replace_wad(index, replacement, || {
                     Dialog::should_use_different_file(grimoire)
                 })?;
@@ -406,10 +408,13 @@ impl Ritual for Editor<'_> {
                 if mod_paths.is_empty() {
                     return Ok(Phase::Prompt);
                 }
-                let length = mod_paths.len();
+                let Some(wads) = hashing::wads(grimoire, &mod_paths)? else {
+                    return Ok(Phase::Render);
+                };
+                let length = wads.len();
                 let should_add = *index == self.profile.wads.len();
-                for (index, path) in (*index..*index + length).zip(mod_paths) {
-                    self.profile.wads.insert(index, Wad::from_path(&path)?);
+                for (index, wad) in (*index..*index + length).zip(wads) {
+                    self.profile.wads.insert(index, wad);
                 }
                 self.faults = check_wads(&self.profile.wads);
                 if should_add {
@@ -432,10 +437,13 @@ impl Ritual for Editor<'_> {
                         }
                     }
                     wad_paths.sort();
-                    let length = wad_paths.len();
+                    let Some(wads) = hashing::wads(grimoire, &wad_paths)? else {
+                        return Ok(Phase::Render);
+                    };
+                    let length = wads.len();
                     let should_add = *index == self.profile.wads.len();
-                    for (index, path) in (*index..*index + length).zip(wad_paths) {
-                        self.profile.wads.insert(index, Wad::from_path(&path)?);
+                    for (index, wad) in (*index..*index + length).zip(wads) {
+                        self.profile.wads.insert(index, wad);
                     }
                     self.faults = check_wads(&self.profile.wads);
                     if should_add {
@@ -470,7 +478,11 @@ impl Ritual for Editor<'_> {
                 if let Some(path) =
                     picker::file(grimoire, Some(("base wad", Wad::EXTENSIONS)), None)?
                 {
-                    self.profile.base_wad = Some(Wad::from_path(&path)?);
+                    // 🖼️ redrawn either way, since the hashing window may have covered the editor
+                    if let Some(wad) = hashing::wad(grimoire, &path)? {
+                        self.profile.base_wad = Some(wad);
+                    }
+                    return Ok(Phase::Render);
                 }
                 Ok(Phase::Prompt)
             }

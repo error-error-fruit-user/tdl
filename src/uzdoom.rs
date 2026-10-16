@@ -1,10 +1,12 @@
 use std::{
     ffi::OsStr,
     fs::File,
-    io,
+    io::{self, Read, Write},
     ops::Deref,
     path::Path,
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio},
+    sync::{Arc, Mutex},
+    thread::{self, JoinHandle},
     time::Duration,
 };
 
@@ -14,15 +16,55 @@ use crate::{
     vault::wad::Wad,
 };
 
-/// Runs UZDoom to completion, blocking the launcher. Output goes to `session.log` in `data_subdir`.
-fn execute(uzdoom: &OsStr, profile: &Profile, args: &[&OsStr], data_subdir: &Path) -> Result<()> {
+/// UZDoom while it runs. Its output is copied to `session.log` on a thread of its own, so whoever
+/// started it is free to keep the screen moving, and the latest line is kept to show how far its
+/// startup has got.
+pub struct Game {
+    child: Child,
+    latest: Arc<Mutex<String>>,
+    logger: Option<JoinHandle<()>>,
+}
+
+impl Game {
+    /// The last line UZDoom printed, or empty if it hasn't printed one yet.
+    pub fn latest_line(&self) -> String {
+        self.latest
+            .lock()
+            .map(|line| line.clone())
+            .unwrap_or_default()
+    }
+
+    /// Whether UZDoom has quit, without waiting for it.
+    pub fn has_quit(&mut self) -> Result<bool> {
+        Ok(self.child.try_wait()?.is_some())
+    }
+
+    /// Waits for UZDoom to quit and for the last of its output to reach the log.
+    ///
+    /// Keys pressed during the game would otherwise all land at once afterwards, so they are
+    /// tossed. That is best effort, since a terminal that can't be read (as under a test) has
+    /// nothing to toss.
+    pub fn wait(mut self) -> Result<()> {
+        self.child.wait()?;
+        if let Some(logger) = self.logger.take() {
+            let _ = logger.join();
+        }
+        while let Ok(true) = ratatui::crossterm::event::poll(Duration::ZERO) {
+            let _ = ratatui::crossterm::event::read();
+        }
+        Ok(())
+    }
+}
+
+/// Starts UZDoom, with its output going to `session.log` in `data_subdir`.
+fn execute(uzdoom: &OsStr, profile: &Profile, args: &[&OsStr], data_subdir: &Path) -> Result<Game> {
     let mut command = Command::new(uzdoom);
     command
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    let mut doom = if !profile.wads.is_empty() {
+    let mut child = if !profile.wads.is_empty() {
         command
             .arg("-file")
             .args(profile.wads.iter().map(Wad::deref))
@@ -31,20 +73,51 @@ fn execute(uzdoom: &OsStr, profile: &Profile, args: &[&OsStr], data_subdir: &Pat
         command.spawn()
     }
     .map_err(Error::Spawn)?;
-    if let Some(mut stdout) = doom.stdout.take() {
+    let latest = Arc::new(Mutex::new(String::new()));
+    let logger = child.stdout.take().map(|stdout| {
         // the log is best effort, but stdout must still be drained or the game blocks on a full pipe
-        let _ = match File::create(data_subdir.join("session.log")) {
-            Ok(mut log) => io::copy(&mut stdout, &mut log),
-            Err(_) => io::copy(&mut stdout, &mut io::sink()),
+        let log = File::create(data_subdir.join("session.log")).ok();
+        let latest = latest.clone();
+        thread::spawn(move || copy_output(stdout, log, &latest))
+    });
+    Ok(Game {
+        child,
+        latest,
+        logger,
+    })
+}
+
+/// Copies everything from `output` into `log` (if there is one) until UZDoom closes it, keeping
+/// the last non-blank line in `latest` as it goes.
+fn copy_output(mut output: impl Read, mut log: Option<File>, latest: &Mutex<String>) {
+    let mut buffer = [0; 8 * 1024];
+    let mut line = Vec::new();
+    loop {
+        let read = match output.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
         };
+        if let Some(file) = &mut log
+            && file.write_all(&buffer[..read]).is_err()
+        {
+            log = None;
+        }
+        for &byte in &buffer[..read] {
+            if byte == b'\n' || byte == b'\r' {
+                let text = String::from_utf8_lossy(&line).trim().to_string();
+                if !text.is_empty()
+                    && let Ok(mut latest) = latest.lock()
+                {
+                    *latest = text;
+                }
+                line.clear();
+            } else {
+                line.push(byte);
+            }
+        }
     }
-    doom.wait()?;
-    // keys pressed during the game would otherwise all land at once; tossing them is best effort,
-    // since a terminal that can't be read (as under a test) has nothing to toss
-    while let Ok(true) = ratatui::crossterm::event::poll(Duration::ZERO) {
-        let _ = ratatui::crossterm::event::read();
-    }
-    Ok(())
 }
 
 /// Plays offline, with saves kept in the profile's own folder.
@@ -53,7 +126,7 @@ pub fn launch(
     base_wad: Option<&OsStr>,
     profile: &Profile,
     data_subdir: &Path,
-) -> Result<()> {
+) -> Result<Game> {
     let saves_path = data_subdir.join("saves");
     let mut args = vec![OsStr::new("-savedir"), saves_path.as_os_str()];
     if let Some(base_wad) = base_wad {
@@ -74,7 +147,7 @@ pub fn host(
     is_deathmatch: bool,
     map: &str,
     data_subdir: &Path,
-) -> Result<()> {
+) -> Result<Game> {
     let saves_path = data_subdir.join("saves");
     let mut args = vec![
         OsStr::new("-host"),
@@ -104,7 +177,7 @@ pub fn join(
     profile: &Profile,
     ip: &str,
     data_subdir: &Path,
-) -> Result<()> {
+) -> Result<Game> {
     let mut args = vec![OsStr::new("-join"), OsStr::new(ip)];
     if let Some(base_wad) = base_wad {
         args.extend([OsStr::new("-iwad"), base_wad]);
@@ -117,6 +190,8 @@ pub fn join(
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     #[test]
@@ -138,6 +213,8 @@ mod tests {
     /// TDL_REAL_IWAD=~/Downloads/freedoom-0.13.0/freedoom2.wad \
     ///     cargo test real_uzdoom -- --ignored --nocapture
     /// ```
+    ///
+    /// The same check runs on every `cargo test` against [`DUMMY_UZDOOM`] instead.
     const HEADLESS_UZDOOM: &str = r#"#!/usr/bin/env bash
 args=(-norun) files=() filesystems=()
 while [ $# -gt 0 ]; do
@@ -153,26 +230,64 @@ exec env -u DISPLAY -u WAYLAND_DISPLAY flatpak run --env=SDL_VIDEODRIVER=dummy \
     --file-forwarding "${filesystems[@]}" org.zdoom.UZDoom "${args[@]}"
 "#;
 
-    #[test]
-    #[ignore = "runs the real UZDoom; see the doc comment"]
-    fn real_uzdoom_loads_the_iwad_and_every_wad_in_order() {
+    /// Stands in for UZDoom without needing it installed. It reads arguments the way UZDoom does,
+    /// checks every file is really a wad, and prints the `adding <file>, <n> lumps` lines of
+    /// UZDoom's startup log in load order (engine files, the IWAD, then `-file`), so the test
+    /// below works the same against either one. It fails like UZDoom would on a missing or broken
+    /// file, a missing save folder, or a `-file` with nothing after it.
+    const DUMMY_UZDOOM: &str = r#"#!/usr/bin/env bash
+echo "UZDoom version 0.0.0 (tdl's dummy)"
+iwad= config= savedir= files=() seen_file=
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -iwad) iwad="$2"; shift 2 ;;
+        -config) config="$2"; shift 2 ;;
+        -savedir) savedir="$2"; shift 2 ;;
+        -file) seen_file=1; shift; while [ $# -gt 0 ] && [[ "$1" != -* && "$1" != +* ]]; do
+            files+=("$1"); shift; done ;;
+        -host|-join|+map) shift 2 ;;
+        *) shift ;;
+    esac
+done
+fail() { echo "$1" >&2; exit 1; }
+[ -n "$seen_file" ] && [ ${#files[@]} -eq 0 ] && fail "-file with no files"
+[ -n "$savedir" ] && [ ! -d "$savedir" ] && fail "save folder $savedir does not exist"
+[ -n "$config" ] && [ ! -f "$config" ] && fail "config $config does not exist"
+add() { # a wad's file, and the header it must have
+    [ -f "$1" ] || fail "Could not find $1"
+    local magic; magic=$(head -c 4 "$1")
+    [[ " $2 " == *" $magic "* ]] || fail "$1 is not a wad"
+    echo "adding $1, $(od -An -tu4 -j4 -N4 "$1" | tr -d ' ') lumps"
+}
+echo "W_Init: Init WADfiles."
+echo "adding /dummy/uzdoom.pk3, 734 lumps"
+[ -n "$iwad" ] && add "$iwad" IWAD
+for file in "${files[@]}"; do add "$file" "PWAD IWAD"; done
+"#;
+
+    /// Runs the profile's wads through `uzdoom` exactly as [`launch`] passes them, then checks
+    /// from its log that the IWAD and every wad were loaded, in order.
+    #[cfg(unix)]
+    fn loads_the_iwad_and_every_wad_in_order(name: &str, uzdoom: &str, iwad: PathBuf) {
         use std::{fs, os::unix::fs::PermissionsExt};
 
         use crate::vault::scribe::tests::Altar;
 
-        let iwad = std::env::var("TDL_REAL_IWAD").expect("TDL_REAL_IWAD");
-        let altar = Altar::new("real-uzdoom");
+        let altar = Altar::new(name);
 
         // the smallest valid wad: a PWAD header with no lumps
-        let empty_pwad = [b"PWAD".as_slice(), &0u32.to_le_bytes(), &12u32.to_le_bytes()].concat();
+        let empty_pwad = [
+            b"PWAD".as_slice(),
+            &0u32.to_le_bytes(),
+            &12u32.to_le_bytes(),
+        ]
+        .concat();
         let names = ["first.wad", "second.wad", "third.wad"];
         for name in names {
             fs::write(altar.file(name), &empty_pwad).unwrap();
         }
-        // passes tdl's arguments into the sandbox: files are forwarded with @@ … @@ and the save
-        // folder is opened up, the way a real wrapper has to
-        let wrapper = altar.file("headless.sh");
-        fs::write(&wrapper, HEADLESS_UZDOOM).unwrap();
+        let wrapper = altar.file("uzdoom.sh");
+        fs::write(&wrapper, uzdoom).unwrap();
         fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
 
         let profile = Profile::new(
@@ -184,13 +299,10 @@ exec env -u DISPLAY -u WAYLAND_DISPLAY flatpak run --env=SDL_VIDEODRIVER=dummy \
         );
         let data = altar.file("data");
         fs::create_dir_all(data.join("saves")).unwrap();
-        launch(
-            wrapper.as_os_str(),
-            Some(OsStr::new(&iwad)),
-            &profile,
-            &data,
-        )
-        .unwrap();
+        launch(wrapper.as_os_str(), Some(iwad.as_os_str()), &profile, &data)
+            .unwrap()
+            .wait()
+            .unwrap();
 
         let log = fs::read_to_string(data.join("session.log")).unwrap();
         println!("{log}");
@@ -199,11 +311,68 @@ exec env -u DISPLAY -u WAYLAND_DISPLAY flatpak run --env=SDL_VIDEODRIVER=dummy \
             .filter_map(|line| line.strip_prefix("adding "))
             .collect();
         let position = |name: &str| added.iter().position(|line| line.contains(name));
-        let iwad_name = Path::new(&iwad).file_name().unwrap().to_str().unwrap();
+        let iwad_name = iwad.file_name().unwrap().to_str().unwrap();
         let order: Vec<_> = [iwad_name, names[0], names[1], names[2]]
             .iter()
             .map(|name| position(name).unwrap_or_else(|| panic!("{name} was not loaded")))
             .collect();
         assert!(order.is_sorted(), "loaded out of order: {added:?}");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn the_dummy_uzdoom_loads_the_iwad_and_every_wad_in_order() {
+        use crate::vault::scribe::tests::Altar;
+
+        // an IWAD of two empty lumps' worth of header, which is all the dummy looks at
+        let altar = Altar::new("dummy-iwad");
+        let iwad = altar.file("dummy2.wad");
+        let header = [
+            b"IWAD".as_slice(),
+            &2u32.to_le_bytes(),
+            &12u32.to_le_bytes(),
+        ]
+        .concat();
+        std::fs::write(&iwad, header).unwrap();
+        loads_the_iwad_and_every_wad_in_order("dummy-uzdoom", DUMMY_UZDOOM, iwad);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn the_dummy_uzdoom_fails_like_uzdoom_on_a_file_that_is_not_a_wad() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        use crate::vault::scribe::tests::Altar;
+
+        let altar = Altar::new("dummy-uzdoom-bad");
+        let wrapper = altar.file("uzdoom.sh");
+        fs::write(&wrapper, DUMMY_UZDOOM).unwrap();
+        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::write(altar.file("notes.wad"), b"not a wad at all").unwrap();
+        let status = Command::new(&wrapper)
+            .arg("-file")
+            .arg(altar.file("notes.wad"))
+            .stderr(Stdio::null())
+            .status()
+            .unwrap();
+        assert!(!status.success());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    #[ignore = "runs the real UZDoom; see the doc comment"]
+    fn real_uzdoom_loads_the_iwad_and_every_wad_in_order() {
+        let iwad = std::env::var("TDL_REAL_IWAD").expect("TDL_REAL_IWAD");
+        // passes tdl's arguments into the sandbox: files are forwarded with @@ … @@ and the save
+        // folder is opened up, the way a real wrapper has to
+        loads_the_iwad_and_every_wad_in_order("real-uzdoom", HEADLESS_UZDOOM, iwad.into());
+    }
+
+    #[test]
+    fn the_latest_line_is_the_last_one_with_something_on_it() {
+        let latest = Mutex::new(String::new());
+        let output = b"W_Init: Init WADfiles.\nadding a.wad, 2 lumps\r\n\n   \npartial";
+        copy_output(&output[..], None, &latest);
+        assert_eq!(*latest.lock().unwrap(), "adding a.wad, 2 lumps");
     }
 }

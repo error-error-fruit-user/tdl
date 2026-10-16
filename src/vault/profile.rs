@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     ffi::OsString,
     io,
     path::{Path, PathBuf},
@@ -9,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     vault::config::Config,
     vault::edition::Edition,
+    vault::host_settings::HostSettings,
+    vault::saved::{SavedPath, SavedWad},
     vault::scribe,
     vault::wad::{Fault, Wad},
 };
@@ -21,7 +24,12 @@ pub const SUBDIRECTORY: &str = ".profiles";
 ///
 /// Stored as `<config>/.profiles/<name>.rite` (MessagePack); saves live in `<data>/<name>/saves`.
 /// The name is also the file name, so it is restricted to `A-Z a-z 0-9 _`.
+///
+/// In memory every wad has its whole path; on disk the folders are listed once and each wad names
+/// its folder and file (see [`SavedProfile`]), so the file reads on any OS and a profile can later be
+/// shared by dropping just the folders.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "SavedProfile", into = "SavedProfile")]
 pub struct Profile {
     pub name: String,
     pub wads: Vec<Wad>,
@@ -30,6 +38,134 @@ pub struct Profile {
     /// Overrides [`Config::uzdoom`].
     pub uzdoom: Option<OsString>,
     pub ini: Option<OsString>,
+    /// What the host form starts with for this profile, saved from that form. Missing in older
+    /// files, which count as none.
+    pub host_defaults: Option<HostSettings>,
+}
+
+/// A profile as it is saved. The field order is the layout of edition 0, where this was a bare
+/// array, so new fields only ever go at the end.
+#[derive(Deserialize, Serialize)]
+struct SavedProfile {
+    name: String,
+    wads: Vec<SavedEntry>,
+    base_wad: Option<SavedEntry>,
+    uzdoom: Option<SavedPath>,
+    ini: Option<SavedPath>,
+    /// Missing in files from before host defaults, which count as none.
+    #[serde(default)]
+    host_defaults: Option<HostSettings>,
+    /// Every folder the wads are in, each listed once. Missing in files from before edition 2,
+    /// whose wads all carry their whole path.
+    #[serde(default)]
+    folders: Vec<SavedPath>,
+}
+
+/// One wad in a saved profile.
+///
+/// Untagged, so files from before edition 2 still read: their wads have no `folder`, so they land
+/// in [`SavedEntry::Loose`].
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum SavedEntry {
+    /// `name` in the profile's folder number `folder`: the usual case.
+    Filed {
+        folder: u32,
+        name: String,
+        hash: String,
+        size: u64,
+        volatile: bool,
+        modified: u64,
+    },
+    /// A wad saved with its whole path, for one whose file name isn't valid UTF-8 (or that has no
+    /// folder to speak of), and for every wad saved before edition 2.
+    Loose(SavedWad),
+}
+
+impl From<Profile> for SavedProfile {
+    fn from(profile: Profile) -> Self {
+        let mut folders = Vec::new();
+        let mut numbers: HashMap<PathBuf, u32> = HashMap::new();
+        let mut entry = |wad: Wad| {
+            let path = Path::new(&wad.path);
+            match (
+                path.parent(),
+                path.file_name().and_then(|name| name.to_str()),
+            ) {
+                (Some(folder), Some(name)) if !folder.as_os_str().is_empty() => {
+                    let folder = *numbers.entry(folder.to_path_buf()).or_insert_with(|| {
+                        folders.push(SavedPath::from(folder.as_os_str()));
+                        folders.len() as u32 - 1
+                    });
+                    SavedEntry::Filed {
+                        folder,
+                        name: name.to_string(),
+                        hash: wad.hash,
+                        size: wad.size,
+                        volatile: wad.volatile,
+                        modified: wad.modified,
+                    }
+                }
+                _ => SavedEntry::Loose(wad.into()),
+            }
+        };
+        let wads = profile.wads.into_iter().map(&mut entry).collect();
+        let base_wad = profile.base_wad.map(&mut entry);
+        Self {
+            name: profile.name,
+            wads,
+            base_wad,
+            uzdoom: profile.uzdoom.as_deref().map(SavedPath::from),
+            ini: profile.ini.as_deref().map(SavedPath::from),
+            host_defaults: profile.host_defaults,
+            folders,
+        }
+    }
+}
+
+impl TryFrom<SavedProfile> for Profile {
+    type Error = &'static str;
+
+    /// Fails if a wad names a folder the profile doesn't list, which only a damaged file does.
+    fn try_from(saved: SavedProfile) -> Result<Self, Self::Error> {
+        let folders: Vec<PathBuf> = saved
+            .folders
+            .into_iter()
+            .map(|folder| PathBuf::from(OsString::from(folder)))
+            .collect();
+        let wad = |entry: SavedEntry| -> Result<Wad, Self::Error> {
+            match entry {
+                SavedEntry::Filed {
+                    folder,
+                    name,
+                    hash,
+                    size,
+                    volatile,
+                    modified,
+                } => {
+                    let folder = folders
+                        .get(folder as usize)
+                        .ok_or("a wad names a folder the profile doesn't list")?;
+                    Ok(Wad {
+                        path: folder.join(name).into_os_string(),
+                        hash,
+                        size,
+                        volatile,
+                        modified,
+                    })
+                }
+                SavedEntry::Loose(saved) => Ok(Wad::from(saved)),
+            }
+        };
+        Ok(Self {
+            name: saved.name,
+            wads: saved.wads.into_iter().map(wad).collect::<Result<_, _>>()?,
+            base_wad: saved.base_wad.map(wad).transpose()?,
+            uzdoom: saved.uzdoom.map(OsString::from),
+            ini: saved.ini.map(OsString::from),
+            host_defaults: saved.host_defaults,
+        })
+    }
 }
 
 /// Which piece of a profile a [`Fault`] was found in.
@@ -43,11 +179,18 @@ pub enum Part {
 }
 
 impl Edition for Profile {
-    const UPGRADES: &[fn(Self) -> Self] = &[v0_to_v1];
+    const UPGRADES: &[fn(Self) -> Self] = &[v0_to_v1, v1_to_v2];
 }
 
 /// Edition 1 only wrapped the same data in a named, versioned map, so nothing needs fixing.
 fn v0_to_v1(profile: Profile) -> Profile {
+    profile
+}
+
+/// Edition 2 saves wads as a folder table and text names, and paths as text, so the file reads on
+/// any OS. Reading either shape into a [`Profile`] already did the work (see [`SavedEntry`]); the
+/// new edition number is what keeps older builds from reading a file they can't understand.
+fn v1_to_v2(profile: Profile) -> Profile {
     profile
 }
 
@@ -60,6 +203,7 @@ impl Profile {
             base_wad: None,
             uzdoom: None,
             ini: None,
+            host_defaults: None,
         }
     }
 
@@ -255,5 +399,150 @@ mod tests {
         let mut none = Profile::default();
         none.follow_rename(Path::new("/data"), "old");
         assert_eq!(none.ini, None);
+    }
+
+    // 📜 the saved shape: folders listed once, names as text, and every older shape still read
+
+    /// A profile with wads in two folders, one folder used twice, and a base wad in a third.
+    fn spread_out() -> Profile {
+        let wad = |path: &str| Wad {
+            modified: 7,
+            ..Wad::new(path.into(), "ab".repeat(32), 4)
+        };
+        Profile {
+            base_wad: Some(wad("/iwads/DOOM2.WAD")),
+            uzdoom: Some("/usr/bin/uzdoom".into()),
+            ..Profile::new(
+                "spread".into(),
+                vec![wad("/wads/a.wad"), wad("/mods/b.pk3"), wad("/wads/c.wad")],
+            )
+        }
+    }
+
+    #[test]
+    fn each_folder_is_saved_once_and_the_wads_point_into_it() {
+        let saved = SavedProfile::from(spread_out());
+        let folders: Vec<_> = saved
+            .folders
+            .iter()
+            .map(|folder| OsString::from(folder.clone()))
+            .collect();
+        assert_eq!(folders, ["/wads", "/mods", "/iwads"]);
+        let numbers: Vec<_> = saved
+            .wads
+            .iter()
+            .map(|entry| match entry {
+                SavedEntry::Filed { folder, name, .. } => (*folder, name.as_str()),
+                SavedEntry::Loose(_) => panic!("every wad here has a folder and a text name"),
+            })
+            .collect();
+        assert_eq!(numbers, [(0, "a.wad"), (1, "b.pk3"), (0, "c.wad")]);
+    }
+
+    #[test]
+    fn a_profile_saves_and_loads_back_the_same() {
+        let altar = Altar::new("profile-round-trip");
+        let path = altar.file("spread.rite");
+        let profile = spread_out();
+        profile.save(&path).unwrap();
+        assert_eq!(Profile::open(&path), Some(profile));
+        // nothing in the file is tagged with the OS that wrote it
+        let bytes = fs::read(&path).unwrap();
+        assert!(!bytes.windows(4).any(|window| window == b"Unix"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_wad_whose_name_is_not_text_is_kept_whole() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let odd = OsString::from_vec(b"/wads/\xff.wad".to_vec());
+        let profile = Profile::new("odd".into(), vec![Wad::new(odd, "ab".repeat(32), 4)]);
+        let saved = SavedProfile::from(profile.clone());
+        assert!(matches!(saved.wads[0], SavedEntry::Loose(_)));
+        let altar = Altar::new("profile-odd-name");
+        let path = altar.file("odd.rite");
+        profile.save(&path).unwrap();
+        assert_eq!(Profile::open(&path), Some(profile));
+    }
+
+    /// How edition 1 saved a profile: every wad with its whole path, as a tagged `OsString`.
+    #[derive(Serialize)]
+    struct EditionOne {
+        name: String,
+        wads: Vec<EditionOneWad>,
+        base_wad: Option<EditionOneWad>,
+        uzdoom: Option<OsString>,
+        ini: Option<OsString>,
+        host_defaults: Option<HostSettings>,
+    }
+
+    #[derive(Serialize)]
+    struct EditionOneWad {
+        path: OsString,
+        hash: String,
+        size: u64,
+        volatile: bool,
+    }
+
+    #[test]
+    fn a_profile_saved_by_edition_one_loads_and_upgrades() {
+        let altar = Altar::new("profile-edition-one");
+        let path = altar.file("old.rite");
+        let old_wad = |path: &str, volatile| EditionOneWad {
+            path: path.into(),
+            hash: "cd".repeat(32),
+            size: 9,
+            volatile,
+        };
+        let old = EditionOne {
+            name: "old".into(),
+            wads: vec![
+                old_wad("/wads/a.wad", false),
+                old_wad("/wads/wip.pk3", true),
+            ],
+            base_wad: Some(old_wad("/iwads/DOOM2.WAD", false)),
+            uzdoom: Some("/usr/bin/uzdoom".into()),
+            ini: None,
+            host_defaults: None,
+        };
+        #[derive(Serialize)]
+        struct Sealed<T> {
+            version: u32,
+            data: T,
+        }
+        let bytes = rmp_serde::to_vec_named(&Sealed {
+            version: 1,
+            data: old,
+        })
+        .unwrap();
+        fs::write(&path, bytes).unwrap();
+
+        let wad = |path: &str, volatile| Wad {
+            volatile,
+            ..Wad::new(path.into(), "cd".repeat(32), 9)
+        };
+        let expected = Profile {
+            base_wad: Some(wad("/iwads/DOOM2.WAD", false)),
+            uzdoom: Some("/usr/bin/uzdoom".into()),
+            ..Profile::new(
+                "old".into(),
+                vec![wad("/wads/a.wad", false), wad("/wads/wip.pk3", true)],
+            )
+        };
+        assert_eq!(Profile::stored_version(&path), Some(1));
+        let loaded = Profile::open(&path).unwrap();
+        assert_eq!(loaded, expected);
+        // and upgrading rewrites it in the new shape, which reads back the same
+        assert!(loaded.upgrade(&path).unwrap());
+        assert_eq!(Profile::stored_version(&path), Some(2));
+        assert_eq!(Profile::open(&path), Some(expected));
+    }
+
+    #[test]
+    fn a_wad_pointing_at_a_missing_folder_makes_the_file_unreadable() {
+        let mut saved = SavedProfile::from(spread_out());
+        saved.folders.truncate(1);
+        assert!(Profile::try_from(saved).is_err());
     }
 }

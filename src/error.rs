@@ -20,6 +20,14 @@ pub enum Error {
     #[error("Download Error: {0}!")]
     Download(&'static str),
 
+    /// The user pressed Esc during a download. Like `Exit` it is not a failure, so nothing is shown.
+    #[error("Cancelled")]
+    Cancelled,
+
+    /// The host turned down the join code.
+    #[error("The host refused the join code!")]
+    Refused,
+
     /// UZDoom itself could not be started. Unlike the others this is shown, not fatal.
     #[error("Could not start UZDoom: {0}!")]
     Spawn(std::io::Error),

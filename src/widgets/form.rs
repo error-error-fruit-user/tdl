@@ -26,6 +26,37 @@ pub struct Field<'a> {
     pub room: u16,
 }
 
+/// A button under the fields, pressed with Enter when it has focus.
+pub struct Button<'a> {
+    pub label: &'a str,
+    /// A disabled button is drawn dimmed, but can still take focus, so pressing it can say why
+    /// nothing happens.
+    pub enabled: bool,
+}
+
+/// Gaps between buttons on their row.
+const BUTTON_GAP: &str = "  ";
+
+/// The buttons as one line, each in brackets: the focused one (`focus` counts buttons only) as the
+/// cursor, a disabled one dimmed.
+fn button_row<'a>(buttons: &[Button<'a>], focus: Option<usize>) -> Line<'a> {
+    let mut spans = Vec::new();
+    for (i, button) in buttons.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::raw(BUTTON_GAP));
+        }
+        let style = if focus == Some(i) {
+            theme::CURSOR
+        } else if button.enabled {
+            Style::new().fg(theme::TEXT)
+        } else {
+            Style::new().fg(theme::MUTED)
+        };
+        spans.push(Span::styled(format!("[ {} ]", button.label), style));
+    }
+    Line::from(spans)
+}
+
 /// The space `fields` need.
 pub fn size(fields: &[Field]) -> (u16, u16) {
     let label = fields
@@ -96,8 +127,25 @@ pub fn render(
 /// A whole form window: `fields` with a blank row above and below, centered on the page, the
 /// `[?]` hint underneath, and the cursor placed in the focused field.
 pub fn draw(page: &mut Page, title: &str, border: Color, fields: &[Field], focus: usize) {
-    let (width, height) = size(fields);
-    let (width, height) = layout::window(width, height + 2);
+    draw_with_buttons(page, title, border, fields, &[], focus);
+}
+
+/// [`draw`], with a row of `buttons` under the fields. `focus` counts the fields and then the
+/// buttons, so focus past the last field is on a button, and no cursor is shown.
+pub fn draw_with_buttons(
+    page: &mut Page,
+    title: &str,
+    border: Color,
+    fields: &[Field],
+    buttons: &[Button],
+    focus: usize,
+) {
+    let (fields_width, fields_height) = size(fields);
+    let buttons_line = button_row(buttons, focus.checked_sub(fields.len()));
+    // a blank row, then the buttons
+    let buttons_height = if buttons.is_empty() { 0 } else { 2 };
+    let width = fields_width.max(buttons_line.width() as u16);
+    let (width, height) = layout::window(width, fields_height + buttons_height + 2);
     let (veil, area, sigil, sigil_area) =
         ritual::conjure_window(title, width, height, border, page.area());
     let inner = veil.inner(area);
@@ -105,11 +153,16 @@ pub fn draw(page: &mut Page, title: &str, border: Color, fields: &[Field], focus
     page.render_widget(sigil, sigil_area);
     let fields_area = Rect {
         y: inner.y + 1,
-        height: inner.height.saturating_sub(2),
+        height: fields_height.min(inner.height.saturating_sub(2)),
         ..inner
     };
-    if let Some(cursor) = render(fields, Some(focus), fields_area, page.buffer_mut()) {
+    let field_focus = (focus < fields.len()).then_some(focus);
+    if let Some(cursor) = render(fields, field_focus, fields_area, page.buffer_mut()) {
         page.set_cursor_position(cursor);
+    }
+    if !buttons.is_empty() {
+        let row = Rect::new(inner.x, fields_area.bottom() + 1, inner.width, 1).intersection(inner);
+        page.render_widget(buttons_line.centered(), row);
     }
 }
 

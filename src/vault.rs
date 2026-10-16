@@ -1,7 +1,10 @@
 pub mod config;
 pub mod edition;
 pub mod hash;
+pub mod host_settings;
+pub mod lookup;
 pub mod profile;
+pub mod saved;
 pub mod scribe;
 pub mod wad;
 
@@ -12,6 +15,7 @@ use crate::{
     vault::{
         config::Config,
         edition::{Edition, Loaded},
+        lookup::Lookup,
         profile::{Profile, SUBDIRECTORY},
     },
 };
@@ -29,6 +33,9 @@ pub struct Vault {
     /// Things that went wrong while loading and were dealt with, for the user to be told about
     /// once. Nothing unreadable is ever overwritten: it is kept next to where it was as `.corrupt`.
     pub notices: Vec<String>,
+    /// Where wads already on this machine are, built the first time it is asked for and thrown
+    /// away whenever the profiles change, so it is never out of date.
+    lookup: Option<Lookup>,
 }
 
 impl Vault {
@@ -92,7 +99,23 @@ impl Vault {
             config,
             profiles,
             notices,
+            lookup: None,
         }
+    }
+
+    /// Where wads already on this machine are, built now if it hasn't been since the profiles
+    /// last changed.
+    pub fn lookup(&mut self) -> &Lookup {
+        if self.lookup.is_none() {
+            self.lookup = Some(Lookup::build(self));
+        }
+        self.lookup.as_ref().expect("built just above")
+    }
+
+    /// Throws the lookup away, for a change to the wads it was built from that doesn't go through
+    /// the vault, such as setting the global base wad.
+    pub fn forget_lookup(&mut self) {
+        self.lookup = None;
     }
 
     /// The edition each file on disk was saved as, paired with the edition this build writes.
@@ -145,6 +168,7 @@ impl Vault {
     /// If the settings can't be saved the profile is taken back out of the list, so what is on
     /// screen always matches what is on disk. (Its file is left behind, harmlessly.)
     pub fn insert(&mut self, index: &mut usize, profile: Profile) -> Result<()> {
+        self.forget_lookup();
         profile.write(&self.config_dir, &self.data_dir)?;
         self.profiles.insert(*index, profile);
         if let Err(error) = self.config.write(&self.config_dir, &self.profiles) {
@@ -166,6 +190,7 @@ impl Vault {
     /// since all they hold about a profile is its name. Every save waits for the disk, so skipping
     /// the needless ones is what keeps leaving the editor quick.
     pub fn replace(&mut self, index: usize, profile: Profile) -> Result<()> {
+        self.forget_lookup();
         if self.profiles[index] == profile {
             return Ok(());
         }
@@ -191,6 +216,7 @@ impl Vault {
     ///
     /// The settings stop listing it first, and its files are only deleted once that has been saved.
     pub fn remove(&mut self, index: &mut usize) -> Result<()> {
+        self.forget_lookup();
         // 🪦 the list forgets first, and only then does the profile get buried
         let removed = self.profiles.remove(*index);
         if let Err(error) = self.config.write(&self.config_dir, &self.profiles) {
@@ -247,7 +273,16 @@ mod tests {
             base_wad: None,
             uzdoom: Some(OsString::from("/usr/bin/uzdoom")),
             ini: None,
+            host_defaults: None,
         };
+        // the old profile layout, from before host defaults: a bare five-field array
+        let old_profile = (
+            &profile.name,
+            &profile.wads,
+            &profile.base_wad,
+            &profile.uzdoom,
+            &profile.ini,
+        );
         // the old tuple layout: (uzdoom, base_wad, profile_names)
         let old_config = (
             Some(OsString::from("/usr/bin/uzdoom")),
@@ -261,7 +296,7 @@ mod tests {
         .unwrap();
         fs::write(
             config.join("profiles/brutal.doom"),
-            rmp_serde::to_vec(&profile).unwrap(),
+            rmp_serde::to_vec(&old_profile).unwrap(),
         )
         .unwrap();
         (altar, profile)

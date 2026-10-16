@@ -1,0 +1,22 @@
+---
+source: src/screens/host_settings.rs
+expression: "testing::draw(60, 20, |page| form.render(page))"
+---
+
+
+         ┏━━━━━━━━━━━━━━━━[ host ]━━━━━━━━━━━━━━━━┓
+         ┃                                        ┃
+         ┃       players  2                       ┃
+         ┃                                        ┃
+         ┃          mode  deathmatch              ┃
+         ┃                                        ┃
+         ┃           map  any                     ┃
+         ┃                                        ┃
+         ┃          port  8080                    ┃
+         ┃                                        ┃
+         ┃          code  random                  ┃
+         ┃                                        ┃
+         ┃ [ save as default ]  [ clear default ] ┃
+         ┃                                        ┃
+         ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                            [?]

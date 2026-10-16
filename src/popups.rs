@@ -1,10 +1,13 @@
 //! Small windows that ask or tell one thing, then get out of the way. They share one look: plain
 //! border, a blank row around the text, and wrapped lines so they stay small on any terminal.
 
+pub mod cancel;
 pub mod dialog;
+pub mod hashing;
 pub mod legend;
 pub mod progress;
 pub mod resize;
+pub mod running;
 pub mod status;
 pub mod three_way_dialog;
 pub mod warning;

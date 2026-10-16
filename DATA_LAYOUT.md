@@ -55,21 +55,26 @@ Every `.rite` file is MessagePack, a compact binary format, in a wrapper that re
 | Field | Meaning |
 | --- | --- |
 | `uzdoom` | Path to the UZDoom executable, used by profiles that don't set their own. |
-| `base_wad` | The default base wad (`path` and `hash`), used by profiles that don't set their own. |
+| `base_wad` | The default base wad (`path`, `hash`, `size`, `volatile` and `modified`), used by profiles that don't set their own. |
 | `profile_names` | The profiles in the order the launcher shows them. |
 | `skip_splash` | `true` to go straight to the launcher without the splash screen. Missing in older files, which count as `false`. Toggled with `S` in the launcher. |
+| `host_port` | The port the last game was hosted on, offered again in the host form. Empty for the default (8080). Missing in older files, which count as empty. |
 
 **`.profiles/<name>.rite`** (`data`)
 
 | Field | Meaning |
 | --- | --- |
 | `name` | The profile's name. Letters, digits and `_` only, since it is also the file and folder name. |
-| `wads` | The wads in load order, each with its full `path`, `hash` and `size`. The size (0 if unknown) lets tdl notice when a file has changed since it was added. `volatile` marks a wad you are still developing: see below. |
-| `base_wad` | Overrides the global base wad. |
+| `folders` | Every folder the profile's wads are in, each listed once. |
+| `wads` | The wads in load order. Each names its `folder` (a position in `folders`) and its file `name`, plus its `hash`, `size`, `modified` and `volatile`. The size (0 if unknown) lets tdl notice when a file has changed since it was added. `modified` (nanoseconds since 1970, 0 if unknown) is the file's modified time when it was hashed: when joining, a wad of unchanged size and modified time is trusted without being read again. `volatile` marks a wad you are still developing: see below. A wad whose file name isn't valid UTF-8 is saved with its whole `path` instead. |
+| `base_wad` | Overrides the global base wad. Saved like an entry in `wads`. |
 | `uzdoom` | Overrides the global UZDoom path. |
 | `ini` | A UZDoom config file to pass with `-config`. If unset, UZDoom uses its own global config. Press `I` in the editor to choose: **Global** (unset), **New** (an empty `uzdoom.ini` in the profile's data folder, which UZDoom fills in on first run) or **Select** (an existing file). A profile's own ini moves with it when the profile is renamed. |
+| `host_defaults` | What the host form starts with for this profile: `player_count`, `is_deathmatch`, `map`, `port` and `code`, set with **save as default** in the host form and removed with **clear default**. An empty `port` or `code` means the default port and a random code. A saved code is stored as plain text. Missing in older files, which count as none. |
 
-All paths are the full paths on the machine that saved them, so a profile file copied to another computer will not find its wads.
+Paths are saved as text (or, for the rare path that isn't valid UTF-8, in the saving OS's own form), so a profile or config file reads on any OS. The folders are still the ones on the machine that saved them, so a profile copied to another computer will show its wads as missing until they are found; the shared `.scroll` format (planned) leaves the folders out entirely.
+
+Files saved before edition 2 kept each wad's whole path as an OS-tagged string, which only the OS that wrote it could read. They still load, and the upgrade prompt rewrites them in the new shape.
 
 ## How the files are written
 

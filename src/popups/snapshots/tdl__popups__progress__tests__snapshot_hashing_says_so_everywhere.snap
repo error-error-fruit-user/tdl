@@ -1,0 +1,14 @@
+---
+source: src/popups/progress.rs
+expression: "testing::draw(60, 14, |page| count.draw(page, later))"
+---
+
+
+       ┏━━━━━━━━━━━━━━━━[ hashing ]━━━━━━━━━━━━━━━━━┓
+       ┃ ███████[2/3] hashing brutalv22.pk3         ┃
+       ┃               12.3 / 48.0 MB               ┃
+       ┃                                            ┃
+       ┃              IDDQD, darling!               ┃
+       ┃                                            ┃
+       ┃                [Esc] Cancel                ┃
+       ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛

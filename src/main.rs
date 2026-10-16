@@ -11,9 +11,11 @@ mod music;
 mod net;
 mod picker;
 mod popups;
+mod quips;
 mod ritual;
 mod screens;
 mod slayer;
+mod tally;
 #[cfg(test)]
 mod testing;
 mod theme;

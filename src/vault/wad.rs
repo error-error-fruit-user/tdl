@@ -1,18 +1,30 @@
 use std::{
     ffi::{OsStr, OsString},
-    fmt, fs, io,
+    fmt,
+    fs::{self, Metadata},
+    io,
     ops::Deref,
     path::Path,
+    time::UNIX_EPOCH,
 };
 
 use serde::{Deserialize, Serialize};
 
-use crate::{error::Result, vault::hash};
+use crate::{
+    error::Result,
+    tally::Tally,
+    vault::{
+        hash,
+        saved::{SavedPath, SavedWad},
+    },
+};
 
 /// A wad or pk3 file, identified across machines by the BLAKE3 hash of its contents.
 ///
-/// `Deref`s to its path so it can be passed straight to a command line.
+/// `Deref`s to its path so it can be passed straight to a command line. Saved as a
+/// [`SavedWad`], so the path reads back on any OS.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(from = "SavedWad", into = "SavedWad")]
 pub struct Wad {
     pub path: OsString,
     pub hash: String,
@@ -25,6 +37,43 @@ pub struct Wad {
     /// hosting, and a hash mismatch when joining is a question instead of a dead end.
     #[serde(default)]
     pub volatile: bool,
+    /// When the file was last modified as of hashing, in nanoseconds since 1970. Together with the
+    /// size it says whether the file can still be trusted to have its hash without reading it
+    /// again. 0 means unknown. Only means anything on the machine that recorded it.
+    pub modified: u64,
+}
+
+impl From<SavedWad> for Wad {
+    fn from(saved: SavedWad) -> Self {
+        Self {
+            path: saved.path.into(),
+            hash: saved.hash,
+            size: saved.size,
+            volatile: saved.volatile,
+            modified: saved.modified,
+        }
+    }
+}
+
+impl From<Wad> for SavedWad {
+    fn from(wad: Wad) -> Self {
+        Self {
+            path: SavedPath::from(wad.path.as_os_str()),
+            hash: wad.hash,
+            size: wad.size,
+            volatile: wad.volatile,
+            modified: wad.modified,
+        }
+    }
+}
+
+/// When a file was last modified, in nanoseconds since 1970, or 0 if the OS can't say.
+pub fn modified(metadata: &Metadata) -> u64 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |time| time.as_nanos() as u64)
 }
 
 impl Wad {
@@ -37,13 +86,41 @@ impl Wad {
             hash,
             size,
             volatile: false,
+            modified: 0,
         }
     }
 
-    /// Hashes the file at `path`, which can be slow for large wads.
+    /// Hashes the file at `path`, which can be slow for large wads, so `tally` is told the file's
+    /// size and then how far the hashing has got.
+    ///
+    /// The modified time is taken before reading, so a file that changes while it is hashed looks
+    /// changed afterwards rather than trusted.
+    pub fn hashed(path: &Path, tally: &mut impl Tally) -> Result<Self> {
+        let metadata = fs::metadata(path)?;
+        let size = metadata.len();
+        tally.count_file(path.file_name().unwrap_or(path.as_os_str()), size)?;
+        Ok(Self {
+            modified: modified(&metadata),
+            ..Self::new(path.as_os_str().into(), hash::hash(path, tally)?, size)
+        })
+    }
+
+    /// Whether the file is still the one that was hashed, judged without reading it: there, the
+    /// same size, and modified at the same moment. A wad whose modified time was never recorded is
+    /// never trusted this way.
+    pub fn is_unchanged(&self) -> bool {
+        self.modified != 0
+            && fs::metadata(&self.path).is_ok_and(|metadata| {
+                metadata.is_file()
+                    && metadata.len() == self.size
+                    && modified(&metadata) == self.modified
+            })
+    }
+
+    /// Hashes the file at `path` with nobody watching.
+    #[cfg(test)]
     pub fn from_path(path: &Path) -> Result<Self> {
-        let size = fs::metadata(path)?.len();
-        Ok(Self::new(path.as_os_str().into(), hash::hash(path)?, size))
+        Self::hashed(path, &mut ())
     }
 
     /// The file's name for display, or the whole path if it has no file name (`..`, empty).
@@ -65,13 +142,14 @@ impl Wad {
 
     /// This wad as the file is right now: a volatile wad is hashed again, anything else is
     /// trusted as stored. Used when hosting, so the manifest describes the bytes that get served.
-    pub fn refreshed(&self) -> Result<Self> {
+    /// `tally` only hears about the wads that are hashed.
+    pub fn refreshed(&self, tally: &mut impl Tally) -> Result<Self> {
         if !self.volatile {
             return Ok(self.clone());
         }
         Ok(Self {
             volatile: true,
-            ..Self::from_path(Path::new(&self.path))?
+            ..Self::hashed(Path::new(&self.path), tally)?
         })
     }
 }
@@ -247,10 +325,10 @@ mod tests {
         fs::write(altar.file("a.wad"), b"1234-grown").unwrap();
 
         // not volatile: trusted as stored, even though it is stale
-        assert_eq!(wad.refreshed().unwrap(), wad);
+        assert_eq!(wad.refreshed(&mut ()).unwrap(), wad);
 
         wad.volatile = true;
-        let fresh = wad.refreshed().unwrap();
+        let fresh = wad.refreshed(&mut ()).unwrap();
         assert_ne!(fresh.hash, before);
         assert_eq!(fresh.size, 10);
         assert!(fresh.volatile);

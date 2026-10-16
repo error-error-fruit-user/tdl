@@ -8,8 +8,8 @@ A terminal launcher for [UZDoom](https://github.com/UZDoom/UZDoom). Group your w
 
 - **Profiles**: an ordered list of wads with an optional per-profile UZDoom binary, base wad and `.ini`
 - **One-key launch**: pick a profile and press `Enter`
-- **Host**: choose player count, deathmatch or co-op, and a starting map
-- **Join**: enter the host's IP; tdl picks a compatible profile, or offers to download the wads and create one
+- **Host**: choose player count, deathmatch or co-op, a starting map, the port and a join code
+- **Join**: enter the host's IP and join code; tdl picks a compatible profile, or offers to download the wads and create one
 - **Import** a whole folder of wads into a profile
 - **Per-profile saves** and a `session.log` of UZDoom's output
 - **Status at a glance**: a panel under the launcher shows what the selected profile would run with (UZDoom, base wad, ini, wads) and whether anything is broken
@@ -66,7 +66,11 @@ Inside the profile editor, `Tab` switches between the name and the wad list, whe
 
 ### Multiplayer
 
-The host serves its wad list on port **8080** while the game runs, so that port must be reachable by joiners. Joiners enter the host's IP; if no local profile matches, tdl offers to download the wads into a new profile.
+The host serves its wad list on port **8080** (or the port set in the host form, which is remembered) while the game runs, so that port must be reachable by joiners. Every game gets a **join code**: type your own in the host form as a password, or leave it empty for a random one. tdl shows the port and code before the game starts. Without the code, nobody can fetch the wad list or the wads. The host form's **save as default** button stores the current settings for that profile, so its next game starts from them, and **clear default** removes them. Both ask first.
+
+Joiners enter the host's IP, the port (empty means 8080) and the code. If no local profile matches, tdl looks for the host's wads already on this computer (in other profiles, in earlier downloads, and by name in any folder your profiles use) and offers to make a new profile from them, downloading only the ones that are missing. A file that only might be the right one is hashed first, in a green **hashing** window. The download window shows the size and speed, and `Esc` cancels it. Finished wads are kept, so trying again picks up where it stopped.
+
+The code only guards tdl's wad server. UZDoom's own game port is still open to anyone who knows the IP.
 
 ### Data locations
 

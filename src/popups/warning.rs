@@ -10,6 +10,7 @@ use crate::{
 
 /// A popup of one or more lines, dismissed by any key.
 pub struct Warning {
+    title: &'static str,
     lines: Vec<Line<'static>>,
 }
 
@@ -40,7 +41,19 @@ impl Warning {
 
     /// A warning of lines that carry their own styles, ready to be shown.
     pub fn styled(lines: Vec<Line<'static>>) -> Self {
-        Warning { lines }
+        Warning {
+            title: Self::TITLE,
+            lines,
+        }
+    }
+
+    /// Shows lines under a title of their own, for news that isn't a problem, and waits for a key.
+    pub fn announce(grimoire: &mut Grimoire, title: &'static str, lines: &[String]) -> Result<()> {
+        let lines = lines
+            .iter()
+            .map(|line| Line::styled(line.clone(), Style::new().fg(theme::TEXT)))
+            .collect();
+        Warning { title, lines }.invoke(grimoire)
     }
 
     /// If any of `faults` stops the profile from running, says so and returns `true`. A changed
@@ -126,6 +139,14 @@ impl Warning {
         Self::summon(grimoire, "Upgrade failed, your original files were kept!")
     }
 
+    pub fn code_refused(grimoire: &mut Grimoire) -> Result<()> {
+        Self::summon(grimoire, "The host refused the join code!")
+    }
+
+    pub fn invalid_port(grimoire: &mut Grimoire) -> Result<()> {
+        Self::summon(grimoire, "The port must be between 1 and 65535")
+    }
+
     pub fn download_failed(grimoire: &mut Grimoire) -> Result<()> {
         Self::summon(grimoire, "Download failed!")
     }
@@ -147,7 +168,12 @@ impl Ritual for Warning {
                 _ => vec![line.clone()],
             })
             .collect();
-        popups::draw(page, Self::TITLE, theme::WARNING, &lines, None);
+        let border = if self.title == Self::TITLE {
+            theme::WARNING
+        } else {
+            theme::DIALOG
+        };
+        popups::draw(page, self.title, border, &lines, None);
     }
 
     fn prompt(&mut self, _: &mut Grimoire, _: KeyCode) -> Result<Phase<Self::Return>> {
