@@ -85,4 +85,17 @@ mod tests {
         assert!(widths.iter().all(|&w| w == widths[0]));
         assert_eq!(lines[2].spans[0].content, "    ?");
     }
+
+    #[test]
+    fn snapshot_the_launcher_keys() {
+        let legend = [
+            ["Enter", "Launch"],
+            ["H", "Host"],
+            ["N", "Join"],
+            ["J↓/K↑", "Traverse"],
+            ["Esc", "Save and Quit"],
+        ];
+        let mut popup = Legend::new(&legend);
+        insta::assert_snapshot!(crate::testing::draw(50, 14, |page| popup.render(page)));
+    }
 }

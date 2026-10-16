@@ -2,7 +2,7 @@
 
 A terminal launcher for [UZDoom](https://github.com/UZDoom/UZDoom). Group your wads into named profiles, launch them in one keypress, and host or join multiplayer games, with missing wads downloaded automatically from the host.
 
-![tdl demo](demo.gif)
+![The tdl splash screen: the title over the Doom fire](demo.gif)
 
 ## Features
 
@@ -15,6 +15,17 @@ A terminal launcher for [UZDoom](https://github.com/UZDoom/UZDoom). Group your w
 - **Status at a glance**: a panel under the launcher shows what the selected profile would run with (UZDoom, base wad, ini, wads) and whether anything is broken
 - **Placeholders, not surprises**: a wad that moved is shown in the editor with what's wrong, and only that profile is held back from launching
 - **Fits any terminal** from 40×20 up: every window is sized from what it holds, and long lists scroll
+
+## Screenshots
+
+The profiles here are examples made for the screenshots.
+
+| | |
+| --- | --- |
+| ![The launcher, with badges on broken and volatile profiles and the status panel below](docs/screenshots/launcher.png) | ![The profile editor, showing a missing, a changed and a volatile wad](docs/screenshots/editor.png) |
+| **Launcher.** Every profile on screen gets a badge: `!` broken, `~` changed, `*` volatile. The panel underneath shows what the selected one would launch with. | **Editor.** The same badges for each wad, drawn on top so the cursor never hides them. |
+| ![The inspect popup for a missing wad](docs/screenshots/inspect.png) | ![The host form with players, mode and map](docs/screenshots/host.png) |
+| **Inspecting a wad.** `Space` on a marked wad says what's wrong and how to fix it. | **Hosting.** Player count, mode and map; an empty map lets UZDoom pick. |
 
 ## Requirements
 
@@ -95,7 +106,7 @@ cargo build --release
 vhs demo.tape
 ```
 
-The tape runs against a temporary copy of your config, so your real profiles are not modified.
+The tape records ten seconds of the splash screen into `demo.gif`. It runs against an empty throwaway vault in `/tmp`, so your real profiles are never read or written.
 
 ## License
 

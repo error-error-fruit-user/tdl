@@ -1,0 +1,15 @@
+---
+source: src/popups/legend.rs
+expression: "crate::testing::draw(50, 14, |page| popup.render(page))"
+---
+
+
+             ┌───────[ keys ]───────┐
+             │                      │
+             │ Enter  Launch        │
+             │     H  Host          │
+             │     N  Join          │
+             │ J↓/K↑  Traverse      │
+             │   Esc  Save and Quit │
+             │                      │
+             └──────────────────────┘

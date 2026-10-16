@@ -26,6 +26,7 @@ use crate::{
     widgets::{
         details::Details,
         form::{self, Field},
+        mark::{self, Mark},
     },
 };
 
@@ -51,9 +52,9 @@ impl<'a> Editor<'a> {
     const DIVIDER: &str = "wads";
     /// The last row, which adds wads.
     const NEW_ROW: &str = "+ add wads";
-    /// The order column: a mark, up to three digits and a dot.
-    const ORDER_WIDTH: u16 = 5;
-    const COLUMN_SPACING: u16 = 2;
+    /// The order column: up to three digits and a dot.
+    const ORDER_WIDTH: u16 = 4;
+    const COLUMN_SPACING: u16 = 1;
     const NAMING_LEGEND: &[[&str; 2]] = &[
         ["Enter/Esc", "Save and Quit"],
         ["Tab", "Edit Wads"],
@@ -190,7 +191,7 @@ impl Ritual for Editor<'_> {
             .chain([layout::width(Self::NEW_ROW)])
             .max()
             .unwrap_or(0);
-        let list_width = Self::ORDER_WIDTH + Self::COLUMN_SPACING + wad_width;
+        let list_width = mark::WIDTH + Self::ORDER_WIDTH + wad_width + 2 * Self::COLUMN_SPACING;
         let (name_width, _) = form::size(&name);
         let (details_width, details_height) = details.size();
         let panel = layout::window(details_width, details_height);
@@ -245,28 +246,32 @@ impl Ritual for Editor<'_> {
             .enumerate()
             .map(|(i, (wad, fault))| {
                 // 🕳️ a wad that has gone missing leaves a hole in the list, not a gap in the story
-                let (mark, style) = match fault {
-                    Some(fault) if fault.is_blocking() => (theme::BROKEN_MARK, theme::BROKEN_ROW),
-                    Some(_) => (theme::CHANGED_MARK, Style::new().fg(theme::CHANGED)),
+                let style = match Mark::of_wad(wad, fault.as_ref()) {
+                    Some(Mark::Broken) => theme::BROKEN_ROW,
+                    Some(Mark::Changed) => Style::new().fg(theme::CHANGED),
                     // 🌀 volatile wads are expected to shift under your feet
-                    None if wad.volatile => {
-                        (theme::VOLATILE_MARK, Style::new().fg(theme::VOLATILE))
-                    }
-                    None => ("", Style::new()),
+                    Some(Mark::Volatile) => Style::new().fg(theme::VOLATILE),
+                    None => Style::new(),
                 };
                 Row::new([
-                    Line::from(format!("{mark}{}.", i + 1)).right_aligned(),
+                    Line::default(),
+                    Line::from(format!("{}.", i + 1)).right_aligned(),
                     Line::from(wad.file_name().into_owned()),
                 ])
                 .style(style)
             })
             .chain([Row::new([
                 Line::default(),
+                Line::default(),
                 Line::styled(Self::NEW_ROW, Style::new().fg(theme::MUTED)),
             ])]);
         let table = Table::new(
             rows,
-            [Constraint::Length(Self::ORDER_WIDTH), Constraint::Fill(1)],
+            [
+                Constraint::Length(mark::WIDTH),
+                Constraint::Length(Self::ORDER_WIDTH),
+                Constraint::Fill(1),
+            ],
         )
         .column_spacing(Self::COLUMN_SPACING);
         let table = match (self.editing_wads, selected_fault) {
@@ -282,9 +287,19 @@ impl Ritual for Editor<'_> {
             ..inner
         };
         page.render_stateful_widget(table, list_area, &mut self.table_state);
+        // 🩸 the badges go on last, so even the cursor's highlight can't hide them
+        let offset = self.table_state.offset();
+        let shown = offset..(offset + list_area.height as usize).min(self.profile.wads.len());
+        for i in shown {
+            if let Some(mark) = Mark::of_wad(&self.profile.wads[i], self.faults[i].as_ref()) {
+                let y = list_area.y + (i - offset) as u16;
+                mark.paint(list_area.x, y, list_area, page.buffer_mut());
+            }
+        }
 
         let panel = ritual::conjure_banner(details.title, theme::PANEL, details.title_color);
-        page.render_widget(Paragraph::new(details.lines()).block(panel), details_area);
+        let fitting = details.lines_fitting(panel.inner(details_area).width);
+        page.render_widget(Paragraph::new(fitting).block(panel), details_area);
 
         let (sigil, sigil_area) = ritual::conjure_sigil(details_area);
         page.render_widget(sigil, sigil_area);
@@ -687,5 +702,28 @@ mod tests {
         let line = divider("wads", 12, 20);
         assert_eq!(line.width(), 20);
         assert_eq!(line.to_string(), format!("wads {} 12", "─".repeat(12)));
+    }
+
+    #[test]
+    fn snapshot_editing_a_profile_with_every_kind_of_mark() {
+        let altar = Altar::new("snap-editor");
+        let root = crate::testing::example_vault(&altar);
+        let vault = Vault::new(root.join("config"), root.join("data"));
+        let mut editor = Editor::edit(&vault.profiles, &vault.data_dir, 1);
+        editor.table_state.select(Some(1));
+        insta::assert_snapshot!(crate::testing::draw(90, 28, |page| editor.render(page)));
+    }
+
+    #[test]
+    fn snapshot_a_blank_profile() {
+        let mut editor = Editor::new(&[], Path::new(""));
+        insta::assert_snapshot!(crate::testing::draw(60, 20, |page| editor.render(page)));
+    }
+
+    #[test]
+    fn snapshot_inspecting_a_missing_wad() {
+        let wad = Wad::new("/wads/moved/gone.pk3".into(), "ab".repeat(32), 4);
+        let mut warning = Warning::styled(inspect_lines(&wad, &Fault::Missing));
+        insta::assert_snapshot!(crate::testing::draw(70, 14, |page| warning.render(page)));
     }
 }

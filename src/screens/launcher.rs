@@ -1,4 +1,4 @@
-use std::{ops::Deref, path::Path};
+use std::{collections::HashMap, ops::Deref, path::Path};
 
 use directories::ProjectDirs;
 use ratatui::{
@@ -29,7 +29,10 @@ use crate::{
     vault::Vault,
     vault::scribe,
     vault::wad::Wad,
-    widgets::details::Details,
+    widgets::{
+        details::Details,
+        mark::{self, Mark},
+    },
 };
 
 /// The main screen: a table of profiles followed by a `+` row for creating a new one.
@@ -40,6 +43,9 @@ pub struct Launcher {
     table_state: TableState,
     /// Whether to play the splash screen first.
     splash: bool,
+    /// Each profile's mark, by position. A profile is only checked once its row is on screen, and
+    /// the marks are forgotten whenever something could have changed them.
+    marks: HashMap<usize, Option<Mark>>,
 }
 
 impl Launcher {
@@ -48,9 +54,9 @@ impl Launcher {
     const HEADER: [&str; 2] = ["profile", "wads"];
     /// The last row, which makes a new profile.
     const NEW_ROW: &str = "+ new profile";
-    /// The wads column: a count and the broken mark.
-    const WADS_WIDTH: u16 = 5;
-    const COLUMN_SPACING: u16 = 2;
+    /// The wads column: a count.
+    const WADS_WIDTH: u16 = 4;
+    const COLUMN_SPACING: u16 = 1;
     const LEGEND: &[[&str; 2]] = &[
         ["Enter", "Launch"],
         ["H", "Host"],
@@ -82,6 +88,7 @@ impl Launcher {
             vault: Vault::new(config_dir, data_dir),
             table_state: TableState::new().with_selected(0),
             splash,
+            marks: HashMap::new(),
         }
     }
 
@@ -130,10 +137,9 @@ impl Ritual for Launcher {
         Ok(())
     }
 
-    /// The profile list, and under it a panel for whatever the cursor is on: what that profile
-    /// would launch with, or the global settings when it's on the new-profile row.
+    /// The profile list, each row with its badge, and under it a panel for whatever the cursor is
+    /// on: what that profile would launch with, or the global settings on the new-profile row.
     fn render(&mut self, page: &mut Page) {
-        // 🔎 only the profile under the cursor is looked at, so even a huge pack costs a handful of stats
         let selected = self.table_state.selected();
         let profile = selected.and_then(|i| self.vault.profiles.get(i));
         let details = match profile {
@@ -155,6 +161,7 @@ impl Ritual for Launcher {
             .max()
             .unwrap_or(0);
         let header = Row::new([
+            Line::default(),
             Line::from(Self::HEADER[0]),
             Line::from(Self::HEADER[1]).right_aligned(),
         ])
@@ -163,49 +170,70 @@ impl Ritual for Launcher {
             .vault
             .profiles
             .iter()
-            .enumerate()
-            .map(|(i, p)| {
-                let mark = if is_broken && Some(i) == selected {
-                    theme::BROKEN_MARK
-                } else {
-                    ""
-                };
+            .map(|p| {
                 Row::new([
+                    Line::default(),
                     Line::from(p.name.as_str()),
-                    Line::from(format!("{}{mark}", p.wads.len())).right_aligned(),
+                    Line::from(p.wads.len().to_string()).right_aligned(),
                 ])
             })
             .chain([Row::new([
+                Line::default(),
                 Line::styled(Self::NEW_ROW, Style::new().fg(theme::MUTED)),
                 Line::default(),
             ])]);
 
         let (details_width, details_height) = details.size();
         let panel = layout::window(details_width, details_height);
-        // the header, the profiles and the new-profile row
-        let list_width = name_width + Self::COLUMN_SPACING + Self::WADS_WIDTH;
+        // the badge, the name and the count, then the header, the profiles and the new-profile row
+        let list_width = mark::WIDTH + name_width + Self::WADS_WIDTH + 2 * Self::COLUMN_SPACING;
         let (width, height) = layout::window(list_width, self.vault.profiles.len() as u16 + 2);
         let list = layout::grow(width, height, panel.1, page.area());
         let [list_area, details_area] = layout::stack(&[list, panel], page.area())[..] else {
             return;
         };
 
+        let veil = ritual::conjure_veil(Self::TITLE, Self::BORDER_COLOR);
+        let inner = veil.inner(list_area);
+        // 🔎 scroll first, so the rows about to be shown are known, then look only at those
+        let visible = inner.height.saturating_sub(1) as usize;
+        let offset = layout::scroll(self.table_state.offset(), selected.unwrap_or(0), visible);
+        *self.table_state.offset_mut() = offset;
+        let shown = offset..(offset + visible).min(self.vault.profiles.len());
+        for i in shown.clone() {
+            self.marks
+                .entry(i)
+                .or_insert_with(|| Mark::of_profile(&self.vault.profiles[i], &self.vault.config));
+        }
+
         let table = Table::new(
             rows,
-            [Constraint::Fill(1), Constraint::Length(Self::WADS_WIDTH)],
+            [
+                Constraint::Length(mark::WIDTH),
+                Constraint::Fill(1),
+                Constraint::Length(Self::WADS_WIDTH),
+            ],
         )
         .column_spacing(Self::COLUMN_SPACING)
         .header(header)
-        .block(ritual::conjure_veil(Self::TITLE, Self::BORDER_COLOR))
+        .block(veil)
         .row_highlight_style(if is_broken {
             theme::BROKEN_CURSOR
         } else {
             theme::CURSOR
         });
         page.render_stateful_widget(table, list_area, &mut self.table_state);
+        // 🩸 the badges go on last, so even the cursor's highlight can't hide them
+        for i in shown {
+            if let Some(Some(mark)) = self.marks.get(&i) {
+                let y = inner.y + 1 + (i - offset) as u16;
+                mark.paint(inner.x, y, inner, page.buffer_mut());
+            }
+        }
 
         let panel = ritual::conjure_banner(details.title, theme::PANEL, details.title_color);
-        page.render_widget(Paragraph::new(details.lines()).block(panel), details_area);
+        let fitting = details.lines_fitting(panel.inner(details_area).width);
+        page.render_widget(Paragraph::new(fitting).block(panel), details_area);
 
         let (sigil, sigil_area) = ritual::conjure_sigil(details_area);
         page.render_widget(sigil, sigil_area);
@@ -216,6 +244,13 @@ impl Ritual for Launcher {
         grimoire: &mut Grimoire,
         key_code: KeyCode,
     ) -> Result<Phase<Self::Return>> {
+        // 🧹 moving the cursor changes nothing on disk; anything else might, so the marks are redone
+        if !matches!(
+            key_code,
+            KeyCode::Char('j' | 'k' | '?') | KeyCode::Up | KeyCode::Down
+        ) {
+            self.marks.clear();
+        }
         let index = self.table_state.selected_mut().as_mut().unwrap();
         match key_code {
             KeyCode::Enter => {
@@ -355,5 +390,48 @@ impl Ritual for Launcher {
             }
             _ => Ok(Phase::Prompt),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use insta::assert_snapshot;
+
+    use super::*;
+    use crate::{testing, vault::scribe::tests::Altar};
+
+    fn launcher(altar: &Altar, row: usize) -> Launcher {
+        let vault = testing::example_vault(altar);
+        let mut launcher = Launcher::new(Some(vault.to_string_lossy().into_owned()), false);
+        launcher.table_state.select(Some(row));
+        launcher
+    }
+
+    #[test]
+    fn on_a_healthy_profile() {
+        let altar = Altar::new("snap-launcher-healthy");
+        let mut launcher = launcher(&altar, 0);
+        assert_snapshot!(testing::draw(90, 28, |page| launcher.render(page)));
+    }
+
+    #[test]
+    fn on_a_broken_profile() {
+        let altar = Altar::new("snap-launcher-broken");
+        let mut launcher = launcher(&altar, 1);
+        assert_snapshot!(testing::draw(90, 28, |page| launcher.render(page)));
+    }
+
+    #[test]
+    fn on_the_new_profile_row() {
+        let altar = Altar::new("snap-launcher-new");
+        let mut launcher = launcher(&altar, 3);
+        assert_snapshot!(testing::draw(90, 28, |page| launcher.render(page)));
+    }
+
+    #[test]
+    fn on_the_smallest_terminal() {
+        let altar = Altar::new("snap-launcher-small");
+        let mut launcher = launcher(&altar, 1);
+        assert_snapshot!(testing::draw(40, 20, |page| launcher.render(page)));
     }
 }

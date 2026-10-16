@@ -81,6 +81,18 @@ pub fn stack(sizes: &[(u16, u16)], area: Rect) -> Vec<Rect> {
         .collect()
 }
 
+/// The first row to show in a list `height` rows tall, starting from `offset`, so that `selected`
+/// is on screen. Scrolls as little as possible, the way the list itself does.
+pub fn scroll(offset: usize, selected: usize, height: usize) -> usize {
+    if selected < offset {
+        selected
+    } else if height > 0 && selected >= offset + height {
+        selected + 1 - height
+    } else {
+        offset
+    }
+}
+
 /// The display width of `text`.
 pub fn width(text: &str) -> u16 {
     ratatui::text::Line::from(text).width() as u16
@@ -201,6 +213,15 @@ mod tests {
     fn a_main_window_stops_growing_at_the_widest_width() {
         let huge = Rect::new(0, 0, 400, 100);
         assert_eq!(grow(20, 5, 6, huge).0, MAX_GROWN_WIDTH);
+    }
+
+    #[test]
+    fn scrolling_only_moves_when_the_selection_leaves_the_screen() {
+        assert_eq!(scroll(0, 3, 5), 0);
+        assert_eq!(scroll(0, 5, 5), 1);
+        assert_eq!(scroll(4, 2, 5), 2);
+        assert_eq!(scroll(4, 8, 5), 4);
+        assert_eq!(scroll(0, 0, 0), 0);
     }
 
     #[test]

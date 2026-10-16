@@ -20,6 +20,10 @@ pub fn file(
     filter: Option<Filter>,
     start: Option<&Path>,
 ) -> Result<Option<PathBuf>> {
+    #[cfg(debug_assertions)]
+    if let Some(picked) = stand_in() {
+        return Ok(picked.and_then(|paths| paths.into_iter().next()));
+    }
     Ok(dialog(grimoire, filter, start)?.and_then(|dialog| dialog.pick_file()))
 }
 
@@ -30,12 +34,34 @@ pub fn files(
     filter: Option<Filter>,
     start: Option<&Path>,
 ) -> Result<Option<Vec<PathBuf>>> {
+    #[cfg(debug_assertions)]
+    if let Some(picked) = stand_in() {
+        return Ok(picked);
+    }
     Ok(dialog(grimoire, filter, start)?.and_then(|dialog| dialog.pick_files()))
 }
 
 /// Asks for a folder. `None` if the user cancels, or if there is no folder to open the dialog in.
 pub fn folder(grimoire: &mut Grimoire, start: Option<&Path>) -> Result<Option<PathBuf>> {
+    #[cfg(debug_assertions)]
+    if let Some(picked) = stand_in() {
+        return Ok(picked.and_then(|paths| paths.into_iter().next()));
+    }
     Ok(dialog(grimoire, None, start)?.and_then(|dialog| dialog.pick_folder()))
+}
+
+/// For automated runs of debug builds only: when `TDL_PICKS` names a file, each pick takes the
+/// next line of that file instead of opening a dialog. A line holds the picked paths, separated
+/// like `PATH` entries (`:` on Unix); an empty line is a cancelled dialog. Release builds don't
+/// have this at all.
+#[cfg(debug_assertions)]
+fn stand_in() -> Option<Option<Vec<PathBuf>>> {
+    let queue = std::env::var_os("TDL_PICKS")?;
+    let text = std::fs::read_to_string(&queue).ok()?;
+    let (line, rest) = text.split_once('\n').unwrap_or((&text, ""));
+    std::fs::write(&queue, rest).ok()?;
+    let paths: Vec<_> = std::env::split_paths(line).filter(|p| !p.as_os_str().is_empty()).collect();
+    Some((!paths.is_empty()).then_some(paths))
 }
 
 /// A dialog ready to show, or a warning and `None` if there is no folder to show it in.

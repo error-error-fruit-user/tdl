@@ -5,6 +5,7 @@ use ratatui::{style::Style, text::Span, widgets::Gauge};
 use crate::{
     error::Result,
     layout,
+    net::DownloadProgress,
     ritual::{self, Grimoire, Haunted},
     theme,
 };
@@ -67,9 +68,11 @@ impl<'a> Progress<'a> {
             page.render_widget(gauge, window_area);
         })
     }
+}
 
+impl DownloadProgress for Progress<'_> {
     /// Starts the next file: its size becomes the new 100% and the byte count restarts.
-    pub fn count_file(&mut self, name: &OsStr, size: u64) -> Result<()> {
+    fn count_file(&mut self, name: &OsStr, size: u64) -> Result<()> {
         self.file_name = name.to_string_lossy().into_owned();
         self.max_byte_count = size;
         self.file_count += 1;
@@ -78,7 +81,7 @@ impl<'a> Progress<'a> {
     }
 
     /// Adds `amount` bytes to the current file and redraws.
-    pub fn count_bytes(&mut self, amount: u64) -> Result<()> {
+    fn count_bytes(&mut self, amount: u64) -> Result<()> {
         self.byte_count += amount;
         self.render()
     }

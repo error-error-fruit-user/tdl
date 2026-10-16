@@ -236,4 +236,17 @@ mod tests {
         assert_eq!(pulse(PULSE / 2), theme::BONE);
         assert_eq!(pulse(PULSE), theme::ASH);
     }
+
+    #[test]
+    fn snapshot_a_frame_of_the_fire() {
+        let area = Rect::new(0, 0, 80, 24);
+        let mut fire = Fire::new(fire_area(area), 7);
+        for _ in 0..40 {
+            fire.step();
+        }
+        let snapshot = crate::testing::draw(80, 24, |page| {
+            paint(&fire, Duration::ZERO, area, page.buffer_mut())
+        });
+        insta::assert_snapshot!(snapshot);
+    }
 }

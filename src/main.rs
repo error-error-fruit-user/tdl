@@ -13,6 +13,8 @@ mod popups;
 mod ritual;
 mod screens;
 mod slayer;
+#[cfg(test)]
+mod testing;
 mod theme;
 mod uzdoom;
 mod vault;

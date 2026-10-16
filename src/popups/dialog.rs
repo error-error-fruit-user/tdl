@@ -91,3 +91,25 @@ impl Dialog<'_> {
         Self::summon(grimoire, "Are you sure you want to quit?")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use insta::assert_snapshot;
+
+    use super::*;
+    use crate::testing;
+
+    #[test]
+    fn a_question_with_its_answers() {
+        let mut dialog = Dialog::new("Are you sure you want to delete 'sigil_run'?");
+        assert_snapshot!(testing::draw(70, 12, |page| dialog.render(page)));
+    }
+
+    #[test]
+    fn a_long_question_wraps() {
+        let mut dialog = Dialog::new(
+            "Older files found, upgrade them? Your originals are kept as backups until you say otherwise.",
+        );
+        assert_snapshot!(testing::draw(70, 14, |page| dialog.render(page)));
+    }
+}

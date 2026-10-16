@@ -1,95 +1,29 @@
-# Short tour of tdl using a sandboxed copy of your real config + data.
+# The demo: ten seconds of the splash screen.
 # Run from the project root:  vhs demo.tape
 # Needs: vhs, ttyd, ffmpeg on PATH, and `cargo build --release` done first.
-# Nothing here launches UZDoom or touches the network.
+#
+# Kept light on purpose: a small window and a short clip. If rendering is still heavy,
+# lower the Framerate first (12 still looks smooth), then the size.
 
 Output demo.gif
 
 Set Shell "bash"
-Set FontSize 14
+Set FontSize 12
 Set Width 640
-Set Height 540
-Set Padding 10
-Set Framerate 8
-Set Theme "Catppuccin Mocha"
-Set TypingSpeed 200ms
+Set Height 400
+# No padding, so the fire runs right to the edges of the gif.
+Set Padding 0
+Set Framerate 20
+Set TypingSpeed 0
 
-# Work on a copy so swaps/edits/saves never touch ~/.config/tdl or ~/.local/share/tdl.
+# Start out of sight, on a throwaway vault, so nothing of yours is read or written.
 Hide
-Type@5ms "rm -rf /tmp/tdl-demo && mkdir -p /tmp/tdl-demo && cp -r ~/.config/tdl /tmp/tdl-demo/config && cp -r ~/.local/share/tdl /tmp/tdl-demo/data" Enter
-Type@5ms "clear && ./target/release/tdl --vault /tmp/tdl-demo" Enter
-Sleep 1s
+Type "mkdir -p /tmp/tdl-splash && clear && ./target/release/tdl --vault /tmp/tdl-splash" Enter
+Sleep 300ms
 Show
 
-# Launcher + legend
-Sleep 1s
-Type "?"
-Sleep 2.5s
-Type " "
-Sleep 500ms
+Sleep 10s
 
-# Traverse and reorder (put back afterwards)
-Type "jj"
-Sleep 500ms
-Type "}"
-Sleep 800ms
-Type "{"
-Sleep 800ms
-Type "jjjj"
-Sleep 500ms
-Type "kk"
-Sleep 500ms
-
-# Edit a profile
-Type "e"
-Sleep 1.5s
-Type "?"
-Sleep 2.5s
-Type " "
-Tab
-Type "_v2"
-Sleep 800ms
-Backspace 3
-Escape
-Sleep 800ms
-
-# Duplicate-name warning
-Type "a"
-Sleep 800ms
-Type "vanilla"
-Enter
-Sleep 1.5s
-Type " "
-Backspace 7
-Escape
-Sleep 500ms
-
-# Host setup
-Type "h"
-Sleep 1.2s
-Type "6"
-Tab
-Type "j"
-Sleep 800ms
-Tab
-Type "MAP07"
-Sleep 1.2s
-Escape
-Sleep 500ms
-
-# Join
-Type "n"
-Sleep 1s
-Type "192.168.1.42"
-Sleep 1s
-Escape
-Sleep 500ms
-
-# Delete + quit dialogs
-Type "d"
-Sleep 1.5s
-Type "n"
-Escape
-Sleep 1.5s
-Type "y"
-Sleep 1s
+# Leave quietly: Ctrl+C ends the splash without saving anything.
+Hide
+Ctrl+C

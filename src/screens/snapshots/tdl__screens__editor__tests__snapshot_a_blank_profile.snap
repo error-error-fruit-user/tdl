@@ -1,0 +1,21 @@
+---
+source: src/screens/editor.rs
+expression: "crate::testing::draw(60, 20, |page| editor.render(page))"
+---
+
+
+
+          ┏━━━━━━━━━━━[ new profile ]━━━━━━━━━━━━┓
+          ┃ name  type a name                    ┃
+          ┃                                      ┃
+          ┃ wads ───────────────────────────── 0 ┃
+          ┃          + add wads                  ┃
+          ┃                                      ┃
+          ┃                                      ┃
+          ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                ┏━━━━━━[ overrides ]━━━━━━┓
+                ┃   uzdoom □ global       ┃
+                ┃ base wad □ global       ┃
+                ┃      ini □ uzdoom's own ┃
+                ┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                            [?]

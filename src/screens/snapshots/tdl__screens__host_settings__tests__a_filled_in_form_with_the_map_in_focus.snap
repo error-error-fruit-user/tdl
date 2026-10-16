@@ -1,0 +1,16 @@
+---
+source: src/screens/host_settings.rs
+expression: "testing::draw(60, 14, |page| form.render(page))"
+---
+
+
+                 ┏━━━━━━━[ host ]━━━━━━━━┓
+                 ┃                       ┃
+                 ┃ players  4            ┃
+                 ┃                       ┃
+                 ┃    mode  deathmatch   ┃
+                 ┃                       ┃
+                 ┃     map  MAP07        ┃
+                 ┃                       ┃
+                 ┗━━━━━━━━━━━━━━━━━━━━━━━┛
+                            [?]

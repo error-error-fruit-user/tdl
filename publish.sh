@@ -4,7 +4,7 @@ set -euo pipefail
 target=x86_64-pc-windows-gnu
 out=published
 
-./build_release.sh
+cargo build --release --target "$target"
 
 rm -rf "$out"
 mkdir "$out"

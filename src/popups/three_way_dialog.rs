@@ -94,4 +94,13 @@ mod tests {
         assert!(answer(KeyCode::Enter) == Phase::Prompt);
         assert!(answer(KeyCode::Tab) == Phase::Prompt);
     }
+
+    #[test]
+    fn snapshot_choosing_a_config() {
+        let mut dialog = ThreeWayDialog {
+            message: "Which UZDoom config file to use?",
+            options: OPTIONS,
+        };
+        insta::assert_snapshot!(crate::testing::draw(60, 12, |page| dialog.render(page)));
+    }
 }

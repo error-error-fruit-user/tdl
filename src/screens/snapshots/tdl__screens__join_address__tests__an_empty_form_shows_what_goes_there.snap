@@ -1,0 +1,12 @@
+---
+source: src/screens/join_address.rs
+expression: "testing::draw(50, 10, |page| form.render(page))"
+---
+
+
+            ┏━━━━━━━━[ join ]━━━━━━━━┓
+            ┃                        ┃
+            ┃ host  ip address       ┃
+            ┃                        ┃
+            ┗━━━━━━━━━━━━━━━━━━━━━━━━┛
+                       [?]

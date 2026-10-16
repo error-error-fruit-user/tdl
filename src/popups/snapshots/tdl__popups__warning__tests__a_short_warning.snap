@@ -1,0 +1,11 @@
+---
+source: src/popups/warning.rs
+expression: "testing::draw(70, 10, |page| warning.render(page))"
+---
+
+
+            ┌────────────────[ warning ]─────────────────┐
+            │                                            │
+            │ 1 wad needs attention, open the editor (E) │
+            │                                            │
+            └────────────────────────────────────────────┘

@@ -1,5 +1,5 @@
 use std::{
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     io::{Read, Write},
     path::Path,
     sync::{
@@ -14,13 +14,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{Error, Result},
-    popups::progress::Progress,
     vault::profile::Profile,
     vault::wad::Wad,
 };
 
 pub const DEFAULT_PORT: u16 = 8080;
 /// Upper bound on wads a host may ask a joiner to download.
+/// Whatever a download reports to as it goes: the progress window, or a test that counts.
+pub trait DownloadProgress {
+    /// A file is starting; `size` is its full size in bytes.
+    fn count_file(&mut self, name: &OsStr, size: u64) -> Result<()>;
+    /// `amount` more bytes of the current file have arrived.
+    fn count_bytes(&mut self, amount: u64) -> Result<()>;
+}
+
 pub const MAX_FILES: usize = 255;
 
 /// What a host serves at `/manifest`: its wads in load order, identified by hash.
@@ -183,10 +190,15 @@ fn new_agent() -> ureq::Agent {
         .new_agent()
 }
 
-/// Strips any `:port` the user typed; the host always serves on [`DEFAULT_PORT`].
+/// The host's address. A port given with it (`host:port`) is used; otherwise the host is reached on
+/// [`DEFAULT_PORT`]. The join form only accepts digits and dots, so users always get the default;
+/// the explicit port is for tests, which can't count on 8080 being free.
 fn base_url(ip: &str) -> String {
-    let host = ip.rsplit_once(":").map_or(ip, |(h, _)| h);
-    format!("http://{host}:{DEFAULT_PORT}")
+    match ip.rsplit_once(':') {
+        Some((host, port)) if port.parse::<u16>().is_ok() => format!("http://{host}:{port}"),
+        Some((host, _)) => format!("http://{host}:{DEFAULT_PORT}"),
+        None => format!("http://{ip}:{DEFAULT_PORT}"),
+    }
 }
 
 /// Downloads every entry in order, returning the wads at their local paths.
@@ -195,7 +207,7 @@ pub fn download(
     ip: &str,
     entries: &[Entry],
     downloads_dir: &Path,
-    progress: &mut Progress,
+    progress: &mut impl DownloadProgress,
 ) -> Result<Vec<Wad>> {
     let agent = new_agent();
     let mut wads = Vec::with_capacity(entries.len());
@@ -213,7 +225,7 @@ fn download_entry(
     ip: &str,
     entry: &Entry,
     downloads_dir: &Path,
-    progress: &mut Progress,
+    progress: &mut impl DownloadProgress,
 ) -> Result<Wad> {
     let downloads_subdir = downloads_dir.join(&entry.hash);
     let wad_path = downloads_subdir.join(&entry.name);
@@ -242,7 +254,7 @@ fn download_part(
     ip: &str,
     entry: &Entry,
     part: &Path,
-    progress: &mut Progress,
+    progress: &mut impl DownloadProgress,
 ) -> Result<()> {
     let url = format!("{}/file/{}", base_url(ip), entry.hash);
     let mut reader = agent.get(&url).call()?.into_body().into_reader();
@@ -358,5 +370,134 @@ mod tests {
             host.differing_wads(&profile(vec![wad("/x/a.pk3", "h1", true)]))
                 .is_empty()
         );
+    }
+
+    // 🛰️ the whole trip over a real socket: a host serves, a joiner fetches and downloads
+
+    use std::{fs, net::TcpListener};
+
+    use crate::vault::scribe::tests::Altar;
+
+    /// Counts what a download reports, instead of drawing it.
+    #[derive(Default)]
+    struct Tally {
+        files: Vec<(String, u64)>,
+        bytes: u64,
+    }
+
+    impl DownloadProgress for Tally {
+        fn count_file(&mut self, name: &OsStr, size: u64) -> Result<()> {
+            self.files.push((name.to_string_lossy().into_owned(), size));
+            Ok(())
+        }
+
+        fn count_bytes(&mut self, amount: u64) -> Result<()> {
+            self.bytes += amount;
+            Ok(())
+        }
+    }
+
+    /// A port nobody is listening on right now.
+    fn free_port() -> u16 {
+        TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
+    }
+
+    /// Two wads in `altar`, one big enough to arrive in several chunks.
+    fn host_wads(altar: &Altar) -> Vec<Wad> {
+        fs::write(altar.file("small.wad"), b"a small wad").unwrap();
+        fs::write(altar.file("big.pk3"), vec![7u8; 200_000]).unwrap();
+        ["small.wad", "big.pk3"]
+            .map(|name| Wad::from_path(&altar.file(name)).unwrap())
+            .to_vec()
+    }
+
+    #[test]
+    fn a_joiner_downloads_exactly_what_the_host_serves() {
+        let (host, joiner) = (Altar::new("net-host"), Altar::new("net-joiner"));
+        let wads = host_wads(&host);
+        let port = free_port();
+        let manifest = Manifest::build(&wads, String::new()).unwrap();
+        let _server = manifest
+            .serve(port, wads.iter().map(|w| w.path.clone()).collect())
+            .unwrap();
+        let address = format!("127.0.0.1:{port}");
+
+        let fetched = Manifest::fetch(&address).unwrap();
+        let mut tally = Tally::default();
+        let downloads = joiner.file("downloads");
+        let got = download(&address, &fetched.entries, &downloads, &mut tally).unwrap();
+
+        for (got, sent) in got.iter().zip(&wads) {
+            assert_eq!(fs::read(&got.path).unwrap(), fs::read(&sent.path).unwrap());
+            assert_eq!(got.hash, sent.hash);
+        }
+        assert_eq!(
+            tally.files,
+            [("small.wad".into(), 11), ("big.pk3".into(), 200_000)]
+        );
+        assert_eq!(tally.bytes, 200_011);
+        // a profile made from the downloads is one the host's game accepts
+        assert!(fetched.is_compatible_with(&Profile::new("p".into(), got.clone())));
+
+        // joining again reuses what is already on disk
+        let again = download(
+            &address,
+            &fetched.entries,
+            &downloads,
+            &mut Tally::default(),
+        )
+        .unwrap();
+        assert_eq!(again, got);
+    }
+
+    #[test]
+    fn a_file_that_changes_after_hosting_starts_is_rejected_and_leaves_nothing_behind() {
+        let (host, joiner) = (
+            Altar::new("net-host-changed"),
+            Altar::new("net-joiner-changed"),
+        );
+        let wads = host_wads(&host);
+        let port = free_port();
+        let manifest = Manifest::build(&wads, String::new()).unwrap();
+        let _server = manifest
+            .serve(port, wads.iter().map(|w| w.path.clone()).collect())
+            .unwrap();
+        // same size, different bytes: only the hash can tell
+        fs::write(host.file("small.wad"), b"A SMALL WAD").unwrap();
+        let address = format!("127.0.0.1:{port}");
+        let fetched = Manifest::fetch(&address).unwrap();
+        let downloads = joiner.file("downloads");
+
+        let result = download(
+            &address,
+            &fetched.entries,
+            &downloads,
+            &mut Tally::default(),
+        );
+
+        assert!(matches!(result, Err(Error::Download(_))));
+        let folder = downloads.join(&wads[0].hash);
+        assert!(
+            fs::read_dir(&folder).unwrap().next().is_none(),
+            "no .part or wad left"
+        );
+    }
+
+    #[test]
+    fn an_unreachable_host_is_an_error_not_a_hang() {
+        let started = std::time::Instant::now();
+        assert!(Manifest::fetch(&format!("127.0.0.1:{}", free_port())).is_err());
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn the_port_comes_from_the_address_only_when_it_is_a_number() {
+        assert_eq!(base_url("10.0.0.2"), "http://10.0.0.2:8080");
+        assert_eq!(base_url("10.0.0.2:9000"), "http://10.0.0.2:9000");
+        assert_eq!(base_url("10.0.0.2:oops"), "http://10.0.0.2:8080");
     }
 }

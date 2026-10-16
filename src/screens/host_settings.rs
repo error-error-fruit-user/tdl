@@ -183,3 +183,20 @@ impl Index {
         };
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use insta::assert_snapshot;
+
+    use super::*;
+    use crate::testing;
+
+    #[test]
+    fn a_filled_in_form_with_the_map_in_focus() {
+        let mut form = HostSettingsForm::new();
+        form.settings.player_count = "4".into();
+        form.settings.map = "MAP07".into();
+        form.index = Index::Map;
+        assert_snapshot!(testing::draw(60, 14, |page| form.render(page)));
+    }
+}

@@ -35,7 +35,12 @@ impl Warning {
     /// Shows lines that carry their own styles. A line made of one span is still wrapped to fit;
     /// a line of several is shown as it is, so keep those short.
     pub fn summon_styled(grimoire: &mut Grimoire, lines: Vec<Line<'static>>) -> Result<()> {
-        Warning { lines }.invoke(grimoire)
+        Self::styled(lines).invoke(grimoire)
+    }
+
+    /// A warning of lines that carry their own styles, ready to be shown.
+    pub fn styled(lines: Vec<Line<'static>>) -> Self {
+        Warning { lines }
     }
 
     /// If any of `faults` stops the profile from running, says so and returns `true`. A changed
@@ -147,5 +152,21 @@ impl Ritual for Warning {
 
     fn prompt(&mut self, _: &mut Grimoire, _: KeyCode) -> Result<Phase<Self::Return>> {
         Ok(Phase::Return(()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use insta::assert_snapshot;
+
+    use super::*;
+    use crate::testing;
+
+    #[test]
+    fn a_short_warning() {
+        let mut warning = Warning::styled(vec![Line::raw(
+            "1 wad needs attention, open the editor (E)",
+        )]);
+        assert_snapshot!(testing::draw(70, 10, |page| warning.render(page)));
     }
 }

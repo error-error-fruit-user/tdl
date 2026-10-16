@@ -331,6 +331,36 @@ impl Details {
             .collect()
     }
 
+    /// The lines, made to fit `width`: a line that is too wide drops the parts of its note that
+    /// don't fit and ends in `…`, instead of being cut off mid-word.
+    pub fn lines_fitting(&self, width: u16) -> Vec<Line<'_>> {
+        self.lines()
+            .into_iter()
+            .map(|line| {
+                if line.width() <= width as usize {
+                    return line;
+                }
+                let ellipsis = Span::styled("…", Style::new().fg(theme::MUTED));
+                let mut spans = line.spans;
+                while spans.len() > 4
+                    && spans.iter().map(Span::width).sum::<usize>() + 1 > width as usize
+                {
+                    spans.pop();
+                }
+                // 🔪 a dangling ", " or "  " before the ellipsis says nothing, so it goes too
+                if spans.len() > 4
+                    && spans
+                        .last()
+                        .is_some_and(|s| s.content.trim().is_empty() || s.content == ", ")
+                {
+                    spans.pop();
+                }
+                spans.push(ellipsis);
+                Line::from(spans)
+            })
+            .collect()
+    }
+
     /// The space the lines need.
     pub fn size(&self) -> (u16, u16) {
         let width = self
@@ -451,5 +481,29 @@ mod tests {
         let (width, height) = details.size();
         assert_eq!(height, 4);
         assert_eq!(width, lines.iter().map(|l| l.width() as u16).max().unwrap());
+    }
+
+    #[test]
+    fn a_line_too_wide_drops_its_last_notes_and_says_so() {
+        let details = Details {
+            title: "broken",
+            title_color: theme::BAD,
+            lines: vec![Detail {
+                label: "wads",
+                state: State::Bad,
+                value: "4 wads".into(),
+                note: vec![
+                    ("4 broken".into(), State::Bad),
+                    ("1 volatile".into(), State::Volatile),
+                ],
+            }],
+        };
+        let full = details.lines()[0].to_string();
+        assert_eq!(full.trim_start(), "wads ■ 4 wads  4 broken, 1 volatile");
+        let fitted = details.lines_fitting(30)[0].to_string();
+        assert_eq!(fitted.trim_start(), "wads ■ 4 wads  4 broken…");
+        assert!(fitted.chars().count() <= 30);
+        // a line that fits is left alone
+        assert_eq!(details.lines_fitting(80)[0].to_string(), full);
     }
 }

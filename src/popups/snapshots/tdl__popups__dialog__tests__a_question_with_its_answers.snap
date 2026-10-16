@@ -1,0 +1,13 @@
+---
+source: src/popups/dialog.rs
+expression: "testing::draw(70, 12, |page| dialog.render(page))"
+---
+
+
+           ┌─────────────────[ dialogue ]─────────────────┐
+           │                                              │
+           │ Are you sure you want to delete 'sigil_run'? │
+           │                                              │
+           │                 [Y]es  [N]o                  │
+           │                                              │
+           └──────────────────────────────────────────────┘

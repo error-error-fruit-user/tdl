@@ -81,7 +81,14 @@ pub const POPUP_BORDER: BorderType = BorderType::Plain;
 pub const STATUS: &str = "■";
 /// The mark in front of a status line for something that isn't set.
 pub const UNSET: &str = "□";
-/// Wad list marks: broken, changed, volatile.
+/// The marks on list rows, drawn as solid badges so they stand out even under the cursor:
+/// broken, changed, volatile.
 pub const BROKEN_MARK: &str = "!";
 pub const CHANGED_MARK: &str = "~";
 pub const VOLATILE_MARK: &str = "*";
+pub const BROKEN_BADGE: Style = Style::new().fg(BONE).bg(BLOOD).add_modifier(Modifier::BOLD);
+pub const CHANGED_BADGE: Style = Style::new()
+    .fg(VOID)
+    .bg(HELLFIRE)
+    .add_modifier(Modifier::BOLD);
+pub const VOLATILE_BADGE: Style = Style::new().fg(VOID).bg(SOUL).add_modifier(Modifier::BOLD);

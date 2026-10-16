@@ -65,3 +65,17 @@ impl Ritual for JoinAddressForm {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use insta::assert_snapshot;
+
+    use super::*;
+    use crate::testing;
+
+    #[test]
+    fn an_empty_form_shows_what_goes_there() {
+        let mut form = JoinAddressForm::new();
+        assert_snapshot!(testing::draw(50, 10, |page| form.render(page)));
+    }
+}
