@@ -1,5 +1,6 @@
 use std::{
     ffi::OsString,
+    io,
     path::{Path, PathBuf},
 };
 
@@ -37,9 +38,9 @@ impl Config {
         directory.join(FILE)
     }
 
-    /// Writes the settings along with the current profile order. Panics if the disk write fails.
-    pub fn write(&mut self, directory: &Path, profiles: &[Profile]) {
+    /// Writes the settings along with the current profile order.
+    pub fn write(&mut self, directory: &Path, profiles: &[Profile]) -> io::Result<()> {
         self.profile_names = profiles.iter().map(|p| p.name.clone()).collect();
-        self.save(&Self::path(directory)).unwrap();
+        self.save(&Self::path(directory))
     }
 }

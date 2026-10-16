@@ -37,6 +37,8 @@ The macOS paths follow the `directories` crate's documentation and have not been
         └── <file name>         stored by the BLAKE3 hash of its contents
 ```
 
+If a file can't be read when tdl starts, it is renamed to `<file>.corrupt` (for example `brutal.rite.corrupt`) and left there for you to inspect. tdl never overwrites it.
+
 While a file is being written you may briefly see `<file>.tmp`, and a download in progress is `<file name>.part`. Both are deleted automatically if the write or download fails.
 
 ## What the files contain
@@ -70,10 +72,20 @@ All paths are the full paths on the machine that saved them, so a profile file c
 ## How the files are written
 
 - **Atomic saves.** A file is written to `<file>.tmp`, synced to disk, and only then renamed over the real file, so a crash leaves either the old file or the new one, never half of one.
+- **Safe ordering.** Adding, renaming and deleting a profile save the new profile file and the settings first. Only then are saves moved or old files deleted, so a failed save (a full disk, say) leaves the old profile and its saves exactly as they were.
 - **One backup.** Before a file is replaced, its previous version is copied to `<file>.bak`. Each save overwrites the previous `.bak`.
 - **Editions.** `version` is the edition number. When a file is older than the running tdl, tdl offers to upgrade it, checks the upgraded file by reading it back, and asks before deleting the original. A file from a newer tdl is never touched; tdl tells you and exits.
 - **Old folder name.** The profiles folder used to be called `profiles`. tdl renames it to `.profiles` on startup if the new one doesn't exist yet.
 - **Old files.** Before `.rite` files existed, tdl used `.doom` files. They are still read. After an upgrade the original `.doom` (or the old-format file's `.bak`) is deleted only if you say yes.
+
+## When a file is unreadable
+
+On startup tdl tells you what it found and what it did:
+
+- **A profile or the settings can't be read.** The bad file is renamed to `.corrupt`, and its `.bak` takes its place if that reads fine ("Restored 'brutal' from its backup"). Otherwise the profile is empty but keeps its name, so you can still see it and delete it ("'brutal' was unreadable, saved as .corrupt").
+- **The settings are lost with no usable backup.** The profile list is rebuilt from the files in `.profiles/`, in alphabetical order, so your profiles don't disappear.
+- **A profile's file is gone.** The profile is listed empty with a notice.
+- **A file from a newer tdl.** Nothing is changed, and tdl exits with a message.
 
 ## Restoring from a backup
 

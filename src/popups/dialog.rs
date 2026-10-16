@@ -87,6 +87,10 @@ impl Dialog<'_> {
         Self::summon(grimoire, "Upgraded! Delete the original files?")
     }
 
+    pub fn should_quit_unsaved(grimoire: &mut Grimoire) -> Result<bool> {
+        Self::summon(grimoire, "Your changes were not saved, quit anyway?")
+    }
+
     pub fn should_quit(grimoire: &mut Grimoire) -> Result<bool> {
         Self::summon(grimoire, "Are you sure you want to quit?")
     }

@@ -11,7 +11,7 @@ use crate::{
     error::Result,
     vault::{
         config::Config,
-        edition::Edition,
+        edition::{Edition, Loaded},
         profile::{Profile, SUBDIRECTORY},
     },
 };
@@ -26,33 +26,72 @@ pub struct Vault {
     pub data_dir: PathBuf,
     pub config: Config,
     pub profiles: Vec<Profile>,
+    /// Things that went wrong while loading and were dealt with, for the user to be told about
+    /// once. Nothing unreadable is ever overwritten: it is kept next to where it was as `.corrupt`.
+    pub notices: Vec<String>,
 }
 
 impl Vault {
-    /// Missing or corrupt profile files still yield a profile that keeps its name, so it can be
-    /// seen and deleted from the launcher. A `profiles` folder from before the dot is renamed first.
+    /// Loads everything, recovering from what it can. A profile whose file is unreadable falls back
+    /// to its `.bak`, or failing that to an empty profile that keeps its name, so it can still be
+    /// seen and deleted from the launcher. If the settings are lost, the profile list is rebuilt from
+    /// the files in the profiles folder. A `profiles` folder from before the dot is renamed first.
     pub fn new(config_dir: PathBuf, data_dir: PathBuf) -> Self {
         let profiles_dir = config_dir.join(SUBDIRECTORY);
         if !profiles_dir.exists() {
             let _ = std::fs::rename(config_dir.join("profiles"), &profiles_dir);
         }
-        let config = Config::open(&Config::path(&config_dir)).unwrap_or_default();
+        let mut notices = Vec::new();
+        let config = match Config::load(&Config::path(&config_dir)) {
+            Loaded::Fine(config) => config,
+            Loaded::Restored(config) => {
+                notices.push("Restored your settings from their backup".to_string());
+                config
+            }
+            Loaded::Lost => {
+                notices.push("Your settings were unreadable, saved as .corrupt".to_string());
+                let profile_names = names_on_disk(&profiles_dir);
+                if !profile_names.is_empty() {
+                    notices.push("Profile list rebuilt from the files on disk".to_string());
+                }
+                Config {
+                    profile_names,
+                    ..Config::default()
+                }
+            }
+            Loaded::Missing | Loaded::TooNew => Config::default(),
+        };
         let profiles = config
             .profile_names
             .iter()
             .map(|name| {
-                let mut profile =
-                    Profile::open(&Profile::path(&config_dir, name)).unwrap_or_default();
+                let mut profile = match Profile::load(&Profile::path(&config_dir, name)) {
+                    Loaded::Fine(profile) => profile,
+                    Loaded::Restored(profile) => {
+                        notices.push(format!("Restored '{name}' from its backup"));
+                        profile
+                    }
+                    Loaded::Lost => {
+                        notices.push(format!("'{name}' was unreadable, saved as .corrupt"));
+                        Profile::default()
+                    }
+                    Loaded::Missing => {
+                        notices.push(format!("'{name}' has no file, starting empty"));
+                        Profile::default()
+                    }
+                    Loaded::TooNew => Profile::default(),
+                };
                 profile.name = name.clone();
                 profile
             })
             .collect();
-        std::fs::create_dir_all(&profiles_dir).unwrap();
+        let _ = std::fs::create_dir_all(&profiles_dir);
         Self {
             config_dir,
             data_dir,
             config,
             profiles,
+            notices,
         }
     }
 
@@ -102,35 +141,78 @@ impl Vault {
     }
 
     /// Inserts at `index`; if that was the last row, moves `index` down so the `+` row stays last.
-    pub fn insert(&mut self, index: &mut usize, profile: Profile) {
-        profile.write(&self.config_dir, &self.data_dir);
+    ///
+    /// If the settings can't be saved the profile is taken back out of the list, so what is on
+    /// screen always matches what is on disk. (Its file is left behind, harmlessly.)
+    pub fn insert(&mut self, index: &mut usize, profile: Profile) -> Result<()> {
+        profile.write(&self.config_dir, &self.data_dir)?;
         self.profiles.insert(*index, profile);
-        self.config.write(&self.config_dir, &self.profiles);
+        if let Err(error) = self.config.write(&self.config_dir, &self.profiles) {
+            self.profiles.remove(*index);
+            return Err(error.into());
+        }
         if *index == self.profiles.len() - 1 {
             *index += 1;
         }
+        Ok(())
     }
 
     /// Overwrites the profile at `index`, moving its saves if it was renamed.
-    pub fn replace(&mut self, index: usize, profile: Profile) {
-        let old = &self.profiles[index];
+    ///
+    /// The order matters: the new file is written first, then the settings, and only then are the
+    /// old saves moved and the old file deleted. A failure at any point leaves the old profile whole.
+    pub fn replace(&mut self, index: usize, profile: Profile) -> Result<()> {
+        profile.save(&Profile::path(&self.config_dir, &profile.name))?;
+        let old = std::mem::replace(&mut self.profiles[index], profile);
+        if let Err(error) = self.config.write(&self.config_dir, &self.profiles) {
+            self.profiles[index] = old;
+            return Err(error.into());
+        }
+        let profile = &self.profiles[index];
         if old.name != profile.name {
             old.rename(&profile.name, &self.config_dir, &self.data_dir);
         }
-        profile.write(&self.config_dir, &self.data_dir);
-        self.profiles[index] = profile;
-        self.config.write(&self.config_dir, &self.profiles);
+        Ok(profile.create_saves_dir(&self.data_dir)?)
     }
 
     /// Deletes the profile and its saves, then keeps `index` in range.
-    pub fn remove(&mut self, index: &mut usize) {
-        self.profiles[*index].remove(&self.config_dir, &self.data_dir);
-        self.profiles.remove(*index);
-        self.config.write(&self.config_dir, &self.profiles);
+    ///
+    /// The settings stop listing it first, and its files are only deleted once that has been saved.
+    pub fn remove(&mut self, index: &mut usize) -> Result<()> {
+        // 🪦 the list forgets first, and only then does the profile get buried
+        let removed = self.profiles.remove(*index);
+        if let Err(error) = self.config.write(&self.config_dir, &self.profiles) {
+            self.profiles.insert(*index, removed);
+            return Err(error.into());
+        }
+        removed.remove(&self.config_dir, &self.data_dir);
         if *index == self.profiles.len() && *index != 0 {
             *index -= 1;
         }
+        Ok(())
     }
+}
+
+/// The profile names that have a file in `dir`, in alphabetical order. Backups and other leftovers
+/// have different extensions, so they are not counted.
+fn names_on_disk(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<_> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let extension = path.extension()?.to_str()?;
+            let stem = path.file_stem()?.to_str()?;
+            let valid =
+                !stem.is_empty() && stem.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
+            (valid && [scribe::EXTENSION, scribe::OLD_EXTENSION].contains(&extension))
+                .then(|| stem.to_string())
+        })
+        .collect();
+    names.sort();
+    names.dedup();
+    names
 }
 
 #[cfg(test)]
@@ -183,6 +265,7 @@ mod tests {
         assert_eq!(vault.config.uzdoom, Some("/usr/bin/uzdoom".into()));
         assert!(vault.is_outdated());
         assert!(!vault.is_too_new());
+        assert!(vault.notices.is_empty());
         // the old folder was renamed, not copied
         assert!(altar.file("config/.profiles").is_dir());
         assert!(!altar.file("config/profiles").exists());
@@ -246,5 +329,240 @@ mod tests {
         let vault = vault(&altar);
         assert!(!vault.is_outdated());
         assert!(!vault.is_too_new());
+    }
+
+    /// Upgrades the legacy layout, so there is a `.rite` and a `.bak` to break.
+    fn upgraded_altar(name: &str) -> (Altar, Profile) {
+        let (altar, profile) = legacy_altar(name);
+        vault(&altar).upgrade().unwrap();
+        (altar, profile)
+    }
+
+    #[test]
+    fn a_corrupt_profile_is_restored_from_its_backup_and_the_user_is_told() {
+        let (altar, profile) = upgraded_altar("vault-restore");
+        let path = altar.file("config/.profiles/brutal.rite");
+        fs::write(&path, b"not a profile").unwrap();
+        let vault = vault(&altar);
+        assert_eq!(vault.profiles, [profile]);
+        assert_eq!(vault.notices, ["Restored 'brutal' from its backup"]);
+        assert_eq!(
+            fs::read(altar.file("config/.profiles/brutal.rite.corrupt")).unwrap(),
+            b"not a profile"
+        );
+    }
+
+    #[test]
+    fn a_corrupt_profile_without_a_backup_is_empty_but_keeps_its_name_and_its_bytes() {
+        let (altar, _) = upgraded_altar("vault-lost");
+        let path = altar.file("config/.profiles/brutal.rite");
+        fs::remove_file(altar.file("config/.profiles/brutal.rite.bak")).unwrap();
+        fs::write(&path, b"not a profile").unwrap();
+        let vault = vault(&altar);
+        assert_eq!(vault.profiles.len(), 1);
+        assert_eq!(vault.profiles[0].name, "brutal");
+        assert!(vault.profiles[0].wads.is_empty());
+        assert_eq!(
+            vault.notices,
+            ["'brutal' was unreadable, saved as .corrupt"]
+        );
+
+        // saving the empty profile must not touch the unreadable original
+        vault.profiles[0]
+            .write(&vault.config_dir, &vault.data_dir)
+            .unwrap();
+        assert_eq!(
+            fs::read(altar.file("config/.profiles/brutal.rite.corrupt")).unwrap(),
+            b"not a profile"
+        );
+    }
+
+    #[test]
+    fn a_profile_with_no_file_is_reported_and_starts_empty() {
+        let (altar, _) = upgraded_altar("vault-missing");
+        burn_profile(&altar);
+        let vault = vault(&altar);
+        assert_eq!(vault.profiles[0].name, "brutal");
+        assert_eq!(vault.notices, ["'brutal' has no file, starting empty"]);
+    }
+
+    #[test]
+    fn lost_settings_are_set_aside_and_the_profile_list_is_rebuilt_from_the_files() {
+        let (altar, profile) = upgraded_altar("vault-config-lost");
+        fs::remove_file(altar.file("config/config.rite.bak")).unwrap();
+        fs::write(altar.file("config/config.rite"), b"not settings").unwrap();
+        let vault = vault(&altar);
+        assert_eq!(vault.profiles, [profile]);
+        assert_eq!(vault.config.uzdoom, None);
+        assert_eq!(
+            vault.notices,
+            [
+                "Your settings were unreadable, saved as .corrupt",
+                "Profile list rebuilt from the files on disk"
+            ]
+        );
+        assert_eq!(
+            fs::read(altar.file("config/config.rite.corrupt")).unwrap(),
+            b"not settings"
+        );
+    }
+
+    #[test]
+    fn only_real_profile_files_count_when_rebuilding_the_list() {
+        let altar = Altar::new("vault-names");
+        let dir = altar.file(".profiles");
+        fs::create_dir_all(&dir).unwrap();
+        for name in [
+            "b.rite",
+            "a.rite",
+            "a.rite.bak",
+            "c.rite.corrupt",
+            "d.rite.tmp",
+            "e.doom",
+            "e.rite",
+            "bad name.rite",
+            "notes.txt",
+        ] {
+            fs::write(dir.join(name), b"x").unwrap();
+        }
+        assert_eq!(names_on_disk(&dir), ["a", "b", "e"]);
+        assert!(names_on_disk(&altar.file("nowhere")).is_empty());
+    }
+
+    fn burn_profile(altar: &Altar) {
+        scribe::burn(&altar.file("config/.profiles/brutal.rite"));
+    }
+
+    /// Makes a folder read-only until dropped, so writes into it fail. `None` where that can't be
+    /// done (not unix, or running as root, who is allowed to write anywhere).
+    #[cfg(unix)]
+    struct Frozen(PathBuf);
+
+    #[cfg(unix)]
+    impl Frozen {
+        fn new(dir: PathBuf) -> Option<Self> {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).unwrap();
+            let frozen = Self(dir);
+            // 🧊 if even a frozen folder lets us write, nothing here can fail, so skip
+            let probe = frozen.0.join(".probe");
+            match fs::write(&probe, b"") {
+                Ok(()) => {
+                    let _ = fs::remove_file(probe);
+                    None
+                }
+                Err(_) => Some(frozen),
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for Frozen {
+        fn drop(&mut self) {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
+        }
+    }
+
+    fn named(name: &str) -> Profile {
+        Profile {
+            name: name.into(),
+            ..Profile::default()
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_insert_leaves_the_list_and_the_disk_alone() {
+        let (altar, profile) = upgraded_altar("vault-insert-fails");
+        let mut vault = vault(&altar);
+        let Some(_frozen) = Frozen::new(altar.file("config/.profiles")) else {
+            return;
+        };
+        let mut index = 0;
+        assert!(vault.insert(&mut index, named("new")).is_err());
+        assert_eq!(vault.profiles, [profile]);
+        assert_eq!(index, 0);
+        assert!(!altar.file("config/.profiles/new.rite").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_insert_whose_settings_cannot_be_saved_is_taken_back() {
+        let (altar, profile) = upgraded_altar("vault-insert-config-fails");
+        let mut vault = vault(&altar);
+        let Some(_frozen) = Frozen::new(altar.file("config")) else {
+            return;
+        };
+        let mut index = 0;
+        assert!(vault.insert(&mut index, named("new")).is_err());
+        assert_eq!(vault.profiles, [profile]);
+        assert_eq!(index, 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_remove_deletes_nothing() {
+        let (altar, profile) = upgraded_altar("vault-remove-fails");
+        let mut vault = vault(&altar);
+        profile.write(&vault.config_dir, &vault.data_dir).unwrap();
+        fs::write(altar.file("data/brutal/saves/slot1"), b"my save").unwrap();
+        let Some(_frozen) = Frozen::new(altar.file("config")) else {
+            return;
+        };
+        let mut index = 0;
+        assert!(vault.remove(&mut index).is_err());
+        assert_eq!(vault.profiles, [profile]);
+        assert!(altar.file("config/.profiles/brutal.rite").exists());
+        assert_eq!(
+            fs::read(altar.file("data/brutal/saves/slot1")).unwrap(),
+            b"my save"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_rename_leaves_the_old_profile_and_its_saves_in_place() {
+        let (altar, profile) = upgraded_altar("vault-rename-fails");
+        let mut vault = vault(&altar);
+        profile.write(&vault.config_dir, &vault.data_dir).unwrap();
+        fs::write(altar.file("data/brutal/saves/slot1"), b"my save").unwrap();
+        let Some(_frozen) = Frozen::new(altar.file("config")) else {
+            return;
+        };
+        let renamed = Profile {
+            name: "renamed".into(),
+            ..profile.clone()
+        };
+        assert!(vault.replace(0, renamed).is_err());
+        assert_eq!(vault.profiles, [profile]);
+        assert!(altar.file("config/.profiles/brutal.rite").exists());
+        assert_eq!(
+            fs::read(altar.file("data/brutal/saves/slot1")).unwrap(),
+            b"my save"
+        );
+    }
+
+    #[test]
+    fn renaming_moves_the_saves_and_retires_the_old_file() {
+        let (altar, profile) = upgraded_altar("vault-rename");
+        let mut vault = vault(&altar);
+        profile.write(&vault.config_dir, &vault.data_dir).unwrap();
+        fs::write(altar.file("data/brutal/saves/slot1"), b"my save").unwrap();
+        let renamed = Profile {
+            name: "renamed".into(),
+            ..profile
+        };
+        vault.replace(0, renamed.clone()).unwrap();
+        assert_eq!(vault.profiles, std::slice::from_ref(&renamed));
+        assert!(!altar.file("config/.profiles/brutal.rite").exists());
+        assert!(altar.file("config/.profiles/renamed.rite").exists());
+        assert!(!altar.file("data/brutal").exists());
+        assert_eq!(
+            fs::read(altar.file("data/renamed/saves/slot1")).unwrap(),
+            b"my save"
+        );
+        // and it survives a restart
+        assert_eq!(self::vault(&altar).profiles, [renamed]);
     }
 }

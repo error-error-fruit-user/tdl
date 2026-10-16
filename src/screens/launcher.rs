@@ -13,6 +13,7 @@ use crate::{
     popups::dialog::Dialog,
     popups::legend::Legend,
     popups::resize,
+    popups::status,
     popups::warning::Warning,
     ritual::{self, Grimoire, Haunted, Page, Phase, Ritual},
     screens::editor::Editor,
@@ -96,10 +97,16 @@ impl Ritual for Launcher {
             Warning::files_too_new(grimoire)?;
             return Err(Error::Exit);
         }
+        // 📜 anything that was fished out of the wreckage on the way in
+        for notice in std::mem::take(&mut self.vault.notices) {
+            Warning::summon(grimoire, &notice)?;
+        }
         if self.vault.is_outdated() {
             if !Dialog::should_upgrade(grimoire)? {
                 return Err(Error::Exit);
             }
+            // ⏳ checking every page takes a moment, so don't leave the old dialog hanging there
+            status::summon(grimoire, "Upgrading", "Upgrading...", Self::BORDER_COLOR)?;
             let Ok(upgraded) = self.vault.upgrade() else {
                 Warning::upgrade_failed(grimoire)?;
                 return Err(Error::Exit);
@@ -167,8 +174,10 @@ impl Ritual for Launcher {
                         Ok(Phase::Render)
                     }
                 } else {
-                    if let Some(profile) = Editor::summon_blank(grimoire, &self.vault.profiles)? {
-                        self.vault.insert(index, profile);
+                    if let Some(profile) = Editor::summon_blank(grimoire, &self.vault.profiles)?
+                        && self.vault.insert(index, profile).is_err()
+                    {
+                        Warning::save_failed(grimoire)?;
                     }
                     Ok(Phase::Render)
                 }
@@ -237,8 +246,10 @@ impl Ritual for Launcher {
                 }
             }
             KeyCode::Char('a') => {
-                if let Some(profile) = Editor::summon_blank(grimoire, &self.vault.profiles)? {
-                    self.vault.insert(index, profile);
+                if let Some(profile) = Editor::summon_blank(grimoire, &self.vault.profiles)?
+                    && self.vault.insert(index, profile).is_err()
+                {
+                    Warning::save_failed(grimoire)?;
                 }
                 Ok(Phase::Render)
             }
@@ -252,8 +263,10 @@ impl Ritual for Launcher {
             }
             KeyCode::Char('d') => {
                 if *index != self.vault.profiles.len() {
-                    if Dialog::should_delete(grimoire, &self.vault.profiles[*index].name)? {
-                        self.vault.remove(index);
+                    if Dialog::should_delete(grimoire, &self.vault.profiles[*index].name)?
+                        && self.vault.remove(index).is_err()
+                    {
+                        Warning::save_failed(grimoire)?;
                     }
                     Ok(Phase::Render)
                 } else {
@@ -281,10 +294,17 @@ impl Ritual for Launcher {
             }
             KeyCode::Esc => {
                 if Dialog::should_quit(grimoire)? {
-                    self.vault
+                    let saved = self
+                        .vault
                         .config
-                        .write(&self.vault.config_dir, &self.vault.profiles);
-                    Ok(Phase::Return(()))
+                        .write(&self.vault.config_dir, &self.vault.profiles)
+                        .is_ok();
+                    // 💾 if the last save failed, leaving is the user's call, not ours
+                    if saved || Dialog::should_quit_unsaved(grimoire)? {
+                        Ok(Phase::Return(()))
+                    } else {
+                        Ok(Phase::Render)
+                    }
                 } else {
                     Ok(Phase::Render)
                 }

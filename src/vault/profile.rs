@@ -1,5 +1,6 @@
 use std::{
     ffi::OsString,
+    io,
     path::{Path, PathBuf},
 };
 
@@ -64,11 +65,15 @@ impl Profile {
             .join(format!("{name}.{}", scribe::EXTENSION))
     }
 
-    /// Writes the profile file and makes sure its `saves` folder exists. Panics if the disk write fails.
-    pub fn write(&self, config_dir: &Path, data_dir: &Path) {
-        self.save(&Self::path(config_dir, &self.name)).unwrap();
-        let subdir = data_dir.join(&self.name);
-        std::fs::create_dir_all(subdir.join("saves")).unwrap();
+    /// Writes the profile file and makes sure its `saves` folder exists.
+    pub fn write(&self, config_dir: &Path, data_dir: &Path) -> io::Result<()> {
+        self.save(&Self::path(config_dir, &self.name))?;
+        self.create_saves_dir(data_dir)
+    }
+
+    /// UZDoom's save games for this profile live here.
+    pub fn create_saves_dir(&self, data_dir: &Path) -> io::Result<()> {
+        std::fs::create_dir_all(data_dir.join(&self.name).join("saves"))
     }
 
     /// Does nothing for an empty name, which would otherwise resolve to the whole data directory.

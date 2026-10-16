@@ -101,6 +101,9 @@ fn download_profile(
         return Ok(None);
     };
     let profile = Profile::new(profile_name, wads);
-    vault.insert(index, profile.clone());
+    if vault.insert(index, profile.clone()).is_err() {
+        Warning::save_failed(grimoire)?;
+        return Ok(None);
+    }
     Ok(Some(profile))
 }

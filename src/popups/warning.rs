@@ -58,6 +58,10 @@ impl Warning<'_> {
         Self::summon(grimoire, "Could not start the host server!")
     }
 
+    pub fn save_failed(grimoire: &mut Grimoire) -> Result<()> {
+        Self::summon(grimoire, "Could not save, is the disk full?")
+    }
+
     pub fn files_too_new(grimoire: &mut Grimoire) -> Result<()> {
         Self::summon(grimoire, "Files are from a newer version, please update!")
     }

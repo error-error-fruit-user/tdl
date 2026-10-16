@@ -35,6 +35,22 @@ struct Sealed<D> {
     data: D,
 }
 
+/// What loading a file turned up. Nothing here ever deletes anything: a file that can't be read is
+/// moved aside, never overwritten.
+#[derive(Debug, PartialEq)]
+pub enum Loaded<T> {
+    /// Read normally and upgraded in memory to the current edition.
+    Fine(T),
+    /// There is no file, as on a first run.
+    Missing,
+    /// Saved by a newer tdl. Left exactly as it is.
+    TooNew,
+    /// The file was unreadable, so it was moved aside to `.corrupt` and its `.bak` put in its place.
+    Restored(T),
+    /// The file was unreadable and there was no usable backup. It was moved aside to `.corrupt`.
+    Lost,
+}
+
 pub trait Edition: Serialize + DeserializeOwned + PartialEq + Sized + 'static {
     /// One function per breaking change. Entry `n` turns edition `n` into edition `n + 1`.
     /// Edition 0 is how files were saved before editions existed: bare positional arrays.
@@ -75,11 +91,41 @@ pub trait Edition: Serialize + DeserializeOwned + PartialEq + Sized + 'static {
         if version > Self::current() {
             return None;
         }
-        Some(
-            Self::UPGRADES[version as usize..]
-                .iter()
-                .fold(data?, |data, upgrade| upgrade(data)),
-        )
+        Some(Self::upgraded(version, data?))
+    }
+
+    /// Runs every upgrade from `version` up to the current edition.
+    fn upgraded(version: u32, data: Self) -> Self {
+        Self::UPGRADES[version as usize..]
+            .iter()
+            .fold(data, |data, upgrade| upgrade(data))
+    }
+
+    /// Like [`Edition::open`], but says what went wrong and deals with it safely: an unreadable
+    /// file is moved aside to `.corrupt` (so a later save can't overwrite it) and its `.bak`, if
+    /// that reads, takes its place.
+    fn load(path: &Path) -> Loaded<Self> {
+        match Self::read(path) {
+            Some((version, _)) if version > Self::current() => return Loaded::TooNew,
+            Some((version, Some(data))) => return Loaded::Fine(Self::upgraded(version, data)),
+            _ => {}
+        }
+        // 📭 nothing to read, or something there that couldn't be read?
+        let old_path = path.with_extension(scribe::OLD_EXTENSION);
+        let Some(bad) = [path, &old_path].into_iter().find(|p| p.exists()) else {
+            return Loaded::Missing;
+        };
+        // 🪦 here lies a file nobody could read: rest in .corrupt
+        let _ = fs::rename(bad, scribe::suffixed(bad, ".corrupt"));
+        let backup = scribe::suffixed(path, ".bak");
+        match Self::open(&backup) {
+            Some(data) => {
+                // 🧟 rise from your .bak
+                let _ = fs::copy(&backup, path);
+                Loaded::Restored(data)
+            }
+            None => Loaded::Lost,
+        }
     }
 
     /// Writes the data as the current edition.
@@ -243,6 +289,110 @@ mod tests {
         fs::write(&path, bytes).unwrap();
         assert_eq!(Note::stored_version(&path), Some(7));
         assert_eq!(Note::open(&path), None);
+    }
+
+    /// A file that is a valid wrapper at the current edition, but whose data is not a `Note`.
+    fn gibberish() -> Vec<u8> {
+        #[derive(Serialize)]
+        struct Wrong {
+            version: u32,
+            data: Vec<u8>,
+        }
+        let version = Note::current();
+        rmp_serde::to_vec_named(&Wrong {
+            version,
+            data: vec![1, 2, 3],
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn loading_a_good_file_is_fine_and_touches_nothing() {
+        let altar = Altar::new("load-fine");
+        let path = altar.file("a.rite");
+        note("hi").save(&path).unwrap();
+        assert_eq!(Note::load(&path), Loaded::Fine(note("hi")));
+        assert_eq!(fs::read_dir(&altar.0).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn loading_an_old_file_upgrades_it_in_memory_only() {
+        let altar = Altar::new("load-old");
+        let original = legacy(&note("hi"));
+        fs::write(altar.file("a.doom"), &original).unwrap();
+        assert_eq!(
+            Note::load(&altar.file("a.rite")),
+            Loaded::Fine(note("hi!?"))
+        );
+        assert_eq!(fs::read(altar.file("a.doom")).unwrap(), original);
+    }
+
+    #[test]
+    fn loading_nothing_is_missing_and_creates_nothing() {
+        let altar = Altar::new("load-missing");
+        assert_eq!(Note::load(&altar.file("a.rite")), Loaded::Missing);
+        assert_eq!(fs::read_dir(&altar.0).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn loading_a_newer_file_leaves_it_alone() {
+        let altar = Altar::new("load-newer");
+        let path = altar.file("a.rite");
+        let sealed = Sealed {
+            version: 99,
+            data: note("from the future"),
+        };
+        let bytes = rmp_serde::to_vec_named(&sealed).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        assert_eq!(Note::load(&path), Loaded::TooNew);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        assert!(!altar.file("a.rite.corrupt").exists());
+    }
+
+    #[test]
+    fn a_corrupt_file_is_moved_aside_and_the_backup_takes_its_place() {
+        let altar = Altar::new("load-restore");
+        let path = altar.file("a.rite");
+        note("good").save(&path).unwrap();
+        note("newer").save(&path).unwrap(); // "good" is now the backup
+        fs::write(&path, b"this is not msgpack").unwrap();
+        assert_eq!(Note::load(&path), Loaded::Restored(note("good")));
+        assert_eq!(
+            fs::read(altar.file("a.rite.corrupt")).unwrap(),
+            b"this is not msgpack"
+        );
+        // the restored file is a real, loadable file again
+        assert_eq!(Note::load(&path), Loaded::Fine(note("good")));
+    }
+
+    #[test]
+    fn a_corrupt_file_with_no_backup_is_lost_but_kept() {
+        let altar = Altar::new("load-lost");
+        let path = altar.file("a.rite");
+        fs::write(&path, gibberish()).unwrap();
+        assert_eq!(Note::load(&path), Loaded::Lost);
+        assert_eq!(fs::read(altar.file("a.rite.corrupt")).unwrap(), gibberish());
+        assert!(!path.exists());
+        // nothing is left to overwrite, and the next load is a clean first run
+        assert_eq!(Note::load(&path), Loaded::Missing);
+    }
+
+    #[test]
+    fn a_corrupt_backup_is_not_trusted() {
+        let altar = Altar::new("load-bad-backup");
+        let path = altar.file("a.rite");
+        fs::write(&path, b"garbage").unwrap();
+        fs::write(altar.file("a.rite.bak"), b"also garbage").unwrap();
+        assert_eq!(Note::load(&path), Loaded::Lost);
+        assert_eq!(fs::read(altar.file("a.rite.corrupt")).unwrap(), b"garbage");
+    }
+
+    #[test]
+    fn a_corrupt_old_extension_file_is_moved_aside_too() {
+        let altar = Altar::new("load-old-corrupt");
+        fs::write(altar.file("a.doom"), b"garbage").unwrap();
+        assert_eq!(Note::load(&altar.file("a.rite")), Loaded::Lost);
+        assert_eq!(fs::read(altar.file("a.doom.corrupt")).unwrap(), b"garbage");
     }
 
     #[test]

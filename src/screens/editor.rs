@@ -66,8 +66,10 @@ impl<'a> Editor<'a> {
 
     /// Edits `vault.profiles[index]` and saves the result. Cancelling keeps the original.
     pub fn summon_existing(grimoire: &mut Grimoire, vault: &mut Vault, index: usize) -> Result<()> {
-        if let Some(profile) = Editor::edit(&vault.profiles, index).invoke(grimoire)? {
-            vault.replace(index, profile);
+        if let Some(profile) = Editor::edit(&vault.profiles, index).invoke(grimoire)?
+            && vault.replace(index, profile).is_err()
+        {
+            Warning::save_failed(grimoire)?;
         }
         Ok(())
     }
