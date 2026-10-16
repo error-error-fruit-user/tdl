@@ -2,6 +2,7 @@
 name = "tdl"
 version = "0.5.0"
 edition = "2024"
+license = "0BSD"
 
 [dependencies]
 blake3 = "1.8.7"
