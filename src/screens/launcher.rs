@@ -131,22 +131,22 @@ pub struct Start {
     pub command: Option<Command>,
 }
 
-/// `path` as an absolute path, so a folder kept from `tdl --wads .` still means the same folder
+/// `path` as an absolute path, so a dir kept from `tdl --wads .` still means the same dir
 /// when tdl is started from somewhere else.
 fn absolute(path: &str) -> PathBuf {
     std::path::absolute(path).unwrap_or_else(|_| PathBuf::from(path))
 }
 
-/// The wad folders to use when none are passed: the vault's own, then the global ones, each once.
-fn remembered_folders(vault: &[OsString], global: &[OsString]) -> Vec<PathBuf> {
-    let mut folders: Vec<PathBuf> = Vec::new();
-    for folder in vault.iter().chain(global) {
-        let folder = PathBuf::from(folder);
-        if !folders.contains(&folder) {
-            folders.push(folder);
+/// The wad dirs to use when none are passed: the vault's own, then the global ones, each once.
+fn remembered_dirs(vault: &[OsString], global: &[OsString]) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for dir in vault.iter().chain(global) {
+        let dir = PathBuf::from(dir);
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
         }
     }
-    folders
+    dirs
 }
 
 impl Launcher {
@@ -177,10 +177,10 @@ impl Launcher {
         ["Esc", "Save and Quit (unselects first)"],
     ];
 
-    /// Opens the vault: `<vault>/{config,data}` when one is passed, the standard folders when
+    /// Opens the vault: `<vault>/{config,data}` when one is passed, the standard dirs when
     /// asked to forget the kept one, otherwise the one kept in the global settings if it still
-    /// exists, otherwise the standard folders (`standard_config_dir`
-    /// and `standard_data_dir`, which also hold `global.rite`). The wad folders are the passed
+    /// exists, otherwise the standard dirs (`standard_config_dir`
+    /// and `standard_data_dir`, which also hold `global.rite`). The wad dirs are the passed
     /// ones, or else the ones kept for this vault and then the global ones.
     pub fn new(start: Start, standard_config_dir: &Path, standard_data_dir: &Path) -> Self {
         let global_path = Global::path(standard_config_dir);
@@ -222,9 +222,9 @@ impl Launcher {
         };
         let mut vault = Vault::new(config_dir, data_dir);
         vault.notices.extend(notices);
-        let passed_wads: Vec<_> = start.wads.iter().map(|folder| absolute(folder)).collect();
-        vault.wad_folders = if passed_wads.is_empty() {
-            remembered_folders(&vault.config.wad_folders, &global.wad_folders)
+        let passed_wads: Vec<_> = start.wads.iter().map(|dir| absolute(dir)).collect();
+        vault.wad_dirs = if passed_wads.is_empty() {
+            remembered_dirs(&vault.config.wad_dirs, &global.wad_dirs)
         } else {
             passed_wads.clone()
         };
@@ -348,7 +348,7 @@ impl Launcher {
                 )?,
             }
         }
-        picker::set_wad_folders(&self.vault.wad_folders);
+        picker::set_wad_dirs(&self.vault.wad_dirs);
         if let Some(scroll) = self.passed_scroll.take() {
             // 📜 the new profile goes last, and the cursor lands on it
             let before = self.vault.profiles.len();
@@ -377,7 +377,7 @@ impl Launcher {
             .take()
             .ok_or("--headless needs host or join")?;
         let vault = &mut launcher.vault;
-        vault.wad_folders.retain(|folder| folder.is_dir());
+        vault.wad_dirs.retain(|dir| dir.is_dir());
         if let Some(uzdoom) = launcher.session_uzdoom.take() {
             vault.config.session_uzdoom = Some(uzdoom.into_os_string());
         }
@@ -409,7 +409,7 @@ impl Launcher {
 
     /// The launcher for a run with no windows, with the vault checked as fine to use: notices are
     /// printed, and files from another edition of tdl are an error. Also gives the standard config
-    /// folder, to tell the standard vault from one of the user's own.
+    /// dir, to tell the standard vault from one of the user's own.
     fn open_plain(start: Start) -> std::result::Result<(Self, PathBuf), String> {
         let project_dirs = ProjectDirs::from("error.error.fruit", "eef", "tdl")
             .ok_or("Could not find the home directory")?;
@@ -441,7 +441,7 @@ impl Launcher {
         if !seal.delete {
             return Ok(());
         }
-        // 🗂️ a vault of the user's own has a folder around its config and data, which goes too
+        // 🗂️ a vault of the user's own has a dir around its config and data, which goes too
         let root = (vault.config_dir != standard_config_dir)
             .then(|| vault.config_dir.parent().map(Path::to_path_buf))
             .flatten();
@@ -564,24 +564,24 @@ impl Launcher {
     }
 
     /// The startup questions about what was passed on the command line: whether to open the
-    /// passed vault every time, and whether to keep the passed wad folders for this session,
-    /// globally, or for this vault. Folders that don't exist are dropped first, with a warning.
+    /// passed vault every time, and whether to keep the passed wad dirs for this session,
+    /// globally, or for this vault. Dirs that don't exist are dropped first, with a warning.
     fn offer_to_keep(&mut self, grimoire: &mut Grimoire) -> Result<()> {
         let missing: Vec<_> = self
             .passed_wads
             .iter()
-            .filter(|folder| !folder.is_dir())
-            .map(|folder| folder.display().to_string())
+            .filter(|dir| !dir.is_dir())
+            .map(|dir| dir.display().to_string())
             .collect();
         if !missing.is_empty() {
             Warning::summon(
                 grimoire,
-                &format!("Not a folder, so left out: {}", missing.join(", ")),
+                &format!("Not a dir, so left out: {}", missing.join(", ")),
             )?;
-            self.passed_wads.retain(|folder| folder.is_dir());
-            // 📂 none of them left: the kept folders are better than none
-            self.vault.wad_folders = if self.passed_wads.is_empty() {
-                remembered_folders(&self.vault.config.wad_folders, &self.global.wad_folders)
+            self.passed_wads.retain(|dir| dir.is_dir());
+            // 📂 none of them left: the kept dirs are better than none
+            self.vault.wad_dirs = if self.passed_wads.is_empty() {
+                remembered_dirs(&self.vault.config.wad_dirs, &self.global.wad_dirs)
             } else {
                 self.passed_wads.clone()
             };
@@ -622,31 +622,30 @@ impl Launcher {
         let passed: Vec<OsString> = self
             .passed_wads
             .iter()
-            .map(|folder| folder.clone().into_os_string())
+            .map(|dir| dir.clone().into_os_string())
             .collect();
-        let remembered =
-            remembered_folders(&self.vault.config.wad_folders, &self.global.wad_folders);
+        let remembered = remembered_dirs(&self.vault.config.wad_dirs, &self.global.wad_dirs);
         if passed.is_empty() || self.passed_wads == remembered {
             return Ok(());
         }
         let list = self
             .passed_wads
             .iter()
-            .map(|folder| folder.display().to_string())
+            .map(|dir| dir.display().to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        let question = format!("Keep the wad folders {list}?");
+        let question = format!("Keep the wad dirs {list}?");
         let options = ["Session", "Global", "Vault"];
         match ThreeWayDialog::summon(grimoire, &question, options)? {
             Some(1) if self.global_writable => {
-                self.global.wad_folders = passed;
+                self.global.wad_dirs = passed;
                 if self.global.keep(&self.global_path).is_err() {
                     Warning::save_failed(grimoire)?;
                 }
             }
             Some(1) => Warning::summon(grimoire, "The global settings are from a newer tdl")?,
             Some(2) => {
-                self.vault.config.wad_folders = passed;
+                self.vault.config.wad_dirs = passed;
                 if self
                     .vault
                     .config
@@ -1663,38 +1662,38 @@ mod tests {
     // 🚪 what the command line opens, and what is kept from it
 
     #[test]
-    fn kept_folders_are_the_vaults_then_the_global_ones_each_once() {
-        let folders = remembered_folders(
+    fn kept_dirs_are_the_vaults_then_the_global_ones_each_once() {
+        let dirs = remembered_dirs(
             &["/v1".into(), "/both".into()],
             &["/both".into(), "/g1".into()],
         );
-        let folders: Vec<_> = folders.iter().map(|f| f.to_str().unwrap()).collect();
-        assert_eq!(folders, ["/v1", "/both", "/g1"]);
+        let dirs: Vec<_> = dirs.iter().map(|f| f.to_str().unwrap()).collect();
+        assert_eq!(dirs, ["/v1", "/both", "/g1"]);
     }
 
     #[test]
-    fn passed_folders_are_made_absolute_and_replace_the_kept_ones() {
+    fn passed_dirs_are_made_absolute_and_replace_the_kept_ones() {
         let altar = Altar::new("launcher-passed-wads");
         let standard = altar.file("standard");
         Global {
-            wad_folders: vec!["/kept".into()],
+            wad_dirs: vec!["/kept".into()],
             ..Global::default()
         }
         .keep(&Global::path(&standard))
         .unwrap();
 
         let kept = Launcher::new(Start::default(), &standard, &standard);
-        assert_eq!(kept.vault.wad_folders, [PathBuf::from("/kept")]);
+        assert_eq!(kept.vault.wad_dirs, [PathBuf::from("/kept")]);
 
         let start = Start {
             wads: vec!["relative/wads".into()],
             ..Start::default()
         };
         let passed = Launcher::new(start, &standard, &standard);
-        let folder = &passed.vault.wad_folders[0];
-        assert!(folder.is_absolute());
-        assert!(folder.ends_with("relative/wads"));
-        assert_eq!(passed.vault.wad_folders.len(), 1);
+        let dir = &passed.vault.wad_dirs[0];
+        assert!(dir.is_absolute());
+        assert!(dir.ends_with("relative/wads"));
+        assert_eq!(passed.vault.wad_dirs.len(), 1);
     }
 
     #[test]

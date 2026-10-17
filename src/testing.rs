@@ -23,7 +23,7 @@ pub fn draw(width: u16, height: u16, scene: impl FnOnce(&mut Frame)) -> String {
 
 /// A vault in `altar` with three example profiles, the same ones as in the screenshots:
 /// `brutal_doom` is healthy; `sigil_run` has a missing, a changed and a volatile wad;
-/// `test_build` points at a UZDoom that doesn't exist. Returns the vault's folder.
+/// `test_build` points at a UZDoom that doesn't exist. Returns the vault's dir.
 pub fn example_vault(altar: &Altar) -> PathBuf {
     let wads = altar.file("wads");
     fs::create_dir_all(&wads).unwrap();

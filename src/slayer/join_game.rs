@@ -153,7 +153,7 @@ fn download_profile(
     } else {
         status::summon(grimoire, "Downloading", "Downloading...", BORDER_COLOR)?;
         // 🚪 Esc goes back to the launcher quietly: partial files are already cleaned up, and
-        // finished ones stay in the downloads folder, so trying again picks up where this stopped
+        // finished ones stay in the downloads dir, so trying again picks up where this stopped
         match download_wads(grimoire, address, wanted, vault.downloads_dir()) {
             Ok(wads) => wads,
             Err(Error::Cancelled) => return Ok(None),

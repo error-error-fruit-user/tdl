@@ -1,7 +1,7 @@
 //! `.scroll` files: profiles to share with someone else, one or a whole vault. Each wad is only
 //! its file name, size and hash, with no paths, since paths only mean something on the machine
 //! that wrote them. Breaking the seal (importing) finds each wad again by joining its name onto the
-//! wad folders.
+//! wad dirs.
 
 use std::{
     ffi::OsStr,
@@ -198,7 +198,7 @@ impl Scroll {
     }
 
     /// Whether a scroll from someone else is safe to break: not too many profiles or wads, every
-    /// profile name one tdl could have made (it becomes a file and a folder name), every wad name a
+    /// profile name one tdl could have made (it becomes a file and a dir name), every wad name a
     /// bare file name and every hash a real one, the same rule as a host's manifest.
     pub fn check(&self) -> std::result::Result<(), &'static str> {
         if self.profiles.is_empty() {
@@ -231,18 +231,18 @@ impl Scroll {
         Ok(())
     }
 
-    /// Finds each wad by joining its name onto `folders`, in order. A file is taken only if its
+    /// Finds each wad by joining its name onto `dirs`, in order. A file is taken only if its
     /// size matches and then its hash does (a volatile wad only needs its name). Anything not found
-    /// becomes a placeholder in the first folder, so the editor can say where it was looked for.
+    /// becomes a placeholder in the first dir, so the editor can say where it was looked for.
     ///
     /// `tally` hears about every wad as it is checked, then about the bytes of each file hashed.
-    /// `folders` must not be empty, since there would be nowhere for a placeholder to point.
-    pub fn unseal(&self, folders: &[PathBuf], tally: &mut impl Tally) -> Result<Unsealed> {
+    /// `dirs` must not be empty, since there would be nowhere for a placeholder to point.
+    pub fn unseal(&self, dirs: &[PathBuf], tally: &mut impl Tally) -> Result<Unsealed> {
         let mut missing = 0;
         let mut find = |wad: &Inscribed| -> Result<Wad> {
             tally.count_file(OsStr::new(&wad.name), wad.size)?;
-            for folder in folders {
-                if let Some(found) = check(&folder.join(&wad.name), wad, tally)? {
+            for dir in dirs {
+                if let Some(found) = check(&dir.join(&wad.name), wad, tally)? {
                     return Ok(found);
                 }
             }
@@ -250,7 +250,7 @@ impl Scroll {
             Ok(Wad {
                 volatile: wad.volatile,
                 ..Wad::new(
-                    folders[0].join(&wad.name).into_os_string(),
+                    dirs[0].join(&wad.name).into_os_string(),
                     wad.hash.clone(),
                     wad.size,
                 )
@@ -275,7 +275,7 @@ impl Scroll {
 }
 
 /// Whether `name` is one a profile could have: not empty, not too long, and only the characters
-/// a profile's name may hold, since it becomes a file and a folder name.
+/// a profile's name may hold, since it becomes a file and a dir name.
 fn is_profile_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= MAX_NAME
@@ -340,19 +340,19 @@ mod tests {
         }
     }
 
-    /// Two wad folders in `altar`, made fresh.
-    fn folders(altar: &Altar) -> [PathBuf; 2] {
-        let folders = [altar.file("first"), altar.file("second")];
-        for folder in &folders {
-            fs::create_dir_all(folder).unwrap();
+    /// Two wad dirs in `altar`, made fresh.
+    fn dirs(altar: &Altar) -> [PathBuf; 2] {
+        let dirs = [altar.file("first"), altar.file("second")];
+        for dir in &dirs {
+            fs::create_dir_all(dir).unwrap();
         }
-        folders
+        dirs
     }
 
     #[test]
-    fn a_wad_in_a_folder_is_found() {
+    fn a_wad_in_a_dir_is_found() {
         let altar = Altar::new("scroll-found");
-        let [first, _] = folders(&altar);
+        let [first, _] = dirs(&altar);
         fs::write(first.join("a.wad"), b"aaaa").unwrap();
         let unsealed = scroll(vec![inscribed("a.wad", b"aaaa")])
             .unseal(std::slice::from_ref(&first), &mut ())
@@ -368,7 +368,7 @@ mod tests {
     #[test]
     fn a_file_of_the_wrong_size_is_not_even_hashed() {
         let altar = Altar::new("scroll-wrong-size");
-        let [first, _] = folders(&altar);
+        let [first, _] = dirs(&altar);
         fs::write(first.join("a.wad"), b"aaaa-but-longer").unwrap();
         struct Hashed(u64);
         impl Tally for Hashed {
@@ -391,7 +391,7 @@ mod tests {
     #[test]
     fn a_file_of_the_right_size_but_the_wrong_hash_is_not_it() {
         let altar = Altar::new("scroll-wrong-hash");
-        let [first, _] = folders(&altar);
+        let [first, _] = dirs(&altar);
         fs::write(first.join("a.wad"), b"AAAA").unwrap();
         let unsealed = scroll(vec![inscribed("a.wad", b"aaaa")])
             .unseal(&[first], &mut ())
@@ -400,9 +400,9 @@ mod tests {
     }
 
     #[test]
-    fn a_wad_not_found_is_a_placeholder_in_the_first_folder() {
+    fn a_wad_not_found_is_a_placeholder_in_the_first_dir() {
         let altar = Altar::new("scroll-not-found");
-        let [first, second] = folders(&altar);
+        let [first, second] = dirs(&altar);
         let wad = inscribed("gone.wad", b"gone");
         let unsealed = scroll(vec![wad.clone()])
             .unseal(&[first.clone(), second], &mut ())
@@ -418,10 +418,10 @@ mod tests {
     }
 
     #[test]
-    fn folders_are_tried_in_order_and_the_first_match_wins() {
+    fn dirs_are_tried_in_order_and_the_first_match_wins() {
         let altar = Altar::new("scroll-in-order");
-        let [first, second] = folders(&altar);
-        // the first folder has a file by that name, but not the right one
+        let [first, second] = dirs(&altar);
+        // the first dir has a file by that name, but not the right one
         fs::write(first.join("a.wad"), b"AAAA").unwrap();
         fs::write(second.join("a.wad"), b"aaaa").unwrap();
         fs::write(second.join("b.wad"), b"bbbb").unwrap();
@@ -445,7 +445,7 @@ mod tests {
     #[test]
     fn a_volatile_wad_is_found_by_name_and_hashed_as_it_is_now() {
         let altar = Altar::new("scroll-volatile");
-        let [first, _] = folders(&altar);
+        let [first, _] = dirs(&altar);
         fs::write(first.join("wip.pk3"), b"newer and bigger").unwrap();
         let wad = Inscribed {
             volatile: true,
@@ -614,7 +614,7 @@ mod tests {
     #[test]
     fn every_profile_on_a_scroll_is_unsealed_and_the_missing_wads_are_counted_across_them() {
         let altar = Altar::new("scroll-unseal-several");
-        let [first, _] = folders(&altar);
+        let [first, _] = dirs(&altar);
         fs::write(first.join("a.wad"), b"a").unwrap();
         fs::write(first.join("c.wad"), b"c").unwrap();
         let scroll = Scroll {

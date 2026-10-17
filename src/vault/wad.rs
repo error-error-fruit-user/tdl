@@ -207,7 +207,7 @@ impl Deref for Wad {
 pub enum Fault {
     /// There is nothing at that path, usually because the file was moved or renamed.
     Missing,
-    /// The path leads to a folder, or something else that isn't a regular file.
+    /// The path leads to a dir, or something else that isn't a regular file.
     NotAFile,
     /// It exists but can't be opened, with the reason from the OS.
     Unreadable(String),
@@ -307,8 +307,8 @@ mod tests {
     }
 
     #[test]
-    fn a_folder_is_not_a_file() {
-        let altar = Altar::new("wad-folder");
+    fn a_dir_is_not_a_file() {
+        let altar = Altar::new("wad-dir");
         fs::create_dir(altar.file("a.wad")).unwrap();
         assert_eq!(Fault::of(&altar.file("a.wad"), 0), Some(Fault::NotAFile));
     }
@@ -395,9 +395,9 @@ mod tests {
         // and so is a wad with nothing to measure
         let gone = Wad::new(altar.file("gone.wad").into(), "ab".into(), 0);
         assert_eq!(gone.clone().with_size_backfilled(), gone);
-        fs::create_dir(altar.file("folder.wad")).unwrap();
-        let folder = Wad::new(altar.file("folder.wad").into(), "ab".into(), 0);
-        assert_eq!(folder.clone().with_size_backfilled(), folder);
+        fs::create_dir(altar.file("dir.wad")).unwrap();
+        let dir = Wad::new(altar.file("dir.wad").into(), "ab".into(), 0);
+        assert_eq!(dir.clone().with_size_backfilled(), dir);
     }
 
     #[test]

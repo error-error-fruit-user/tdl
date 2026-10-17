@@ -187,7 +187,7 @@ fn copy_output(mut output: impl Read, mut log: Option<File>, latest: &Mutex<Stri
     }
 }
 
-/// Plays offline, with saves kept in the profile's own folder.
+/// Plays offline, with saves kept in the profile's own dir.
 pub fn launch(
     uzdoom: &OsStr,
     base_wad: Option<&OsStr>,
@@ -331,7 +331,7 @@ exec env -u DISPLAY -u WAYLAND_DISPLAY flatpak run --env=SDL_VIDEODRIVER=dummy \
     /// checks every file is really a wad, and prints the `adding <file>, <n> lumps` lines of
     /// UZDoom's startup log in load order (engine files, the IWAD, then `-file`), so the test
     /// below works the same against either one. It fails like UZDoom would on a missing or broken
-    /// file, a missing save folder, or a `-file` with nothing after it.
+    /// file, a missing save dir, or a `-file` with nothing after it.
     const DUMMY_UZDOOM: &str = r#"#!/usr/bin/env bash
 echo "UZDoom version 0.0.0 (tdl's dummy)"
 iwad= config= savedir= files=() seen_file=
@@ -348,7 +348,7 @@ while [ $# -gt 0 ]; do
 done
 fail() { echo "$1" >&2; exit 1; }
 [ -n "$seen_file" ] && [ ${#files[@]} -eq 0 ] && fail "-file with no files"
-[ -n "$savedir" ] && [ ! -d "$savedir" ] && fail "save folder $savedir does not exist"
+[ -n "$savedir" ] && [ ! -d "$savedir" ] && fail "save dir $savedir does not exist"
 [ -n "$config" ] && [ ! -f "$config" ] && fail "config $config does not exist"
 add() { # a wad's file, and the header it must have
     [ -f "$1" ] || fail "Could not find $1"
@@ -468,7 +468,7 @@ for file in "${files[@]}"; do add "$file" "PWAD IWAD"; done
     fn real_uzdoom_loads_the_iwad_and_every_wad_in_order() {
         let iwad = std::env::var("TDL_REAL_IWAD").expect("TDL_REAL_IWAD");
         // passes tdl's arguments into the sandbox: files are forwarded with @@ … @@ and the save
-        // folder is opened up, the way a real wrapper has to
+        // dir is opened up, the way a real wrapper has to
         loads_the_iwad_and_every_wad_in_order("real-uzdoom", HEADLESS_UZDOOM, iwad.into());
     }
 

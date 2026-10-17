@@ -115,7 +115,7 @@ impl Ritual for ProfileNamer<'_> {
     }
 }
 
-/// A character a profile name may hold: it is also a file and folder name, so only `A-Z a-z 0-9 _`.
+/// A character a profile name may hold: it is also a file and dir name, so only `A-Z a-z 0-9 _`.
 pub fn name_character(c: char) -> Option<char> {
     (c.is_ascii_alphanumeric() || c == '_').then_some(c)
 }

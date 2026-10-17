@@ -123,8 +123,8 @@ impl Warning {
         Self::summon(grimoire, "Could not start the host server!")
     }
 
-    pub fn no_folder_to_open(grimoire: &mut Grimoire) -> Result<()> {
-        Self::summon(grimoire, "No folder found to open the file picker in!")
+    pub fn no_dir_to_open(grimoire: &mut Grimoire) -> Result<()> {
+        Self::summon(grimoire, "No dir found to open the file picker in!")
     }
 
     pub fn save_failed(grimoire: &mut Grimoire) -> Result<()> {

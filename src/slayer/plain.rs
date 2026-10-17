@@ -357,9 +357,9 @@ pub fn seal(
     Ok(path)
 }
 
-/// What deleting `vault` removes: only what tdl made there. In the config folder that is
-/// `config.rite` (with its backup and anything left from a failed save) and the profiles folder;
-/// in the data folder, each profile's own folder (saved games, logs, a new ini). The downloaded
+/// What deleting `vault` removes: only what tdl made there. In the config dir that is
+/// `config.rite` (with its backup and anything left from a failed save) and the profiles dir;
+/// in the data dir, each profile's own dir (saved games, logs, a new ini). The downloaded
 /// wads stay, so nothing has to be downloaded again, and so do `global.rite` and anything else.
 fn vault_contents(vault: &Vault) -> Vec<PathBuf> {
     let config = fs::read_dir(&vault.config_dir)
@@ -383,7 +383,7 @@ fn vault_contents(vault: &Vault) -> Vec<PathBuf> {
 }
 
 /// `tdl --seal --delete`: deletes what tdl made in `vault` (see [`vault_contents`]), then each of
-/// its folders, and `root` (a vault's own folder) too, if that leaves them empty. Asks first,
+/// its dirs, and `root` (a vault's own dir) too, if that leaves them empty. Asks first,
 /// unless `force`; returns whether it was deleted. Refused if `scroll` is among what would go.
 pub fn delete_vault(
     vault: &Vault,
@@ -422,8 +422,8 @@ pub fn delete_vault(
         };
         removed.map_err(|error| format!("Could not delete {}: {error}", path.display()))?;
     }
-    // 🧹 only emptied folders go: anything tdl didn't make is left where it was
-    for folder in [
+    // 🧹 only emptied dirs go: anything tdl didn't make is left where it was
+    for dir in [
         Some(vault.data_dir.as_path()),
         Some(&vault.config_dir),
         root,
@@ -431,7 +431,7 @@ pub fn delete_vault(
     .into_iter()
     .flatten()
     {
-        let _ = fs::remove_dir(folder);
+        let _ = fs::remove_dir(dir);
     }
     println!("Deleted the vault");
     Ok(true)
@@ -519,7 +519,7 @@ mod tests {
         vault::{edition::Loaded, scribe::tests::Altar},
     };
 
-    /// The example vault in `altar`, with a data folder for each profile and one download.
+    /// The example vault in `altar`, with a data dir for each profile and one download.
     fn example(altar: &Altar) -> (Vault, PathBuf) {
         let root = testing::example_vault(altar);
         let vault = Vault::new(root.join("config"), root.join("data"));
@@ -559,7 +559,7 @@ mod tests {
         let altar = Altar::new("plain-delete");
         let (vault, root) = example(&altar);
         let scroll = seal(&vault, None, &altar.file("all")).unwrap();
-        // the standard vault's config folder holds the global settings, which must stay
+        // the standard vault's config dir holds the global settings, which must stay
         fs::write(vault.config_dir.join("global.rite"), b"global").unwrap();
         fs::write(vault.data_dir.join("notes.txt"), b"mine").unwrap();
         assert_eq!(delete_vault(&vault, &scroll, Some(&root), true), Ok(true));
@@ -577,7 +577,7 @@ mod tests {
     }
 
     #[test]
-    fn an_emptied_vault_goes_with_its_folders() {
+    fn an_emptied_vault_goes_with_its_dirs() {
         let altar = Altar::new("plain-delete-empty");
         let (vault, root) = example(&altar);
         let scroll = seal(&vault, None, &altar.file("all")).unwrap();

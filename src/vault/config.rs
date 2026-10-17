@@ -34,10 +34,10 @@ pub struct Config {
     /// until a game is hosted on a port other than the default.
     #[serde(default)]
     pub host_port: Option<u16>,
-    /// Wad folders kept for this vault from `--wads`, used whenever tdl starts without it.
-    /// Missing in older files, which count as none.
-    #[serde(default, with = "paths")]
-    pub wad_folders: Vec<OsString>,
+    /// Wad dirs kept for this vault from `--wads`, used whenever tdl starts without it.
+    /// Missing in older files, which count as none. Called `wad_folders` before edition 4.
+    #[serde(default, alias = "wad_folders", with = "paths")]
+    pub wad_dirs: Vec<OsString>,
     /// Extra command-line arguments for UZDoom, split at spaces and passed on every launch, host
     /// and join, before the wads. Set in the settings. Missing in older files, which count as none.
     #[serde(default)]
@@ -52,7 +52,7 @@ pub struct Config {
 }
 
 impl Edition for Config {
-    const UPGRADES: &[fn(Self) -> Self] = &[v0_to_v1, v1_to_v2, v2_to_v3];
+    const UPGRADES: &[fn(Self) -> Self] = &[v0_to_v1, v1_to_v2, v2_to_v3, v3_to_v4];
 }
 
 /// Edition 1 only wrapped the same data in a named, versioned map, so nothing needs fixing.
@@ -74,6 +74,12 @@ fn v2_to_v3(config: Config) -> Config {
         base_wad: config.base_wad.map(Wad::with_size_backfilled),
         ..config
     }
+}
+
+/// Edition 4 calls `wad_folders` `wad_dirs`. The old name still reads (see [`Config::wad_dirs`]);
+/// the new edition number keeps older builds, which would drop the field, from reading the file.
+fn v3_to_v4(config: Config) -> Config {
+    config
 }
 
 impl Config {
@@ -110,7 +116,7 @@ mod tests {
         let config: Config = rmp_serde::from_slice(&old).unwrap();
         assert!(!config.skip_splash);
         assert_eq!(config.host_port, None);
-        assert!(config.wad_folders.is_empty());
+        assert!(config.wad_dirs.is_empty());
         assert!(config.uzdoom_args.is_empty());
         assert_eq!(config.profile_names, ["brutal"]);
     }
@@ -192,6 +198,46 @@ mod tests {
     }
 
     #[test]
+    fn a_config_saved_by_edition_three_keeps_its_wad_folders_as_dirs() {
+        use std::fs;
+
+        use crate::vault::scribe::tests::Altar;
+
+        /// How edition 3 saved the settings: today's shape, with the wad dirs called folders.
+        #[derive(Serialize)]
+        struct EditionThree {
+            uzdoom: Option<String>,
+            base_wad: Option<Wad>,
+            profile_names: Vec<String>,
+            wad_folders: Vec<String>,
+        }
+        #[derive(Serialize)]
+        struct Sealed {
+            version: u32,
+            data: EditionThree,
+        }
+        let altar = Altar::new("config-edition-three");
+        let path = Config::path(&altar.file(""));
+        let bytes = rmp_serde::to_vec_named(&Sealed {
+            version: 3,
+            data: EditionThree {
+                uzdoom: None,
+                base_wad: None,
+                profile_names: vec!["brutal".into()],
+                wad_folders: vec!["/wads".into(), "/mods".into()],
+            },
+        })
+        .unwrap();
+        fs::write(&path, bytes).unwrap();
+
+        let config = Config::open(&path).unwrap();
+        assert_eq!(config.wad_dirs, [OsString::from("/wads"), "/mods".into()]);
+        assert!(config.upgrade(&path).unwrap());
+        assert_eq!(Config::stored_version(&path), Some(4));
+        assert_eq!(Config::open(&path).unwrap().wad_dirs, config.wad_dirs);
+    }
+
+    #[test]
     fn a_config_saved_by_edition_two_gets_its_base_wads_size() {
         use std::fs;
 
@@ -221,6 +267,6 @@ mod tests {
         assert_eq!(config.base_wad.as_ref().map(|wad| wad.size), Some(5));
         assert_eq!(config.profile_names, ["brutal"]);
         assert!(config.upgrade(&path).unwrap());
-        assert_eq!(Config::stored_version(&path), Some(3));
+        assert_eq!(Config::stored_version(&path), Some(Config::current()));
     }
 }

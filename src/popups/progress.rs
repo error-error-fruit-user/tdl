@@ -23,7 +23,7 @@ use crate::{
 pub enum Kind {
     Downloading,
     Hashing,
-    /// Breaking a scroll's seal: looking for each of its wads in the wad folders.
+    /// Breaking a scroll's seal: looking for each of its wads in the wad dirs.
     Unsealing,
 }
 

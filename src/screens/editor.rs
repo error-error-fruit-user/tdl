@@ -102,7 +102,7 @@ impl<'a> Editor<'a> {
         ["Y/Shift+Y", "Copy Selected/All Wads"],
         ["X/P", "Cut/Paste Wads"],
         ["A", "Add"],
-        ["F", "Import from Folder"],
+        ["F", "Import from Dir"],
         ["D", "Delete (Selected, If Any)"],
         ["U/W/I/G", "Select UZDoom/Base Wad/Ini/Args"],
     ];
@@ -207,7 +207,7 @@ impl<'a> Editor<'a> {
             .any(|(i, p)| Some(i) != self.skipped_index && p.name == self.profile.name)
     }
 
-    /// Gives the profile an ini of its own in its data folder, which needs a name that is free.
+    /// Gives the profile an ini of its own in its data dir, which needs a name that is free.
     fn create_ini(&mut self, grimoire: &mut Grimoire) -> Result<()> {
         if self.profile.name.is_empty() {
             return Warning::empty_profile_name(grimoire);
@@ -714,7 +714,7 @@ impl Ritual for Editor<'_> {
                 let index = *index;
                 if let Some(Some(fault)) = self.faults.get(index) {
                     let wad = &self.profile.wads[index];
-                    let found = found_elsewhere(wad, fault, &picker::wad_folders());
+                    let found = found_elsewhere(wad, fault, &picker::wad_dirs());
                     let lines = inspect_lines(wad, fault, found.as_deref());
                     Warning::summon_styled(grimoire, lines)?;
                     Ok(Phase::Render)
@@ -732,10 +732,10 @@ impl Ritual for Editor<'_> {
             KeyCode::Char('r') if self.editing_wads && *index != self.profile.wads.len() => {
                 let index = *index;
                 let wad = &self.profile.wads[index];
-                // 🔎 a missing wad with a file of its name in a wad folder is offered that file
+                // 🔎 a missing wad with a file of its name in a wad dir is offered that file
                 let found = self.faults[index]
                     .as_ref()
-                    .and_then(|fault| found_elsewhere(wad, fault, &picker::wad_folders()));
+                    .and_then(|fault| found_elsewhere(wad, fault, &picker::wad_dirs()));
                 let use_found = match &found {
                     Some(found) => Dialog::summon(
                         grimoire,
@@ -780,9 +780,9 @@ impl Ritual for Editor<'_> {
                 Ok(Phase::Render)
             }
             KeyCode::Char('f') => {
-                if let Some(folder) = picker::folder(grimoire, None)? {
+                if let Some(dir) = picker::dir(grimoire, None)? {
                     let mut wad_paths = Vec::new();
-                    for entry in std::fs::read_dir(folder)? {
+                    for entry in std::fs::read_dir(dir)? {
                         let path = entry?.path();
                         if path.is_file()
                             && path
@@ -892,10 +892,10 @@ pub struct Pasted {
 
 /// The `pasting` wads, ready to go into a list that already holds `existing`. A wad whose file
 /// name is already there (or comes earlier in the same paste) is pasted as a copy of its file in
-/// the same folder, under the name `choose` gives, or else (`None`) left out.
+/// the same dir, under the name `choose` gives, or else (`None`) left out.
 ///
 /// `choose` is told the name in use, the tagged one it could have (`brutal_2.pk3`), and which
-/// names are free: none a file in the folder or a wad in the list already has.
+/// names are free: none a file in the dir or a wad in the list already has.
 pub fn paste_alongside(
     existing: &[Wad],
     pasting: Vec<Wad>,
@@ -915,13 +915,13 @@ pub fn paste_alongside(
             continue;
         }
         let path = Path::new(&wad.path);
-        let Some(folder) = path.parent().filter(|_| path.is_file()) else {
+        let Some(dir) = path.parent().filter(|_| path.is_file()) else {
             pasted
                 .problems
                 .push(format!("'{name}' is missing, so it can't be copied"));
             continue;
         };
-        let is_free = |name: &str| !in_use(name) && !folder.join(name).exists();
+        let is_free = |name: &str| !in_use(name) && !dir.join(name).exists();
         let tagged = tag::tagged_file(&name, is_free);
         let Some(new_name) = choose(&name, &tagged, &is_free)? else {
             continue;
@@ -932,7 +932,7 @@ pub fn paste_alongside(
             ));
             continue;
         }
-        match wad.copied_to(&folder.join(&new_name)) {
+        match wad.copied_to(&dir.join(&new_name)) {
             Ok(copy) => pasted.wads.push(copy),
             Err(error) => pasted
                 .problems
@@ -976,12 +976,12 @@ pub fn paste_asking(
     Ok(pasted.wads)
 }
 
-/// Makes an empty `uzdoom.ini` in the profile's data folder and returns where it is. UZDoom fills
+/// Makes an empty `uzdoom.ini` in the profile's data dir and returns where it is. UZDoom fills
 /// it in the first time it runs. An ini that is already there is left exactly as it is.
 fn new_ini(data_dir: &Path, name: &str) -> std::io::Result<PathBuf> {
-    let folder = data_dir.join(name);
-    std::fs::create_dir_all(&folder)?;
-    let path = folder.join("uzdoom.ini");
+    let dir = data_dir.join(name);
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join("uzdoom.ini");
     match std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -1012,22 +1012,22 @@ fn check_wads(wads: &[Wad]) -> Vec<Option<Fault>> {
     wads.iter().map(Wad::check).collect()
 }
 
-/// A file with a missing wad's name in one of `wad_folders`, the first one there is. It's only a
-/// direct join of the name onto each folder, never a search, and the file isn't read: whether it
+/// A file with a missing wad's name in one of `wad_dirs`, the first one there is. It's only a
+/// direct join of the name onto each dir, never a search, and the file isn't read: whether it
 /// really is the wad is checked by its hash once it's picked.
-fn found_elsewhere(wad: &Wad, fault: &Fault, wad_folders: &[PathBuf]) -> Option<PathBuf> {
+fn found_elsewhere(wad: &Wad, fault: &Fault, wad_dirs: &[PathBuf]) -> Option<PathBuf> {
     if *fault != Fault::Missing {
         return None;
     }
     let name = Path::new(&wad.path).file_name()?;
-    wad_folders
+    wad_dirs
         .iter()
-        .map(|folder| folder.join(name))
+        .map(|dir| dir.join(name))
         .find(|path| path.is_file() && path.as_os_str() != wad.path)
 }
 
 /// What to tell the user about a wad with a fault: its name, where it should be, what is wrong,
-/// and what to do about it. `found` is a file of its name in a wad folder, to offer instead.
+/// and what to do about it. `found` is a file of its name in a wad dir, to offer instead.
 fn inspect_lines(wad: &Wad, fault: &Fault, found: Option<&Path>) -> Vec<Line<'static>> {
     let (color, advice) = if fault.is_blocking() {
         (theme::BAD, "press R to pick the file again")
@@ -1191,7 +1191,7 @@ mod tests {
     }
 
     #[test]
-    fn a_new_ini_is_made_empty_in_the_profiles_data_folder() {
+    fn a_new_ini_is_made_empty_in_the_profiles_data_dir() {
         let altar = Altar::new("editor-new-ini");
         let path = new_ini(&altar.0, "brutal").unwrap();
         assert_eq!(path, altar.file("brutal/uzdoom.ini"));
@@ -1237,32 +1237,32 @@ mod tests {
         insta::assert_snapshot!(crate::testing::draw(70, 14, |page| warning.render(page)));
     }
 
-    // 🔎 a missing wad that is sitting in a wad folder under its own name
+    // 🔎 a missing wad that is sitting in a wad dir under its own name
 
     #[test]
-    fn a_missing_wad_is_found_by_name_in_the_first_wad_folder_that_has_it() {
+    fn a_missing_wad_is_found_by_name_in_the_first_wad_dir_that_has_it() {
         let altar = Altar::new("editor-found-elsewhere");
         let (empty, first, second) = (
             altar.file("empty"),
             altar.file("first"),
             altar.file("second"),
         );
-        for folder in [&empty, &first, &second] {
-            fs::create_dir_all(folder).unwrap();
+        for dir in [&empty, &first, &second] {
+            fs::create_dir_all(dir).unwrap();
         }
         fs::write(first.join("moved.wad"), b"moved").unwrap();
         fs::write(second.join("moved.wad"), b"moved").unwrap();
         let wad = Wad::new(altar.file("old/moved.wad").into(), "ab".repeat(32), 5);
-        let folders = [empty, first.clone(), second];
+        let dirs = [empty, first.clone(), second];
         assert_eq!(
-            found_elsewhere(&wad, &Fault::Missing, &folders),
+            found_elsewhere(&wad, &Fault::Missing, &dirs),
             Some(first.join("moved.wad"))
         );
         // only a missing wad is offered another file
-        assert_eq!(found_elsewhere(&wad, &Fault::NotAFile, &folders), None);
+        assert_eq!(found_elsewhere(&wad, &Fault::NotAFile, &dirs), None);
         // and never the very path it is already missing from
         let here = Wad::new(first.join("moved.wad").into(), "ab".repeat(32), 5);
-        assert_eq!(found_elsewhere(&here, &Fault::Missing, &folders[..2]), None);
+        assert_eq!(found_elsewhere(&here, &Fault::Missing, &dirs[..2]), None);
     }
 
     // 📋 copying and pasting wads, and searching them
@@ -1576,7 +1576,7 @@ mod tests {
     }
 
     #[test]
-    fn a_search_matches_the_file_name_and_never_the_folder() {
+    fn a_search_matches_the_file_name_and_never_the_dir() {
         let mut editor = editor_with(&["a.wad"]);
         editor.profile.wads[0].path = "/brutal/a.wad".into();
         assert_eq!(editor.wad_score(0, "brutal"), None);

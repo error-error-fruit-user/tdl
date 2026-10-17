@@ -84,8 +84,8 @@ fn codes_match(given: &str, expected: &str) -> bool {
 }
 
 /// Whether a wad's `name` and `hash` from someone else (a host's manifest, a shared scroll) are
-/// safe to join onto a real folder: the name a bare file name, so `../../x` can't climb out of
-/// the folder, and the hash a BLAKE3 hex digest, since it becomes a folder name in the downloads.
+/// safe to join onto a real dir: the name a bare file name, so `../../x` can't climb out of
+/// the dir, and the hash a BLAKE3 hex digest, since it becomes a dir name in the downloads.
 pub fn is_safe(name: &str, hash: &str) -> bool {
     Path::new(name).file_name() == Some(OsStr::new(name))
         && hash.len() == 64

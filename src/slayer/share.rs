@@ -1,5 +1,5 @@
 //! Sharing profiles as `.scroll` files: sealing some (or a whole vault) up to send, and breaking
-//! the seal on one received, finding their wads in the wad folders.
+//! the seal on one received, finding their wads in the wad dirs.
 
 use std::path::{Path, PathBuf};
 
@@ -75,7 +75,7 @@ pub fn with_extension(path: PathBuf) -> PathBuf {
 }
 
 /// Reads a scroll the user picks and adds its profiles at `index`. Their wads are looked for in the
-/// session's wad folders only; with none, the user is asked for a folder to look in.
+/// session's wad dirs only; with none, the user is asked for a dir to look in.
 ///
 /// If the scroll carries its maker's global settings and they differ from `current`, they are
 /// returned, for the caller to put in place of the user's; a scroll without any leaves the user's
@@ -103,12 +103,12 @@ pub fn unseal_file(
     let Some(scroll) = read(grimoire, path)? else {
         return Ok(None);
     };
-    let Some(folders) = folders_to_look_in(grimoire, vault)? else {
+    let Some(dirs) = dirs_to_look_in(grimoire, vault)? else {
         return Ok(None);
     };
     let total = scroll.wad_count();
     let Some(unsealed) = hashing::watch_as(grimoire, Kind::Unsealing, total, |tally| {
-        scroll.unseal(&folders, tally)
+        scroll.unseal(&dirs, tally)
     })?
     else {
         return Ok(None);
@@ -201,25 +201,25 @@ fn read(grimoire: &mut Grimoire, path: &Path) -> Result<Option<Scroll>> {
     Ok(Some(scroll))
 }
 
-/// The session's wad folders, or, with none, one folder the user picks for this scroll.
+/// The session's wad dirs, or, with none, one dir the user picks for this scroll.
 /// `None` if they back out.
-fn folders_to_look_in(grimoire: &mut Grimoire, vault: &Vault) -> Result<Option<Vec<PathBuf>>> {
-    let folders: Vec<_> = vault
-        .wad_folders
+fn dirs_to_look_in(grimoire: &mut Grimoire, vault: &Vault) -> Result<Option<Vec<PathBuf>>> {
+    let dirs: Vec<_> = vault
+        .wad_dirs
         .iter()
-        .filter(|folder| folder.is_dir())
+        .filter(|dir| dir.is_dir())
         .cloned()
         .collect();
-    if !folders.is_empty() {
-        return Ok(Some(folders));
+    if !dirs.is_empty() {
+        return Ok(Some(dirs));
     }
     if !Dialog::summon(
         grimoire,
-        "No wad folders were given with --wads. Pick a folder to look for the wads in?",
+        "No wad dirs were given with --wads. Pick a dir to look for the wads in?",
     )? {
         return Ok(None);
     }
-    Ok(picker::folder(grimoire, None)?.map(|folder| vec![folder]))
+    Ok(picker::dir(grimoire, None)?.map(|dir| vec![dir]))
 }
 
 #[cfg(test)]

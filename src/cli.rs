@@ -1,4 +1,4 @@
-//! The command line, read by clap: `tdl [options] [folder]` opens the launcher, `tdl launch`,
+//! The command line, read by clap: `tdl [options] [dir]` opens the launcher, `tdl launch`,
 //! `tdl host` and `tdl join` do one thing and close, and `tdl --seal` and `tdl --list-quips` do
 //! theirs without any windows. `tdl --help` lists it all, in the theme's colors.
 
@@ -20,13 +20,13 @@ use crate::{
 /// What was asked for on the command line.
 #[derive(Debug, Default, PartialEq)]
 pub struct Cli {
-    /// Replaces the platform's standard config and data folders.
+    /// Replaces the platform's standard config and data dirs.
     pub vault: Option<String>,
     /// The vault came from `--vault-once`: open it without asking to keep it.
     pub vault_once: bool,
     /// Opens the standard vault, offering to forget the one remembered from `--vault`.
     pub forget_vault: bool,
-    /// Folders the user keeps wads in, in the order given.
+    /// Dirs the user keeps wads in, in the order given.
     pub wads: Vec<String>,
     /// A scroll to import on startup.
     pub unseal: Option<String>,
@@ -144,19 +144,19 @@ const THIS_RUN: &str = "Just for this run";
     max_term_width = 100
 )]
 struct Args {
-    /// The vault folder on its own, as before --vault existed
-    #[arg(value_name = "FOLDER", conflicts_with_all = ["vault", "vault_once", "forget_vault"])]
-    folder: Option<String>,
+    /// The vault dir on its own, as before --vault existed
+    #[arg(value_name = "DIR", conflicts_with_all = ["vault", "vault_once", "forget_vault"])]
+    dir: Option<String>,
 
-    /// Keep the config and data in FOLDER/config and FOLDER/data; tdl asks whether to open it
+    /// Keep the config and data in DIR/config and DIR/data; tdl asks whether to open it
     /// every time
-    #[arg(long, value_name = "FOLDER", global = true, help_heading = VAULT)]
+    #[arg(long, value_name = "DIR", global = true, help_heading = VAULT)]
     vault: Option<String>,
 
     /// Like --vault, but just for this run: never asks to open it every time
     #[arg(
         long,
-        value_name = "FOLDER",
+        value_name = "DIR",
         global = true,
         conflicts_with = "vault",
         help_heading = VAULT
@@ -173,11 +173,11 @@ struct Args {
     forget_vault: bool,
 
     /// Where your wads are: file pickers open here, and joining looks here for wads it already
-    /// has. Give it more than once for more folders; tdl asks whether to keep them
-    #[arg(long, value_name = "FOLDER", global = true, help_heading = VAULT)]
+    /// has. Give it more than once for more dirs; tdl asks whether to keep them
+    #[arg(long, value_name = "DIR", global = true, help_heading = VAULT)]
     wads: Vec<String>,
 
-    /// Import a shared .scroll as soon as tdl starts, looking for its wads in the wad folders.
+    /// Import a shared .scroll as soon as tdl starts, looking for its wads in the wad dirs.
     /// Global settings sealed in it replace yours
     #[arg(long, value_name = "SCROLL", global = true, help_heading = SHARING)]
     unseal: Option<String>,
@@ -444,7 +444,7 @@ impl Cli {
         });
         Ok(Self {
             vault_once: args.vault_once.is_some(),
-            vault: args.vault_once.or(args.vault).or(args.folder),
+            vault: args.vault_once.or(args.vault).or(args.dir),
             forget_vault: args.forget_vault,
             wads: args.wads,
             unseal: args.unseal,
@@ -478,15 +478,15 @@ mod tests {
         Cli::parse(args.iter().map(|arg| arg.to_string())).map_err(|error| error.to_string())
     }
 
-    fn vault(folder: &str) -> Result<Cli, String> {
+    fn vault(dir: &str) -> Result<Cli, String> {
         Ok(Cli {
-            vault: Some(folder.to_string()),
+            vault: Some(dir.to_string()),
             ..Cli::default()
         })
     }
 
     #[test]
-    fn no_arguments_uses_the_standard_folders() {
+    fn no_arguments_uses_the_standard_dirs() {
         assert_eq!(parse(&[]), Ok(Cli::default()));
     }
 
@@ -537,17 +537,17 @@ mod tests {
         assert!(parse(&["--music"]).is_err());
         assert!(parse(&["--music="]).is_err());
         assert!(parse(&["--music", "a.wav", "--music", "b.wav"]).is_err());
-        // the song is not mistaken for a vault folder
+        // the song is not mistaken for a vault dir
         assert_eq!(parse(&["--music", "a.wav"]).unwrap().vault, None);
     }
 
     #[test]
-    fn the_folder_alone_still_works() {
+    fn the_dir_alone_still_works() {
         assert_eq!(parse(&["/tmp/v"]), vault("/tmp/v"));
     }
 
     #[test]
-    fn a_missing_folder_is_an_error() {
+    fn a_missing_dir_is_an_error() {
         assert!(parse(&["--vault"]).is_err());
     }
 
@@ -583,7 +583,7 @@ mod tests {
     }
 
     #[test]
-    fn wad_folders_can_be_given_several_times_in_order() {
+    fn wad_dirs_can_be_given_several_times_in_order() {
         let cli = parse(&["--wads", "/a", "--wads=/b", "--vault", "/v", "--wads", "/c"]).unwrap();
         assert_eq!(cli.wads, ["/a", "/b", "/c"]);
         assert_eq!(cli.vault, Some("/v".into()));
@@ -680,7 +680,7 @@ mod tests {
         .unwrap();
         assert_eq!(cli.uzdoom.as_deref(), Some("/opt/uzdoom-dev"));
         assert_eq!(cli.base_wad.as_deref(), Some("/iwads/freedoom2.wad"));
-        // neither is mistaken for the vault folder
+        // neither is mistaken for the vault dir
         assert_eq!(cli.vault, None);
         assert!(parse(&["--uzdoom"]).is_err());
         assert!(parse(&["--base-wad="]).is_err());
@@ -708,7 +708,7 @@ mod tests {
             })
         );
         assert_eq!(cli.uzdoom.as_deref(), Some("/opt/uzdoom-dev"));
-        // the profile isn't taken for a vault folder
+        // the profile isn't taken for a vault dir
         assert_eq!(cli.vault, None);
         assert!(parse(&["launch"]).is_err());
         assert!(parse(&["launch", "--no-splash"]).is_err());
@@ -838,7 +838,7 @@ mod tests {
     }
 
     #[test]
-    fn a_command_can_come_after_the_options_and_beside_a_vault_folder() {
+    fn a_command_can_come_after_the_options_and_beside_a_vault_dir() {
         let cli = parse(&[
             "--vault-once",
             "/tmp/v",
@@ -854,7 +854,7 @@ mod tests {
             })
         );
         assert_eq!(cli.vault, Some("/tmp/v".into()));
-        // the old-style vault folder on its own still works next to a command
+        // the old-style vault dir on its own still works next to a command
         let both = parse(&["/tmp/v", "host", "p", "--coop"]).unwrap();
         assert_eq!(both.vault, Some("/tmp/v".into()));
         assert!(matches!(both.command, Some(Command::Host { .. })));
@@ -939,7 +939,7 @@ mod tests {
     }
 
     #[test]
-    fn a_scroll_to_unseal_goes_with_the_wad_folders() {
+    fn a_scroll_to_unseal_goes_with_the_wad_dirs() {
         let cli = parse(&["--unseal", "shared.scroll", "--wads", "/w"]).unwrap();
         assert_eq!(cli.unseal, Some("shared.scroll".into()));
         assert_eq!(cli.wads, ["/w"]);
@@ -949,7 +949,7 @@ mod tests {
         );
         assert!(parse(&["--unseal"]).is_err());
         assert!(parse(&["--unseal", "a.scroll", "--unseal", "b.scroll"]).is_err());
-        // the scroll is not mistaken for a vault folder
+        // the scroll is not mistaken for a vault dir
         assert_eq!(parse(&["--unseal", "a.scroll"]).unwrap().vault, None);
     }
 }

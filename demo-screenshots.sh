@@ -16,7 +16,7 @@ for tool in vhs ttyd ffmpeg; do
     fi
 done
 
-# 🧹 the tapes' throwaway folders, cleared before and after, so a run never sees the last one's
+# 🧹 the tapes' throwaway dirs, cleared before and after, so a run never sees the last one's
 SPLASH=/tmp/tdl-splash
 SHOTS=/tmp/tdl-shots
 cleanup() { rm -rf "$SPLASH" "$SHOTS"; }

@@ -5,7 +5,7 @@
 //!
 //! What a row's name is depends on the screen: in the launcher it is the profile's name, or with a
 //! `*` in front of the query the file names of its wads; in the editor it is the wad's file name.
-//! Folders are never looked at, so `doom` doesn't match every wad kept under `~/doom/`.
+//! Dirs are never looked at, so `doom` doesn't match every wad kept under `~/doom/`.
 
 use std::cell::RefCell;
 

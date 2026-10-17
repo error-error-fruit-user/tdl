@@ -23,7 +23,7 @@ use crate::{
     },
 };
 
-/// The vault: the config and data folders on disk, and the settings and profiles loaded from them,
+/// The vault: the config and data dirs on disk, and the settings and profiles loaded from them,
 /// kept in sync with it.
 ///
 /// Every mutating method writes through immediately, except reordering (done in the
@@ -39,10 +39,10 @@ pub struct Vault {
     /// Where wads already on this machine are, built the first time it is asked for and thrown
     /// away whenever the profiles change, so it is never out of date.
     lookup: Option<Lookup>,
-    /// Folders the user keeps wads in, for this session: the ones passed with `--wads`, or else
+    /// Dirs the user keeps wads in, for this session: the ones passed with `--wads`, or else
     /// the ones kept for this vault and then the global ones. Joining looks in them for wads it
     /// already has.
-    pub wad_folders: Vec<PathBuf>,
+    pub wad_dirs: Vec<PathBuf>,
     /// Wads or profiles copied with `Y` in the launcher or the editor, for `P` to paste. Kept for
     /// the session only, never saved.
     pub clipboard: Clipboard,
@@ -52,7 +52,7 @@ impl Vault {
     /// Loads everything, recovering from what it can. A profile whose file is unreadable falls back
     /// to its `.bak`, or failing that to an empty profile that keeps its name, so it can still be
     /// seen and deleted from the launcher. If the settings are lost, the profile list is rebuilt from
-    /// the files in the profiles folder. A `profiles` folder from before the dot is renamed first.
+    /// the files in the profiles dir. A `profiles` dir from before the dot is renamed first.
     pub fn new(config_dir: PathBuf, data_dir: PathBuf) -> Self {
         let profiles_dir = config_dir.join(SUBDIRECTORY);
         if !profiles_dir.exists() {
@@ -110,7 +110,7 @@ impl Vault {
             profiles,
             notices,
             lookup: None,
-            wad_folders: Vec::new(),
+            wad_dirs: Vec::new(),
             clipboard: Clipboard::default(),
         }
     }
@@ -386,7 +386,7 @@ mod tests {
         assert!(vault.is_outdated());
         assert!(!vault.is_too_new());
         assert!(vault.notices.is_empty());
-        // the old folder was renamed, not copied
+        // the old dir was renamed, not copied
         assert!(altar.file("config/.profiles").is_dir());
         assert!(!altar.file("config/profiles").exists());
     }
@@ -553,7 +553,7 @@ mod tests {
         scribe::burn(&altar.file("config/.profiles/brutal.rite"));
     }
 
-    /// Makes a folder read-only until dropped, so writes into it fail. `None` where that can't be
+    /// Makes a dir read-only until dropped, so writes into it fail. `None` where that can't be
     /// done (not unix, or running as root, who is allowed to write anywhere).
     #[cfg(unix)]
     struct Frozen(PathBuf);
@@ -564,7 +564,7 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).unwrap();
             let frozen = Self(dir);
-            // 🧊 if even a frozen folder lets us write, nothing here can fail, so skip
+            // 🧊 if even a frozen dir lets us write, nothing here can fail, so skip
             let probe = frozen.0.join(".probe");
             match fs::write(&probe, b"") {
                 Ok(()) => {

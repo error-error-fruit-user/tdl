@@ -330,9 +330,9 @@ mod tests {
         );
 
         assert!(matches!(result, Err(Error::Download(_))));
-        let folder = downloads.join(&wads[0].hash);
+        let dir = downloads.join(&wads[0].hash);
         assert!(
-            fs::read_dir(&folder).unwrap().next().is_none(),
+            fs::read_dir(&dir).unwrap().next().is_none(),
             "no .part or wad left"
         );
     }

@@ -1,5 +1,5 @@
-//! Settings that belong to no vault: which vault to open when none is passed, wad folders every
-//! vault uses, the music, and the quips. Kept in `global.rite` in the platform's standard config folder, the one place every
+//! Settings that belong to no vault: which vault to open when none is passed, wad dirs every
+//! vault uses, the music, and the quips. Kept in `global.rite` in the platform's standard config dir, the one place every
 //! vault can find.
 
 use std::{
@@ -25,9 +25,10 @@ pub struct Global {
     /// The vault to open when tdl starts without `--vault`, kept from an earlier `--vault`.
     #[serde(default, with = "optional_path")]
     pub vault: Option<OsString>,
-    /// Wad folders kept from `--wads` for every vault, used after the vault's own.
-    #[serde(default, with = "paths")]
-    pub wad_folders: Vec<OsString>,
+    /// Wad dirs kept from `--wads` for every vault, used after the vault's own. Called
+    /// `wad_folders` before edition 1.
+    #[serde(default, alias = "wad_folders", with = "paths")]
+    pub wad_dirs: Vec<OsString>,
     /// The quip under the splash logo whenever tdl starts, unless `--splash-quip` asks
     /// for another. Set in the settings (`O` in the launcher). Missing in older files, which count
     /// as a random one.
@@ -48,7 +49,7 @@ pub struct Global {
 }
 
 /// The global settings a scroll can carry to someone else: how tdl looks and sounds, and nothing
-/// that names a place on this machine (the vault, the wad folders, the song).
+/// that names a place on this machine (the vault, the wad dirs, the song).
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct Shared {
     #[serde(default)]
@@ -165,8 +166,14 @@ impl SplashQuip {
 }
 
 impl Edition for Global {
-    /// Born after editions existed, so it starts at the first one and has nothing to upgrade.
-    const UPGRADES: &[fn(Self) -> Self] = &[];
+    /// Born after editions existed, so edition 0 is already a named map, never a bare array.
+    const UPGRADES: &[fn(Self) -> Self] = &[v0_to_v1];
+}
+
+/// Edition 1 calls `wad_folders` `wad_dirs`. The old name still reads (see [`Global::wad_dirs`]);
+/// the new edition number keeps older builds, which would drop the field, from reading the file.
+fn v0_to_v1(global: Global) -> Global {
+    global
 }
 
 impl Global {
@@ -186,16 +193,16 @@ impl Global {
         self.splash_quip = shared.splash_quip;
     }
 
-    /// Where the global settings are kept, given the standard config folder.
+    /// Where the global settings are kept, given the standard config dir.
     pub fn path(standard_config_dir: &Path) -> PathBuf {
         standard_config_dir.join(FILE)
     }
 
-    /// Saves to `path`, making its folder first: someone who only ever opens other vaults may
-    /// never have had the standard config folder made.
+    /// Saves to `path`, making its dir first: someone who only ever opens other vaults may
+    /// never have had the standard config dir made.
     pub fn keep(&self, path: &Path) -> io::Result<()> {
-        if let Some(folder) = path.parent() {
-            fs::create_dir_all(folder)?;
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir)?;
         }
         self.save(path)
     }
@@ -209,11 +216,11 @@ mod tests {
     #[test]
     fn global_settings_save_and_load_back() {
         let altar = Altar::new("global-round-trip");
-        // in a folder that doesn't exist yet
+        // in a dir that doesn't exist yet
         let path = Global::path(&altar.file("standard"));
         let global = Global {
             vault: Some("/home/me/doom".into()),
-            wad_folders: vec!["/wads".into(), "/mods".into()],
+            wad_dirs: vec!["/wads".into(), "/mods".into()],
             splash_quip: SplashQuip::Custom("Rip and tear!".into()),
             no_quips: true,
             song: Some("/songs/e1m1.ogg".into()),
@@ -251,14 +258,14 @@ mod tests {
         assert!(!global.no_quips);
         assert_eq!(global.song, None);
         assert_eq!(global.music, Music::Splash);
-        assert_eq!(global.wad_folders, [OsString::from("/wads")]);
+        assert_eq!(global.wad_dirs, [OsString::from("/wads")]);
     }
 
     #[test]
     fn sharing_leaves_out_the_song_and_everything_about_this_machine() {
         let mine = Global {
             vault: Some("/home/me/doom".into()),
-            wad_folders: vec!["/wads".into()],
+            wad_dirs: vec!["/wads".into()],
             splash_quip: SplashQuip::Custom("#2, hun!".into()),
             no_quips: false,
             song: Some("/songs/e1m1.ogg".into()),

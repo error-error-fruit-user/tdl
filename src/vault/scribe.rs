@@ -28,7 +28,7 @@ pub fn peruse(path: &Path) -> io::Result<Vec<u8>> {
 /// Replaces `path` with `bytes` without ever leaving a half-written file behind.
 ///
 /// The new contents are written and synced to a `.tmp` beside the file, the file being replaced
-/// is copied to `.bak`, and only then is the `.tmp` renamed over it. A rename within a folder is
+/// is copied to `.bak`, and only then is the `.tmp` renamed over it. A rename within a dir is
 /// atomic, so a crash leaves either the old file or the new one, never a torn page. If only the
 /// old-extension twin existed, it becomes the backup, and it is left where it is: deleting
 /// originals is the job of [`retire`], once someone has checked the new file and the user agrees.
@@ -77,7 +77,7 @@ pub fn burn(path: &Path) {
 pub mod tests {
     use super::*;
 
-    /// A fresh empty folder per test, removed again when dropped.
+    /// A fresh empty dir per test, removed again when dropped.
     pub struct Altar(pub PathBuf);
 
     impl Altar {
@@ -135,7 +135,7 @@ pub mod tests {
         let altar = Altar::new("fail");
         let path = altar.file("a.rite");
         inscribe(&path, b"keep me").unwrap();
-        // a folder where the backup should go makes the copy fail after the .tmp is written
+        // a dir where the backup should go makes the copy fail after the .tmp is written
         fs::remove_file(altar.file("a.rite.bak")).ok();
         fs::create_dir(altar.file("a.rite.bak")).unwrap();
         assert!(inscribe(&path, b"lose me").is_err());
