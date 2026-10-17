@@ -13,7 +13,7 @@ Requires **nightly** Rust (`#![feature(associated_type_defaults)]`, edition 2024
 - Build / run: `cargo +nightly build --release`, `cargo +nightly run -- [--vault DIR | --vault-once DIR | --forget-vault] [--wads DIR]... [--unseal SCROLL] [--no-splash] [--splash-quip QUIP | --no-quips] [[--music SONG] [--keep-music] | --no-music]` (`--help` for the full list; flags are parsed in `src/cli.rs`)
 - Tests: `cargo +nightly test`; single test: `cargo +nightly test <name_substring>`
 - UI tests are `insta` snapshots (`src/**/snapshots/*.snap`). Review changes with `cargo insta review` (or `INSTA_UPDATE`) rather than hand-editing.
-- `./publish.sh` cross-builds the Windows release (`x86_64-pc-windows-gnu`) into `published/` and generates `THIRD_PARTY_LICENSES.txt` (needs `cargo-license`).
+- `./publish.sh` cross-builds the Windows release (`x86_64-pc-windows-gnu`) into `published/` and generates `THIRD_PARTY_LICENSES.txt` (needs `cargo-license`). Crates that ship no license file get theirs from `licenses/` (by crate name, or the part before the first `-`); the script fails, naming them, if any has none.
 - Version control is **jj** (colocated with git). `./commit.sh "msg" [--claude]` commits and moves the `main` bookmark; use `--claude` for work Claude helped write (adds the Co-Authored-By trailer). `push.sh` pushes using a local token.
 
 ## Architecture

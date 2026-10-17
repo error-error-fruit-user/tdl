@@ -21,7 +21,7 @@ Set TypingSpeed 0
 # song) is read or written, and the splash looks the same for everyone.
 Hide
 Type "mkdir -p /tmp/tdl-splash/home && clear && HOME=/tmp/tdl-splash/home ./target/release/tdl --vault-once /tmp/tdl-splash/vault --no-music" Enter
-Sleep 700ms
+Sleep 2000ms
 Show
 
 Sleep 10s
