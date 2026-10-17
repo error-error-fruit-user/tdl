@@ -219,6 +219,17 @@ pub fn relocate(from: &Path, to: &Path, downloads: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Deletes the wad file at `path`, and its download's own dir with it once that is empty.
+pub fn delete(path: &Path, downloads: &Path) -> io::Result<()> {
+    fs::remove_file(path)?;
+    if is_download(path, downloads)
+        && let Some(dir) = path.parent()
+    {
+        let _ = fs::remove_dir(dir);
+    }
+    Ok(())
+}
+
 /// What to do with a file pasted where there already is one by its name.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Clash {
@@ -489,6 +500,25 @@ mod tests {
         .unwrap();
         assert_eq!(stored.placed, [downloads.join("feedface").join("a.wad")]);
         assert!(is_download(&stored.placed[0], &downloads));
+    }
+
+    #[test]
+    fn deleting_a_download_takes_its_hash_dir_but_never_the_downloads() {
+        let altar = Altar::new("shelf-delete");
+        let downloads = altar.file("data/.downloads");
+        let download = downloads.join("abcdef0123456789").join("got.wad");
+        let wad = altar.file("wads/a.wad");
+        touch(&download);
+        touch(&wad);
+        delete(&download, &downloads).unwrap();
+        delete(&wad, &downloads).unwrap();
+        assert!(!download.parent().unwrap().exists());
+        assert!(downloads.is_dir());
+        assert!(
+            !wad.exists() && altar.file("wads").is_dir(),
+            "a wad dir stays, empty or not"
+        );
+        assert!(delete(&wad, &downloads).is_err(), "nothing left to delete");
     }
 
     #[test]

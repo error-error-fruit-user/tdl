@@ -1,5 +1,6 @@
 ---
 source: src/screens/library.rs
+assertion_line: 988
 expression: "crate::testing::draw(80, 20, |page| library.render(page))"
 ---
 
@@ -13,7 +14,7 @@ expression: "crate::testing::draw(80, 20, |page| library.render(page))"
              ┃ ▾ <altar>/mods                               1 wad ┃
              ┃   brutal.pk3                                  15 B ┃
              ┃ ▾ <altar>/data/.downloads                    1 wad ┃
-             ┃   brutal.pk3                                  43 B ┃
+             ┃   brutal.pk3  .downloads 01234567             43 B ┃
              ┃   + add a wad dir                                  ┃
              ┃                                                    ┃
              ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛

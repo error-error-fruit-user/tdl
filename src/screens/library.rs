@@ -92,7 +92,8 @@ impl<'a> Library<'a> {
         Selection::LEGEND,
         ["Y/X", "Copy/Cut (Selected, or Whole Dir)"],
         ["P", "Paste Into Dir (Copies or Moves Files)"],
-        ["A/D", "Add/Take Out Dir"],
+        ["A", "Add Dir"],
+        ["D", "Erase Wads or Dismiss Their Dir"],
     ];
 
     /// Opens the screen on `shelf`, which it changes as dirs are added and taken out and files
@@ -189,7 +190,7 @@ impl<'a> Library<'a> {
                 .iter()
                 .map(|&(source, index)| self.wad(source, index).path.clone())
                 .collect();
-            let hints = shelf::hints(&paths, &downloads);
+            let hints = tagged(&paths, shelf::hints(&paths, &downloads), &downloads);
             self.labels = paths
                 .iter()
                 .map(|path| file_name(path))
@@ -211,12 +212,7 @@ impl<'a> Library<'a> {
                     .iter()
                     .map(|wad| wad.path.clone())
                     .collect();
-                // 🏷️ in the downloads, two of a name are told apart by their hashes
-                let hints = if *dir == downloads {
-                    shelf::hints(&paths, &downloads)
-                } else {
-                    vec![None; paths.len()]
-                };
+                let hints = tagged(&paths, vec![None; paths.len()], &downloads);
                 for (index, (path, hint)) in paths.iter().zip(hints).enumerate() {
                     let shown = match path.strip_prefix(dir) {
                         Ok(inside) if *dir != downloads => inside.display().to_string(),
@@ -420,14 +416,65 @@ impl<'a> Library<'a> {
         Ok(())
     }
 
-    /// Stops looking in the dir under the cursor (or the one the wad under it is in), after asking.
-    fn remove_source(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+    /// `D`: on a dir's row, stops looking in it. On a wad (or with wads picked), asks whether to
+    /// delete the files, or to dismiss the dir the wad is in, which stops looking in it.
+    fn delete_or_dismiss(&mut self, grimoire: &mut Grimoire) -> Result<()> {
         let source = match self.current() {
-            Some(Item::Source(source) | Item::Wad(source, _)) if !self.every => source,
+            Some(Item::Source(source)) if !self.selection.is_active() => {
+                return self.dismiss(grimoire, source);
+            }
+            Some(Item::Source(source) | Item::Wad(source, _)) => source,
             _ => return Ok(()),
         };
-        let dir = self.sources[source].clone();
-        if dir == self.shelf.downloads {
+        let paths = self.picked();
+        let these = match paths.as_slice() {
+            [] => return Ok(()),
+            [path] => format!("'{}'", file_name(path)),
+            many => format!("the {} selected wads", many.len()),
+        };
+        let in_downloads = self.sources[source] == self.shelf.downloads;
+        // 📦 picked wads may be in several dirs, and the downloads are never dismissed
+        let delete = if self.selection.is_active() || in_downloads {
+            Dialog::summon(grimoire, &format!("Erase {these} from the disk?"))?
+        } else {
+            let question = format!(
+                "Erase {these} from the disk, or dismiss {}, to stop looking for wads in it?",
+                self.sources[source].display()
+            );
+            match ThreeWayDialog::summon(grimoire, &question, ["Erase", "Dismiss Dir", "Back"])? {
+                Some(0) => true,
+                Some(1) => {
+                    self.selection.clear();
+                    return self.remove_source(source);
+                }
+                _ => false,
+            }
+        };
+        if !delete {
+            return Ok(());
+        }
+        let downloads = self.shelf.downloads.clone();
+        let mut problems = Vec::new();
+        for path in &paths {
+            if let Err(error) = shelf::delete(path, &downloads) {
+                problems.push(format!("Could not delete {}: {error}", file_name(path)));
+            }
+        }
+        // ✂️ nothing deleted can be pasted any more
+        if let Clipboard::Files { paths: taken, .. } = &mut *self.clipboard {
+            taken.retain(|path| path.is_file());
+        }
+        self.restack();
+        for problem in &problems {
+            Warning::summon(grimoire, problem)?;
+        }
+        Ok(())
+    }
+
+    /// Asks whether to stop looking in the dir at `source`, and does if so.
+    fn dismiss(&mut self, grimoire: &mut Grimoire, source: usize) -> Result<()> {
+        let dir = &self.sources[source];
+        if *dir == self.shelf.downloads {
             return Warning::summon(grimoire, "The downloads are always looked in");
         }
         let question = format!(
@@ -435,10 +482,17 @@ impl<'a> Library<'a> {
             dir.display()
         );
         if Dialog::summon(grimoire, &question)? {
-            self.shelf.remove(&dir);
-            self.closed.remove(&dir);
-            self.restack();
+            self.remove_source(source)?;
         }
+        Ok(())
+    }
+
+    /// Stops looking in the dir at `source`, now and in later sessions. Its files stay.
+    fn remove_source(&mut self, source: usize) -> Result<()> {
+        let dir = self.sources[source].clone();
+        self.shelf.remove(&dir);
+        self.closed.remove(&dir);
+        self.restack();
         Ok(())
     }
 
@@ -499,6 +553,22 @@ impl<'a> Library<'a> {
             true
         })
     }
+}
+
+/// `hints`, with every download's said to be `.downloads` and the start of its hash, which is all
+/// that tells one download from another, and a download from a wad of the same name elsewhere.
+fn tagged(paths: &[PathBuf], hints: Vec<Option<String>>, downloads: &Path) -> Vec<Option<String>> {
+    paths
+        .iter()
+        .zip(hints)
+        .map(|(path, hint)| {
+            if shelf::is_download(path, downloads) {
+                Some(shelf::download_tag(path))
+            } else {
+                hint
+            }
+        })
+        .collect()
 }
 
 /// The file name of `path`, as text.
@@ -723,7 +793,7 @@ impl Ritual for Library<'_> {
                 Ok(Phase::Render)
             }
             KeyCode::Char('d') => {
-                self.remove_source(grimoire)?;
+                self.delete_or_dismiss(grimoire)?;
                 Ok(Phase::Render)
             }
             KeyCode::Char('?') | KeyCode::F(1) => {
@@ -789,7 +859,7 @@ mod tests {
                 dir("mods"),
                 "brutal.pk3".into(),
                 dir("data/.downloads"),
-                "brutal.pk3".into(),
+                "brutal.pk3 [.downloads 01234567]".into(),
                 Library::NEW_ROW.into(),
             ]
         );
