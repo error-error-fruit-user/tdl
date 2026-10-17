@@ -18,6 +18,7 @@ use crate::{
     ritual::{self, Grimoire, Page, Phase, Ritual},
     screens::{
         config_selector::{ConfigSelector, IniChoice},
+        library::Library,
         profile_namer::name_character,
         search::{self, Found, Search, Typed},
         selection::{self, Selection},
@@ -28,6 +29,7 @@ use crate::{
     tag, theme,
     vault::Vault,
     vault::profile::Profile,
+    vault::shelf::Shelf,
     vault::wad::{Fault, Wad},
     widgets::{
         details::Details,
@@ -65,6 +67,9 @@ pub struct Editor<'a> {
     selection: Selection,
     /// The vault's clipboard, handed back when the editor closes.
     clipboard: Clipboard,
+    /// What the wads screen (`L`) works on, handed back to the vault when the editor closes, so it
+    /// keeps the wad dirs and follows any files moved.
+    shelf: Shelf,
 }
 
 impl<'a> Editor<'a> {
@@ -103,6 +108,7 @@ impl<'a> Editor<'a> {
         ["X/P", "Cut/Paste Wads"],
         ["A", "Add"],
         ["F", "Import from Dir"],
+        ["L", "Wads (Every Dir)"],
         ["D", "Delete (Selected, If Any)"],
         ["U/W/I/G", "Select UZDoom/Base Wad/Ini/Args"],
     ];
@@ -126,8 +132,12 @@ impl<'a> Editor<'a> {
             editor.editing_wads = true;
         }
         editor.clipboard = vault.clipboard.clone();
+        editor.shelf = vault.shelf();
         let profile = editor.invoke(grimoire)?;
         vault.clipboard = editor.clipboard;
+        if vault.restock(editor.shelf).is_err() {
+            Warning::save_failed(grimoire)?;
+        }
         Ok(profile)
     }
 
@@ -135,11 +145,19 @@ impl<'a> Editor<'a> {
     pub fn summon_existing(grimoire: &mut Grimoire, vault: &mut Vault, index: usize) -> Result<()> {
         let mut editor = Editor::edit(&vault.profiles, &vault.data_dir, index);
         editor.clipboard = vault.clipboard.clone();
+        editor.shelf = vault.shelf();
         let profile = editor.invoke(grimoire)?;
-        vault.clipboard = editor.clipboard;
+        let Editor {
+            clipboard, shelf, ..
+        } = editor;
+        vault.clipboard = clipboard;
         if let Some(profile) = profile
             && vault.replace(index, profile).is_err()
         {
+            Warning::save_failed(grimoire)?;
+        }
+        // 🚚 after the edit is in, so a profile left unsaved still follows any file it moved
+        if vault.restock(shelf).is_err() {
             Warning::save_failed(grimoire)?;
         }
         Ok(())
@@ -161,6 +179,7 @@ impl<'a> Editor<'a> {
             found: Found::default(),
             selection: Selection::default(),
             clipboard: Clipboard::default(),
+            shelf: Shelf::default(),
         }
     }
 
@@ -256,10 +275,33 @@ impl<'a> Editor<'a> {
         true
     }
 
+    /// Opens the wads screen. The profile (and how it was opened, so moving its files isn't a
+    /// change to ask about) follows any file moved there.
+    fn open_library(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+        let before = self.shelf.moves.len();
+        Library::summon(grimoire, &mut self.shelf, &mut self.clipboard)?;
+        for (from, to) in &self.shelf.moves[before..] {
+            self.profile.follow(from, to);
+            self.original.follow(from, to);
+        }
+        self.faults = check_wads(&self.profile.wads);
+        self.selection.clear();
+        self.found = Found::default();
+        Ok(())
+    }
+
     /// Pastes the clipboard's wads in front of the cursor, asking about any whose file name the
     /// profile already has (see [`paste_asking`]).
     fn paste(&mut self, grimoire: &mut Grimoire) -> Result<()> {
-        let pasting = paste_asking(grimoire, &self.profile.wads, self.clipboard.wads())?;
+        // 🧮 files from the wads screen are hashed before they go in
+        let wads = match &self.clipboard {
+            Clipboard::Files { paths, .. } => match hashing::wads(grimoire, paths)? {
+                Some(wads) => wads,
+                None => return Ok(()),
+            },
+            clipboard => clipboard.wads(),
+        };
+        let pasting = paste_asking(grimoire, &self.profile.wads, wads)?;
         if !pasting.is_empty() {
             self.insert_wads(pasting);
         }
@@ -777,6 +819,10 @@ impl Ritual for Editor<'_> {
                     return Ok(Phase::Render);
                 };
                 self.insert_wads(wads);
+                Ok(Phase::Render)
+            }
+            KeyCode::Char('l') => {
+                self.open_library(grimoire)?;
                 Ok(Phase::Render)
             }
             KeyCode::Char('f') => {

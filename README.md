@@ -14,7 +14,8 @@ A terminal launcher for [UZDoom](https://github.com/UZDoom/UZDoom). Group your w
 - **Join**: enter the host's IP and join code; tdl picks a compatible profile, or offers to download the wads and create one
 - **Import** a whole dir of wads into a profile
 - **Search** with `/`: profiles by name (or by their wads with `*`), and wads by file name in the editor
-- **Copy and paste** profiles and wads, one or many at a time, with `Shift+V`/`M` to select, `Y` and `P`
+- **Copy, cut and paste** profiles and wads, one or many at a time, with `Shift+V`/`M` to select, `Y`, `X` and `P`
+- **Wads screen** (`L`): every wad in every wad dir and the downloads, by dir or all in one list, to copy or move between dirs or paste into a profile
 - **Per-profile saves** and a `session.log` of UZDoom's output
 - **Status at a glance**: a panel under the launcher shows what the selected profile would run with (UZDoom, base wad, ini, wads) and whether anything is broken, with the global settings (UZDoom, base wad, UZDoom arguments) beside it
 - **Placeholders, not surprises**: a wad that moved is shown in the editor with what's wrong, and only that profile is held back from launching
@@ -113,11 +114,20 @@ tdl join 10.0.0.2 --code abc234 --port 9000           # the join form, filled in
 | `I` | Import a `.scroll`, adding its profiles |
 | `U` | Select the UZDoom executable |
 | `W` | Select the base wad |
+| `L` | The wads screen: every wad dir and its wads (see below) |
 | `O` | Settings: the splash screen, the music, the song, the quips, and extra UZDoom arguments |
 | `Esc` | Save and quit |
 | `F1` / `?` | Show the keys for the current screen (`F1` works everywhere, even where `?` is typed as text) |
 
-Inside the profile editor, `Enter` saves and leaves; `Esc` leaves too, but if the profile changed it first asks whether to **[S]ave**, **[D]iscard**, or go **[B]ack**. `Tab` switches between the name and the wad list, where `A` adds a wad, `F` imports a dir, `D` removes one, `}`/`{` reorder, `U`/`W`/`I` set the profile's own UZDoom, base wad and ini, and `G` its own UZDoom arguments (used instead of the global ones from the settings; left empty, the global ones count). `/` searches the wads by file name (never by dir) and `;`/`,` step through the matches. `Shift+V` and `M` select wads, `Y` copies the selected ones (or the one under the cursor), `Shift+Y` copies every wad, `X` cuts (copies, then takes them out), and `P` pastes in front of the cursor; copied profiles paste as all their wads.
+Inside the profile editor, `Enter` saves and leaves; `Esc` leaves too, but if the profile changed it first asks whether to **[S]ave**, **[D]iscard**, or go **[B]ack**. `Tab` switches between the name and the wad list, where `A` adds a wad, `F` imports a dir, `D` removes one, `}`/`{` reorder, `U`/`W`/`I` set the profile's own UZDoom, base wad and ini, and `G` its own UZDoom arguments (used instead of the global ones from the settings; left empty, the global ones count). `/` searches the wads by file name (never by dir) and `;`/`,` step through the matches. `Shift+V` and `M` select wads, `Y` copies the selected ones (or the one under the cursor), `Shift+Y` copies every wad, `X` cuts (copies, then takes them out), and `P` pastes in front of the cursor; copied profiles paste as all their wads. `L` opens the wads screen.
+
+### The wads screen
+
+`L`, in the launcher or the editor's wad list, shows every dir wads are looked for in (the ones from `--wads`, or kept from it, then `.downloads`), each with every wad under it at any depth. `Enter` opens or closes a dir, and `Tab` switches to every wad in one list by name, where wads with the same name are told apart by the fewest dirs that differ (`old`, `wads/new`, or `.downloads` and the start of its hash).
+
+`Y` copies the selected wads (or the one under the cursor, or on a dir's row every wad in it) and `X` cuts them; nothing moves until `P` pastes. Pasted into a dir (the one the wad under the cursor is in, or the dir itself on its row), copied files are copied there and cut ones moved, once; a name that is taken there asks whether to **[R]eplace** it, **[K]eep Both** (`brutal_2.pk3`), or **[S]kip** it. Into `.downloads`, each is hashed and goes under its hash. Every profile using a moved wad follows it, and so does the global base wad. Wads copied here paste into a profile like any other (they are hashed as they go in), and wads or profiles copied in the launcher or the editor paste into a dir here as copies of their files.
+
+`A` (or `Enter` on the last row) adds a dir to look in, asking whether to keep it for this **[S]ession**, **[G]lobal**ly or for this **[V]ault**, as `--wads` does. `D` stops looking in the dir under the cursor, everywhere it was kept; its files stay. `.downloads` is always there. `/` searches the wads shown by file name.
 
 ### Arrow keys
 

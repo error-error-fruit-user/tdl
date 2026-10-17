@@ -1,5 +1,8 @@
-//! What `Y` copied or `X` cut, for `P` to paste: wads from the editor, or whole profiles from the
-//! launcher. It lasts for the session and is never saved. Copying one kind replaces the other.
+//! What `Y` copied or `X` cut, for `P` to paste: wads from the editor, whole profiles from the
+//! launcher, or wad files from the wads screen. It lasts for the session and is never saved.
+//! Copying one kind replaces the other.
+
+use std::path::PathBuf;
 
 use crate::vault::{profile::Profile, wad::Wad};
 
@@ -12,6 +15,12 @@ pub enum Clipboard {
     /// Profiles cut in the launcher, as they were then. They stay where they are until pasted,
     /// which moves them there, once.
     CutProfiles(Vec<Profile>),
+    /// Wad files from the wads screen, not yet hashed. Pasted into a dir there, they are copied,
+    /// or if `cut`, moved there, once; pasted into a profile, they are hashed and added.
+    Files {
+        paths: Vec<PathBuf>,
+        cut: bool,
+    },
 }
 
 impl Clipboard {
@@ -20,14 +29,15 @@ impl Clipboard {
             Self::Empty => true,
             Self::Wads(wads) => wads.is_empty(),
             Self::Profiles(profiles) | Self::CutProfiles(profiles) => profiles.is_empty(),
+            Self::Files { paths, .. } => paths.is_empty(),
         }
     }
 
     /// Every wad on the clipboard: the wads themselves, or each profile's in turn, for pasting
-    /// into a wad list.
+    /// into a wad list. Files are left out, since they have to be hashed first.
     pub fn wads(&self) -> Vec<Wad> {
         match self {
-            Self::Empty => Vec::new(),
+            Self::Empty | Self::Files { .. } => Vec::new(),
             Self::Wads(wads) => wads.clone(),
             Self::Profiles(profiles) | Self::CutProfiles(profiles) => {
                 profiles.iter().flat_map(|p| p.wads.clone()).collect()
@@ -42,6 +52,7 @@ impl Clipboard {
             Self::Wads(wads) => (wads.len(), "wad", "copied"),
             Self::Profiles(profiles) => (profiles.len(), "profile", "copied"),
             Self::CutProfiles(profiles) => (profiles.len(), "profile", "cut"),
+            Self::Files { paths, cut } => (paths.len(), "wad", if *cut { "cut" } else { "copied" }),
         };
         match count {
             0 => None,
@@ -76,6 +87,20 @@ mod tests {
             Clipboard::CutProfiles(profiles).note().as_deref(),
             Some("2 profiles cut")
         );
+    }
+
+    #[test]
+    fn copied_or_cut_files_say_so_and_are_not_wads_until_hashed() {
+        let paths = vec![PathBuf::from("/wads/a.wad"), "/wads/b.wad".into()];
+        let copied = Clipboard::Files {
+            paths: paths.clone(),
+            cut: false,
+        };
+        assert_eq!(copied.note().as_deref(), Some("2 wads copied"));
+        assert!(copied.wads().is_empty());
+        let cut = Clipboard::Files { paths, cut: true };
+        assert_eq!(cut.note().as_deref(), Some("2 wads cut"));
+        assert!(!cut.is_empty());
     }
 
     #[test]

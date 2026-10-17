@@ -8,6 +8,7 @@ pub mod profile;
 pub mod saved;
 pub mod scribe;
 pub mod scroll;
+pub mod shelf;
 pub mod wad;
 
 use std::path::PathBuf;
@@ -18,8 +19,10 @@ use crate::{
     vault::{
         config::Config,
         edition::{Edition, Loaded},
+        global::Global,
         lookup::Lookup,
         profile::{Profile, SUBDIRECTORY, tagged_name},
+        shelf::Shelf,
     },
 };
 
@@ -46,6 +49,11 @@ pub struct Vault {
     /// Wads or profiles copied with `Y` in the launcher or the editor, for `P` to paste. Kept for
     /// the session only, never saved.
     pub clipboard: Clipboard,
+    /// The settings that belong to no vault, loaded by the launcher from `global_path`.
+    pub global: Global,
+    pub global_path: PathBuf,
+    /// False if `global.rite` is from a newer tdl (or was never loaded), so it is never written.
+    pub global_writable: bool,
 }
 
 impl Vault {
@@ -112,6 +120,9 @@ impl Vault {
             lookup: None,
             wad_dirs: Vec::new(),
             clipboard: Clipboard::default(),
+            global: Global::default(),
+            global_path: PathBuf::new(),
+            global_writable: false,
         }
     }
 
@@ -168,6 +179,70 @@ impl Vault {
             }
         }
         Ok(upgraded)
+    }
+
+    /// What the wads screen starts from: this session's wad dirs, the downloads, and the dirs
+    /// kept for this vault and for every vault.
+    pub fn shelf(&self) -> Shelf {
+        let paths = |dirs: &[std::ffi::OsString]| dirs.iter().map(PathBuf::from).collect();
+        Shelf {
+            dirs: self.wad_dirs.clone(),
+            downloads: self.downloads_dir(),
+            kept_vault: paths(&self.config.wad_dirs),
+            kept_global: paths(&self.global.wad_dirs),
+            global_writable: self.global_writable,
+            moves: Vec::new(),
+        }
+    }
+
+    /// Takes on what was done on the wads screen: its wad dirs become this session's, the kept
+    /// ones are saved if they changed, and every wad (in the profiles, and the global base wad)
+    /// whose file was moved is pointed at where it went, and saved. Everything is tried even if a
+    /// save fails; the first failure is returned.
+    pub fn restock(&mut self, shelf: Shelf) -> Result<()> {
+        let mut outcome = Ok(());
+        let mut note = |saved: std::io::Result<()>| {
+            if let Err(error) = saved
+                && outcome.is_ok()
+            {
+                outcome = Err(error.into());
+            }
+        };
+        if shelf.dirs != self.wad_dirs || !shelf.moves.is_empty() {
+            self.forget_lookup();
+        }
+        // 📂 the file pickers open in the wad dirs, so they hear about the change too
+        crate::picker::set_wad_dirs(&shelf.dirs);
+        self.wad_dirs = shelf.dirs;
+        let saved = |dirs: Vec<PathBuf>| -> Vec<std::ffi::OsString> {
+            dirs.into_iter().map(PathBuf::into_os_string).collect()
+        };
+        let kept_global = saved(shelf.kept_global);
+        if self.global_writable && kept_global != self.global.wad_dirs {
+            self.global.wad_dirs = kept_global;
+            note(self.global.keep(&self.global_path));
+        }
+        let kept_vault = saved(shelf.kept_vault);
+        let mut config_changed = kept_vault != self.config.wad_dirs;
+        self.config.wad_dirs = kept_vault;
+        for (from, to) in &shelf.moves {
+            if let Some(base_wad) = &mut self.config.base_wad {
+                config_changed |= base_wad.follow(from, to);
+            }
+        }
+        for profile in &mut self.profiles {
+            let mut followed = false;
+            for (from, to) in &shelf.moves {
+                followed |= profile.follow(from, to);
+            }
+            if followed {
+                note(profile.write(&self.config_dir, &self.data_dir));
+            }
+        }
+        if config_changed {
+            note(self.config.write(&self.config_dir, &self.profiles));
+        }
+        outcome
     }
 
     /// Wads fetched from hosts, stored as `<hash>/<name>` and shared by every downloaded profile.
@@ -344,7 +419,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        vault::profile::Part, vault::scribe, vault::scribe::tests::Altar, vault::wad::Wad,
+        vault::profile::Part, vault::scribe, vault::scribe::tests::Altar, vault::shelf,
+        vault::wad::Wad,
     };
 
     /// A config dir laid out exactly as the app saved it before editions existed.
@@ -680,6 +756,42 @@ mod tests {
         assert!(
             self::vault(&altar).profiles.is_empty(),
             "and it stays empty"
+        );
+    }
+
+    #[test]
+    fn restocking_keeps_the_dirs_and_points_moved_wads_at_where_they_went() {
+        let altar = Altar::new("vault-restock");
+        let root = crate::testing::example_vault(&altar);
+        let mut vault = Vault::new(root.join("config"), root.join("data"));
+        // 📂 the example's wads are beside the vault
+        let wads = altar.file("");
+        vault.global_path = root.join("global.rite");
+        vault.global_writable = true;
+        let mut shelf = vault.shelf();
+        assert_eq!(shelf.downloads, vault.downloads_dir());
+        shelf.add(wads.join("wads"), shelf::Keep::Vault);
+        shelf.add(wads.join("mods"), shelf::Keep::Global);
+        let (from, to) = (
+            wads.join("wads/brutalv22.pk3"),
+            wads.join("mods/brutalv22.pk3"),
+        );
+        fs::create_dir_all(wads.join("mods")).unwrap();
+        fs::rename(&from, &to).unwrap();
+        shelf.moves.push((from.clone(), to.clone()));
+
+        vault.restock(shelf).unwrap();
+        assert_eq!(vault.wad_dirs, [wads.join("wads"), wads.join("mods")]);
+        assert_eq!(vault.config.wad_dirs, [wads.join("wads").into_os_string()]);
+        assert_eq!(vault.global.wad_dirs, [wads.join("mods").into_os_string()]);
+        assert_eq!(vault.profiles[0].wads[0].path, to.as_os_str());
+        // all of it saved, the moved wad's profile too
+        let reloaded = Vault::new(root.join("config"), root.join("data"));
+        assert_eq!(reloaded.config.wad_dirs, vault.config.wad_dirs);
+        assert_eq!(reloaded.profiles[0].wads[0].path, to.as_os_str());
+        assert_eq!(
+            Global::open(&root.join("global.rite")).unwrap().wad_dirs,
+            vault.global.wad_dirs
         );
     }
 

@@ -93,6 +93,16 @@ pub fn scroll(offset: usize, selected: usize, height: usize) -> usize {
     }
 }
 
+/// `bytes` in the largest unit there is at least one of, to one decimal.
+pub fn show_size(bytes: u64) -> String {
+    match bytes {
+        1_000_000_000.. => format!("{:.1} GB", bytes as f64 / 1e9),
+        1_000_000.. => format!("{:.1} MB", bytes as f64 / 1e6),
+        1_000.. => format!("{:.1} KB", bytes as f64 / 1e3),
+        _ => format!("{bytes} B"),
+    }
+}
+
 /// The display width of `text`.
 pub fn width(text: &str) -> u16 {
     ratatui::text::Line::from(text).width() as u16
@@ -253,5 +263,12 @@ mod tests {
         assert!(is_too_small(MIN_WIDTH - 1, MIN_HEIGHT));
         assert!(is_too_small(MIN_WIDTH, MIN_HEIGHT - 1));
         assert!(!is_too_small(MIN_WIDTH, MIN_HEIGHT));
+    }
+
+    #[test]
+    fn sizes_are_shown_in_the_largest_unit() {
+        assert_eq!(show_size(900), "900 B");
+        assert_eq!(show_size(48_000_000), "48.0 MB");
+        assert_eq!(show_size(2_500_000_000), "2.5 GB");
     }
 }

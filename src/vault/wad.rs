@@ -123,6 +123,16 @@ impl Wad {
         Self::hashed(path, &mut ())
     }
 
+    /// Points the wad at `to` if its file was at `from`, which a move on the wads screen does.
+    /// Returns whether it was.
+    pub fn follow(&mut self, from: &Path, to: &Path) -> bool {
+        if Path::new(&self.path) != from {
+            return false;
+        }
+        self.path = to.as_os_str().to_os_string();
+        true
+    }
+
     /// The file's name for display, or the whole path if it has no file name (`..`, empty).
     pub fn file_name(&self) -> std::borrow::Cow<'_, str> {
         Path::new(&self.path)

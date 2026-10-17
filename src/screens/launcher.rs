@@ -32,6 +32,7 @@ use crate::{
     screens::editor::{self, Editor},
     screens::host_settings::HostSettingsForm,
     screens::join_address::JoinAddressForm,
+    screens::library::Library,
     screens::profile_namer::ask_copy_name,
     screens::search::{self, Found, Search, Typed},
     screens::selection::{self, Selection},
@@ -94,10 +95,6 @@ pub struct Launcher {
     passed_scroll: Option<PathBuf>,
     /// Whether the scroll replaces the vault's profiles (`--unseal-delete`), and asks first.
     unseal_delete: Option<Ask>,
-    global: Global,
-    global_path: PathBuf,
-    /// False if `global.rite` is from a newer tdl, so it is never overwritten.
-    global_writable: bool,
     /// The search being typed, if one is.
     search: Option<Search>,
     /// The last search's matches, for `;` and `,` to step through.
@@ -184,6 +181,7 @@ impl Launcher {
         ["A/E/D", "Add/Edit/Delete (Selected, If Any)"],
         ["S/I", "Seal (Selected or All)/Import Scroll"],
         ["U/W", "Select UZDoom/Base Wad"],
+        ["L", "Wads (Every Dir)"],
         ["O", "Settings"],
         ["Esc", "Save and Quit (unselects first)"],
     ];
@@ -241,6 +239,9 @@ impl Launcher {
         } else {
             remembered_dirs(&vault.config.wad_dirs, &global.wad_dirs)
         };
+        vault.global = global;
+        vault.global_path = global_path;
+        vault.global_writable = global_writable;
         Self {
             vault,
             table_state: TableState::new().with_selected(0),
@@ -261,9 +262,6 @@ impl Launcher {
             forget_wads: start.forget_wads,
             passed_scroll: start.unseal.as_deref().map(absolute),
             unseal_delete: start.unseal_delete,
-            global,
-            global_path,
-            global_writable,
             search: None,
             found: Found::default(),
             selection: Selection::default(),
@@ -298,29 +296,29 @@ impl Launcher {
         if layout::is_too_small(area.width, area.height) {
             resize::summon(grimoire)?;
         }
-        quips::show(!self.no_quips && !self.global.no_quips);
+        quips::show(!self.no_quips && !self.vault.global.no_quips);
         // 🔇 nothing plays at all, not even on the splash
-        if self.no_music || self.global.music == Music::Off {
+        if self.no_music || self.vault.global.music == Music::Off {
             music::mute();
         }
         // 🎶 the song from the settings, unless `--music` already chose one; a song that has gone
         // missing is said, and the built-in track plays instead
         if !music::has_song()
             && !self.no_music
-            && self.global.music != Music::Off
-            && let Some(song) = &self.global.song
+            && self.vault.global.music != Music::Off
+            && let Some(song) = &self.vault.global.song
             && let Err(problem) = music::use_song(Path::new(song))
         {
             Warning::summon(grimoire, &problem)?;
         }
         // 🎵 music kept on plays from the start, through the splash and past it
-        if self.keep_music || self.global.music == Music::Kept {
+        if self.keep_music || self.vault.global.music == Music::Kept {
             music::start(true);
         }
         if self.splash && (!self.vault.config.skip_splash || self.quip.is_some()) {
             // 💬 the command line's quip, or else the one kept in the settings, or else a random one
             let kept = quips::shown()
-                .then(|| self.global.splash_quip.text())
+                .then(|| self.vault.global.splash_quip.text())
                 .flatten();
             let quip = self.quip.clone().or(kept);
             splash::summon(grimoire, quip.as_deref())?;
@@ -369,7 +367,7 @@ impl Launcher {
             // 📜 the new profile goes last, and the cursor lands on it
             let before = self.vault.profiles.len();
             let mut index = before;
-            let current = self.global.shared();
+            let current = self.vault.global.shared();
             let replacing = self.unseal_delete;
             if let Some(settings) = share::unseal_file(
                 grimoire,
@@ -457,7 +455,7 @@ impl Launcher {
     /// `--with-settings` asks for them, with no windows.
     pub fn seal_plain(start: Start, seal: &Seal) -> std::result::Result<(), String> {
         let launcher = Self::open_plain(start)?;
-        let settings = seal.with_settings.then(|| launcher.global.shared());
+        let settings = seal.with_settings.then(|| launcher.vault.global.shared());
         plain::seal(&launcher.vault, settings, &seal.scroll)?;
         Ok(())
     }
@@ -577,20 +575,20 @@ impl Launcher {
             self.passed_wads.retain(|dir| dir.is_dir());
             // 📂 none of them left: the kept dirs are better than none
             self.vault.wad_dirs = if self.passed_wads.is_empty() {
-                remembered_dirs(&self.vault.config.wad_dirs, &self.global.wad_dirs)
+                remembered_dirs(&self.vault.config.wad_dirs, &self.vault.global.wad_dirs)
             } else {
                 self.passed_wads.clone()
             };
         }
 
         if self.forget_vault == Forget::Asking {
-            match self.global.vault.clone() {
-                Some(kept) if self.global_writable => {
+            match self.vault.global.vault.clone() {
+                Some(kept) if self.vault.global_writable => {
                     let question =
                         format!("Stop opening {} by default?", Path::new(&kept).display());
                     if Dialog::summon(grimoire, &question)? {
-                        self.global.vault = None;
-                        if self.global.keep(&self.global_path).is_err() {
+                        self.vault.global.vault = None;
+                        if self.vault.global.keep(&self.vault.global_path).is_err() {
                             Warning::save_failed(grimoire)?;
                         }
                     }
@@ -602,15 +600,15 @@ impl Launcher {
 
         if let Some(passed) = &self.passed_vault
             && self.ask_about_vault
-            && self.global_writable
-            && self.global.vault.as_deref() != Some(passed.as_os_str())
+            && self.vault.global_writable
+            && self.vault.global.vault.as_deref() != Some(passed.as_os_str())
             && Dialog::summon(
                 grimoire,
                 &format!("Open {} every time tdl starts?", passed.display()),
             )?
         {
-            self.global.vault = Some(passed.clone().into_os_string());
-            if self.global.keep(&self.global_path).is_err() {
+            self.vault.global.vault = Some(passed.clone().into_os_string());
+            if self.vault.global.keep(&self.vault.global_path).is_err() {
                 Warning::save_failed(grimoire)?;
             }
         }
@@ -627,7 +625,7 @@ impl Launcher {
             .iter()
             .map(|dir| dir.clone().into_os_string())
             .collect();
-        let remembered = remembered_dirs(&self.vault.config.wad_dirs, &self.global.wad_dirs);
+        let remembered = remembered_dirs(&self.vault.config.wad_dirs, &self.vault.global.wad_dirs);
         if passed.is_empty() || self.passed_wads == remembered {
             return Ok(());
         }
@@ -640,9 +638,9 @@ impl Launcher {
         let question = format!("Keep the wad dirs {list}?");
         let options = ["Session", "Global", "Vault"];
         match ThreeWayDialog::summon(grimoire, &question, options)? {
-            Some(1) if self.global_writable => {
-                self.global.wad_dirs = passed;
-                if self.global.keep(&self.global_path).is_err() {
+            Some(1) if self.vault.global_writable => {
+                self.vault.global.wad_dirs = passed;
+                if self.vault.global.keep(&self.vault.global_path).is_err() {
                     Warning::save_failed(grimoire)?;
                 }
             }
@@ -674,14 +672,14 @@ impl Launcher {
                 .join(", ")
         };
         let (global, vault) = match (
-            self.global.wad_dirs.is_empty(),
+            self.vault.global.wad_dirs.is_empty(),
             self.vault.config.wad_dirs.is_empty(),
         ) {
             (true, true) => return Warning::summon(grimoire, "No wad dirs were kept"),
             (false, true) => {
                 let question = format!(
                     "Forget the wad dirs kept for every vault, {}?",
-                    list(&self.global.wad_dirs)
+                    list(&self.vault.global.wad_dirs)
                 );
                 (Dialog::summon(grimoire, &question)?, false)
             }
@@ -695,7 +693,7 @@ impl Launcher {
             (false, false) => {
                 let question = format!(
                     "Forget the wad dirs kept for every vault ({}), for this vault ({}), or both?",
-                    list(&self.global.wad_dirs),
+                    list(&self.vault.global.wad_dirs),
                     list(&self.vault.config.wad_dirs)
                 );
                 match ThreeWayDialog::summon(grimoire, &question, ["Global", "Vault", "Both"])? {
@@ -706,11 +704,11 @@ impl Launcher {
                 }
             }
         };
-        if global && !self.global_writable {
+        if global && !self.vault.global_writable {
             Warning::summon(grimoire, "The global settings are from a newer tdl")?;
         } else if global {
-            self.global.wad_dirs.clear();
-            if self.global.keep(&self.global_path).is_err() {
+            self.vault.global.wad_dirs.clear();
+            if self.vault.global.keep(&self.vault.global_path).is_err() {
                 Warning::save_failed(grimoire)?;
             }
         }
@@ -732,7 +730,7 @@ impl Launcher {
     /// first thing the next start shows: the vault's settings in `config.rite`, the quip in
     /// `global.rite` (unless that is from a newer tdl, in which case the quip isn't kept).
     fn change_settings(&mut self, grimoire: &mut Grimoire) -> Result<()> {
-        let before = Settings::of(&self.vault.config, &self.global);
+        let before = Settings::of(&self.vault.config, &self.vault.global);
         let Some(settings) = SettingsForm::summon(grimoire, before.clone())? else {
             return Ok(());
         };
@@ -743,43 +741,44 @@ impl Launcher {
             || settings.quip != before.quip
             || settings.quips != before.quips
             || settings.song != before.song;
-        if !self.global_writable && changed {
+        if !self.vault.global_writable && changed {
             Warning::summon(
                 grimoire,
                 "The global settings are from a newer tdl, so the quips and the song can't be changed",
             )?;
         }
-        let kept_quip = self.global.splash_quip.clone();
-        let kept_no_quips = self.global.no_quips;
-        let kept_song = self.global.song.clone();
-        let kept_music = self.global.music;
-        if let Err(problem) = settings.apply(&mut self.vault.config, &mut self.global) {
+        let kept_quip = self.vault.global.splash_quip.clone();
+        let kept_no_quips = self.vault.global.no_quips;
+        let kept_song = self.vault.global.song.clone();
+        let kept_music = self.vault.global.music;
+        if let Err(problem) = settings.apply(&mut self.vault.config, &mut self.vault.global) {
             return Warning::summon(grimoire, &problem);
         }
-        if !self.global_writable {
-            self.global.splash_quip = kept_quip;
-            self.global.no_quips = kept_no_quips;
-            self.global.song = kept_song.clone();
-            self.global.music = kept_music;
+        if !self.vault.global_writable {
+            self.vault.global.splash_quip = kept_quip;
+            self.vault.global.no_quips = kept_no_quips;
+            self.vault.global.song = kept_song.clone();
+            self.vault.global.music = kept_music;
         }
         // 🎶 the song and the music change now, as they were kept
-        if self.global.song != kept_song {
-            match &self.global.song {
+        if self.vault.global.song != kept_song {
+            match &self.vault.global.song {
                 Some(song) if music::use_song(Path::new(song)).is_ok() => {}
                 _ => music::forget_song(),
             }
             music::restart();
         }
-        self.follow_music(kept_music, self.global.music);
+        self.follow_music(kept_music, self.vault.global.music);
         // 💬 the quips come and go now, unless `--no-quips` said otherwise for this run
-        quips::show(!self.no_quips && !self.global.no_quips);
+        quips::show(!self.no_quips && !self.vault.global.no_quips);
         let config_saved = self
             .vault
             .config
             .write(&self.vault.config_dir, &self.vault.profiles)
             .is_ok();
-        let global_saved =
-            !changed || !self.global_writable || self.global.keep(&self.global_path).is_ok();
+        let global_saved = !changed
+            || !self.vault.global_writable
+            || self.vault.global.keep(&self.vault.global_path).is_ok();
         if !config_saved || !global_saved {
             Warning::save_failed(grimoire)?;
         }
@@ -808,17 +807,17 @@ impl Launcher {
 
     /// Keeps the global settings that came with a scroll, and puts them to work straight away.
     fn take_shared(&mut self, grimoire: &mut Grimoire, settings: Shared) -> Result<()> {
-        if !self.global_writable {
+        if !self.vault.global_writable {
             return Warning::summon(
                 grimoire,
                 "The global settings are from a newer tdl, so the scroll's can't be kept",
             );
         }
-        let before = self.global.music;
-        self.global.take_shared(settings);
-        self.follow_music(before, self.global.music);
-        quips::show(!self.no_quips && !self.global.no_quips);
-        if self.global.keep(&self.global_path).is_err() {
+        let before = self.vault.global.music;
+        self.vault.global.take_shared(settings);
+        self.follow_music(before, self.vault.global.music);
+        quips::show(!self.no_quips && !self.vault.global.no_quips);
+        if self.vault.global.keep(&self.vault.global_path).is_err() {
             Warning::save_failed(grimoire)?;
         }
         Ok(())
@@ -918,7 +917,13 @@ impl Launcher {
             _ => "profiles".to_string(),
         };
         self.selection.clear();
-        share::seal(grimoire, &self.vault, &rows, &name, self.global.shared())?;
+        share::seal(
+            grimoire,
+            &self.vault,
+            &rows,
+            &name,
+            self.vault.global.shared(),
+        )?;
         Ok(Phase::Render)
     }
 
@@ -1426,13 +1431,19 @@ impl Ritual for Launcher {
                     Clipboard::Wads(wads) => self.paste_wads(grimoire, wads)?,
                     Clipboard::Profiles(profiles) => self.paste_profiles(grimoire, profiles)?,
                     Clipboard::CutProfiles(profiles) => self.move_profiles(&profiles),
+                    // 🧮 files from the wads screen are hashed before they go in a profile
+                    Clipboard::Files { paths, .. } => {
+                        if let Some(wads) = hashing::wads(grimoire, &paths)? {
+                            self.paste_wads(grimoire, wads)?;
+                        }
+                    }
                 }
                 Ok(Phase::Render)
             }
             KeyCode::Char('x') => Ok(Phase::render_if(self.cut_profiles())),
             KeyCode::Char('s') => self.seal_profiles(grimoire),
             KeyCode::Char('i') => {
-                let current = self.global.shared();
+                let current = self.vault.global.shared();
                 if let Some(settings) = share::unseal(grimoire, &mut self.vault, index, &current)? {
                     self.take_shared(grimoire, settings)?;
                 }
@@ -1476,6 +1487,14 @@ impl Ritual for Launcher {
                     return Ok(Phase::Render);
                 }
                 Ok(Phase::Prompt)
+            }
+            KeyCode::Char('l') => {
+                let mut shelf = self.vault.shelf();
+                Library::summon(grimoire, &mut shelf, &mut self.vault.clipboard)?;
+                if self.vault.restock(shelf).is_err() {
+                    Warning::save_failed(grimoire)?;
+                }
+                Ok(Phase::Render)
             }
             KeyCode::Char('o') => {
                 self.change_settings(grimoire)?;
@@ -1923,7 +1942,7 @@ mod tests {
             };
             let opened = Launcher::new(start, &standard, &standard);
             assert!(opened.vault.wad_dirs.is_empty(), "{forget:?}");
-            assert_eq!(opened.global.wad_dirs, [OsString::from("/kept")]);
+            assert_eq!(opened.vault.global.wad_dirs, [OsString::from("/kept")]);
         }
     }
 
@@ -1946,7 +1965,7 @@ mod tests {
         let opened = Launcher::new(start, &standard, &standard);
         assert_eq!(opened.vault.config_dir, standard);
         // nothing is forgotten yet: that waits for the question
-        assert!(opened.global.vault.is_some());
+        assert!(opened.vault.global.vault.is_some());
         assert!(opened.vault.notices.is_empty());
     }
 }

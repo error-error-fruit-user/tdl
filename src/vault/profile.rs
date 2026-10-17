@@ -230,6 +230,16 @@ fn v3_to_v4(profile: Profile) -> Profile {
 }
 
 impl Profile {
+    /// Points every wad of the profile (and its base wad) whose file was at `from` at `to`, where
+    /// the wads screen moved it. Returns whether any was.
+    pub fn follow(&mut self, from: &Path, to: &Path) -> bool {
+        let mut followed = false;
+        for wad in self.wads.iter_mut().chain(&mut self.base_wad) {
+            followed |= wad.follow(from, to);
+        }
+        followed
+    }
+
     /// A profile with no overrides, as created when downloading from a host.
     pub fn new(name: String, wads: Vec<Wad>) -> Self {
         Self {

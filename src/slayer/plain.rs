@@ -21,6 +21,7 @@ use ratatui::crossterm::{
 use crate::{
     cli::HostOverrides,
     error::{Error, INTERRUPTED_EXIT, Result as TdlResult},
+    layout::show_size,
     net::{self, Address, Manifest},
     slayer::{
         join_game::{fill_gaps, first_match},
@@ -393,16 +394,6 @@ fn is_yes(answer: &str) -> bool {
     matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 
-/// `bytes` in the largest unit there is at least one of, to one decimal.
-fn show_size(bytes: u64) -> String {
-    match bytes {
-        1_000_000_000.. => format!("{:.1} GB", bytes as f64 / 1e9),
-        1_000_000.. => format!("{:.1} MB", bytes as f64 / 1e6),
-        1_000.. => format!("{:.1} KB", bytes as f64 / 1e3),
-        _ => format!("{bytes} B"),
-    }
-}
-
 /// A download's progress as plain lines: one per wad as it starts. Ctrl+C cancels it.
 struct Lines(Keys);
 
@@ -482,12 +473,5 @@ mod tests {
         assert_eq!(joined_name("10.0.0.2", &[]), "joined_10_0_0_2");
         let taken = [Profile::new("joined_10_0_0_2".into(), Vec::new())];
         assert_eq!(joined_name("10.0.0.2", &taken), "joined_10_0_0_2_v2");
-    }
-
-    #[test]
-    fn sizes_are_shown_in_the_largest_unit() {
-        assert_eq!(show_size(900), "900 B");
-        assert_eq!(show_size(48_000_000), "48.0 MB");
-        assert_eq!(show_size(2_500_000_000), "2.5 GB");
     }
 }
