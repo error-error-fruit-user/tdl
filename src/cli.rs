@@ -24,13 +24,20 @@ pub struct Cli {
     pub vault: Option<String>,
     /// The vault came from `--vault-once`: open it without asking to keep it.
     pub vault_once: bool,
-    /// Opens the standard vault, offering to forget the one remembered from `--vault`.
-    pub forget_vault: bool,
+    /// `--forget-vault` or `--forget-vault-once`: the standard vault instead of the remembered one.
+    pub forget_vault: Forget,
     /// Dirs the user keeps wads in, in the order given.
     pub wads: Vec<String>,
+    /// The wads came from `--wads-once`: use them without asking to keep them.
+    pub wads_once: bool,
+    /// `--forget-wads` or `--forget-wads-once`: no wad dirs but the downloads instead of the kept ones.
+    pub forget_wads: Forget,
     /// A scroll to import on startup.
     pub unseal: Option<String>,
-    /// Seals the whole vault into a scroll, without any windows, and maybe deletes the vault.
+    /// The scroll came from `--unseal-delete` or `--unseal-delete-force`: it replaces every
+    /// profile in the vault instead of joining them.
+    pub unseal_delete: Option<Ask>,
+    /// Seals the whole vault into a scroll, without any windows.
     pub seal: Option<Seal>,
     /// Lists the built-in quips and does nothing else.
     pub list_quips: bool,
@@ -58,15 +65,47 @@ pub struct Cli {
     pub headless: bool,
 }
 
-/// `--seal`: the scroll to write the whole vault to, whether the global settings go in too
-/// (`--with-settings`), and whether to delete the vault afterwards (`--delete`), without asking
-/// first (`--force`).
+/// `--seal`: the scroll to write the whole vault to, and whether the global settings go in too
+/// (`--with-settings`).
 #[derive(Debug, PartialEq)]
 pub struct Seal {
     pub scroll: PathBuf,
     pub with_settings: bool,
-    pub delete: bool,
-    pub force: bool,
+}
+
+/// What `--forget-vault` and `--forget-wads` ask for: to leave what was kept out of this run, and
+/// with the plain flag (not `-once`), to be asked whether to forget it for good.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Forget {
+    #[default]
+    Nothing,
+    /// Left out of this run only, without asking.
+    Once,
+    /// Left out of this run, and the user is asked whether to forget it.
+    Asking,
+}
+
+impl Forget {
+    fn from_flags(asking: bool, once: bool) -> Self {
+        match (asking, once) {
+            (true, _) => Self::Asking,
+            (_, true) => Self::Once,
+            _ => Self::Nothing,
+        }
+    }
+
+    /// Whether what was kept is left out of this run.
+    pub fn is_on(self) -> bool {
+        self != Self::Nothing
+    }
+}
+
+/// Whether something that can't be undone asks first: `--unseal-delete` does, and
+/// `--unseal-delete-force` doesn't.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Ask {
+    First,
+    Never,
 }
 
 /// What `tdl launch`, `tdl host` and `tdl join` ask for. Each is done without the launcher, and
@@ -145,7 +184,10 @@ const THIS_RUN: &str = "Just for this run";
 )]
 struct Args {
     /// The vault dir on its own, as before --vault existed
-    #[arg(value_name = "DIR", conflicts_with_all = ["vault", "vault_once", "forget_vault"])]
+    #[arg(
+        value_name = "DIR",
+        conflicts_with_all = ["vault", "vault_once", "forget_vault", "forget_vault_once"]
+    )]
     dir: Option<String>,
 
     /// Keep the config and data in DIR/config and DIR/data; tdl asks whether to open it
@@ -172,22 +214,82 @@ struct Args {
     )]
     forget_vault: bool,
 
+    /// Like --forget-vault, but just for this run: opens the standard vault and asks nothing
+    #[arg(
+        long,
+        global = true,
+        conflicts_with_all = ["vault", "vault_once", "forget_vault"],
+        help_heading = VAULT
+    )]
+    forget_vault_once: bool,
+
     /// Where your wads are: file pickers open here, and joining looks here for wads it already
     /// has. Give it more than once for more dirs; tdl asks whether to keep them
     #[arg(long, value_name = "DIR", global = true, help_heading = VAULT)]
     wads: Vec<String>,
+
+    /// Like --wads, but just for this run: never asks to keep them
+    #[arg(
+        long,
+        value_name = "DIR",
+        global = true,
+        conflicts_with = "wads",
+        help_heading = VAULT
+    )]
+    wads_once: Vec<String>,
+
+    /// Look for wads only in the downloads this run, and ask whether to forget the wad dirs kept
+    /// from --wads
+    #[arg(
+        long,
+        global = true,
+        conflicts_with_all = ["wads", "wads_once"],
+        help_heading = VAULT
+    )]
+    forget_wads: bool,
+
+    /// Like --forget-wads, but just for this run: asks nothing
+    #[arg(
+        long,
+        global = true,
+        conflicts_with_all = ["wads", "wads_once", "forget_wads"],
+        help_heading = VAULT
+    )]
+    forget_wads_once: bool,
 
     /// Import a shared .scroll as soon as tdl starts, looking for its wads in the wad dirs.
     /// Global settings sealed in it replace yours
     #[arg(long, value_name = "SCROLL", global = true, help_heading = SHARING)]
     unseal: Option<String>,
 
-    /// Seal every profile in the vault into SCROLL, with no windows, and close
+    /// Like --unseal, but the scroll's profiles replace the vault's: every profile in it is
+    /// deleted first (with its saved games and logs; never the downloaded wads or your global
+    /// settings), after asking
     #[arg(
         long,
         value_name = "SCROLL",
         global = true,
         conflicts_with = "unseal",
+        help_heading = SHARING
+    )]
+    unseal_delete: Option<String>,
+
+    /// Like --unseal-delete, without asking first
+    #[arg(
+        long,
+        value_name = "SCROLL",
+        global = true,
+        conflicts_with_all = ["unseal", "unseal_delete"],
+        help_heading = SHARING
+    )]
+    unseal_delete_force: Option<String>,
+
+    /// Seal every profile in the vault into SCROLL, with no windows, and close
+    #[arg(
+        long,
+        value_name = "SCROLL",
+        global = true,
+        conflicts_with_all = ["unseal", "unseal_delete", "unseal_delete_force"],
         help_heading = SHARING
     )]
     seal: Option<PathBuf>,
@@ -196,15 +298,6 @@ struct Args {
     /// them in place of their own
     #[arg(long, global = true, requires = "seal", help_heading = SHARING)]
     with_settings: bool,
-
-    /// With --seal: then delete the vault (its profiles, saved games and logs; never the
-    /// downloaded wads or your global settings), after asking
-    #[arg(long, global = true, requires = "seal", help_heading = SHARING)]
-    delete: bool,
-
-    /// With --delete: don't ask first
-    #[arg(long, global = true, requires = "delete", help_heading = SHARING)]
-    force: bool,
 
     /// Go straight to the launcher
     #[arg(long, global = true, help_heading = SPLASH)]
@@ -445,14 +538,26 @@ impl Cli {
         Ok(Self {
             vault_once: args.vault_once.is_some(),
             vault: args.vault_once.or(args.vault).or(args.dir),
-            forget_vault: args.forget_vault,
-            wads: args.wads,
-            unseal: args.unseal,
+            forget_vault: Forget::from_flags(args.forget_vault, args.forget_vault_once),
+            wads_once: !args.wads_once.is_empty(),
+            wads: if args.wads_once.is_empty() {
+                args.wads
+            } else {
+                args.wads_once
+            },
+            forget_wads: Forget::from_flags(args.forget_wads, args.forget_wads_once),
+            unseal_delete: if args.unseal_delete_force.is_some() {
+                Some(Ask::Never)
+            } else {
+                args.unseal_delete.is_some().then_some(Ask::First)
+            },
+            unseal: args
+                .unseal_delete_force
+                .or(args.unseal_delete)
+                .or(args.unseal),
             seal: args.seal.map(|scroll| Seal {
                 scroll,
                 with_settings: args.with_settings,
-                delete: args.delete,
-                force: args.force,
             }),
             list_quips: args.list_quips,
             pride: args.with_pride,
@@ -593,10 +698,59 @@ mod tests {
 
     #[test]
     fn forgetting_the_vault_is_its_own_flag_and_cannot_go_with_one() {
-        assert!(parse(&["--forget-vault"]).unwrap().forget_vault);
-        assert!(!parse(&[]).unwrap().forget_vault);
+        assert_eq!(
+            parse(&["--forget-vault"]).unwrap().forget_vault,
+            Forget::Asking
+        );
+        assert_eq!(parse(&[]).unwrap().forget_vault, Forget::Nothing);
         assert!(parse(&["--forget-vault", "--vault", "/v"]).is_err());
         assert!(parse(&["/v", "--forget-vault"]).is_err());
+    }
+
+    #[test]
+    fn forgetting_the_vault_once_asks_nothing_and_goes_with_no_other_vault_flag() {
+        let once = parse(&["--forget-vault-once"]).unwrap();
+        assert_eq!(once.forget_vault, Forget::Once);
+        assert_eq!(once.vault, None);
+        assert!(parse(&["--forget-vault-once", "--forget-vault"]).is_err());
+        assert!(parse(&["--forget-vault-once", "--vault", "/v"]).is_err());
+        assert!(parse(&["--forget-vault-once", "--vault-once", "/v"]).is_err());
+        assert!(parse(&["/v", "--forget-vault-once"]).is_err());
+    }
+
+    #[test]
+    fn wads_for_once_are_used_the_same_but_marked_not_to_ask() {
+        let once = parse(&["--wads-once", "/a", "--wads-once=/b"]).unwrap();
+        assert_eq!(once.wads, ["/a", "/b"]);
+        assert!(once.wads_once);
+        assert!(!parse(&["--wads", "/a"]).unwrap().wads_once);
+        assert!(!parse(&[]).unwrap().wads_once);
+        assert!(parse(&["--wads-once"]).is_err());
+        assert!(parse(&["--wads-once", "/a", "--wads", "/b"]).is_err());
+    }
+
+    #[test]
+    fn forgetting_the_wads_goes_with_no_wads_given() {
+        assert_eq!(
+            parse(&["--forget-wads"]).unwrap().forget_wads,
+            Forget::Asking
+        );
+        assert_eq!(
+            parse(&["--forget-wads-once"]).unwrap().forget_wads,
+            Forget::Once
+        );
+        assert_eq!(parse(&[]).unwrap().forget_wads, Forget::Nothing);
+        for flag in ["--forget-wads", "--forget-wads-once"] {
+            assert!(parse(&[flag, "--wads", "/a"]).is_err());
+            assert!(parse(&[flag, "--wads-once", "/a"]).is_err());
+        }
+        assert!(parse(&["--forget-wads", "--forget-wads-once"]).is_err());
+        // the wads and the vault are forgotten apart
+        let both = parse(&["--forget-wads", "--forget-vault-once"]).unwrap();
+        assert_eq!(
+            (both.forget_wads, both.forget_vault),
+            (Forget::Asking, Forget::Once)
+        );
     }
 
     #[test]
@@ -865,15 +1019,13 @@ mod tests {
     }
 
     #[test]
-    fn seal_takes_a_scroll_and_delete_and_force_only_go_with_it() {
+    fn seal_takes_a_scroll_and_maybe_the_settings() {
         let cli = parse(&["--seal", "all.scroll", "--vault", "/v"]).unwrap();
         assert_eq!(
             cli.seal,
             Some(Seal {
                 scroll: "all.scroll".into(),
                 with_settings: false,
-                delete: false,
-                force: false,
             })
         );
         assert!(matches!(
@@ -888,23 +1040,29 @@ mod tests {
             "with-settings needs seal"
         );
         assert_eq!(cli.vault, Some("/v".into()));
-        let both = parse(&["--seal=all.scroll", "--delete", "--force"]).unwrap();
-        assert!(matches!(
-            both.seal,
-            Some(Seal {
-                delete: true,
-                force: true,
-                ..
-            })
-        ));
-        assert!(parse(&["--delete"]).is_err(), "delete needs seal");
-        assert!(
-            parse(&["--seal", "a", "--force"]).is_err(),
-            "force needs delete"
-        );
+        // deleting the vault went over to unsealing
+        assert!(parse(&["--seal", "a", "--delete"]).is_err());
+        assert!(parse(&["--seal", "a", "--force"]).is_err());
         assert!(parse(&["--seal"]).is_err());
         assert!(parse(&["--seal", "a", "--unseal", "b"]).is_err());
+        assert!(parse(&["--seal", "a", "--unseal-delete", "b"]).is_err());
+        assert!(parse(&["--seal", "a", "--unseal-delete-force", "b"]).is_err());
         assert!(parse(&["--seal", "a", "launch", "p"]).is_err());
+    }
+
+    #[test]
+    fn unsealing_in_place_of_the_vault_takes_its_own_scroll() {
+        let asked = parse(&["--unseal-delete", "all.scroll"]).unwrap();
+        assert_eq!(asked.unseal.as_deref(), Some("all.scroll"));
+        assert_eq!(asked.unseal_delete, Some(Ask::First));
+        let forced = parse(&["--unseal-delete-force=all.scroll"]).unwrap();
+        assert_eq!(forced.unseal.as_deref(), Some("all.scroll"));
+        assert_eq!(forced.unseal_delete, Some(Ask::Never));
+        assert_eq!(parse(&["--unseal", "a"]).unwrap().unseal_delete, None);
+        assert!(parse(&["--unseal-delete"]).is_err());
+        assert!(parse(&["--unseal-delete", "a", "--unseal", "b"]).is_err());
+        assert!(parse(&["--unseal-delete-force", "a", "--unseal", "b"]).is_err());
+        assert!(parse(&["--unseal-delete-force", "a", "--unseal-delete", "b"]).is_err());
     }
 
     #[test]

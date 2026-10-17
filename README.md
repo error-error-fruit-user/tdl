@@ -57,9 +57,9 @@ On first run, press `U` to select your UZDoom executable and `W` to select a bas
 ### Command line
 
 ```sh
-tdl [--vault <dir> | --vault-once <dir> | --forget-vault] [--wads <dir>]... [--unseal <scroll>] [--no-splash] [--splash-quip <quip> | --no-quips] [[--music <song>] [--keep-music] | --no-music] [--uzdoom <file>] [--base-wad <file>]
+tdl [--vault <dir> | --vault-once <dir> | --forget-vault | --forget-vault-once] [--wads <dir>... | --wads-once <dir>... | --forget-wads | --forget-wads-once] [--unseal <scroll> | --unseal-delete <scroll> | --unseal-delete-force <scroll>] [--no-splash] [--splash-quip <quip> | --no-quips] [[--music <song>] [--keep-music] | --no-music] [--uzdoom <file>] [--base-wad <file>]
 tdl launch|host|join ...                  # see Commands below
-tdl --seal <scroll> [--with-settings] [--delete [--force]]
+tdl --seal <scroll> [--with-settings]
 tdl --list-quips
 ```
 
@@ -68,13 +68,15 @@ tdl --list-quips
 - `--vault <dir>` keeps everything in `<dir>/config` and `<dir>/data` instead of the standard dirs. tdl asks whether to open that vault every time it starts.
 - `--vault-once <dir>` opens a vault the same way, just for this run, without asking.
 - `--unseal <scroll>` imports a shared `.scroll` as soon as tdl starts, just like `I` in the launcher, looking for its wads in the wad dirs: `tdl --unseal shared.scroll --wads ~/wads`.
+- `--unseal-delete <scroll>` unseals a scroll in place of the vault's profiles: every profile is deleted first, with its saved games and logs, and the scroll's go in. The downloaded wads stay, so nothing has to be downloaded again, and so do your global settings. It asks first; `--unseal-delete-force <scroll>` doesn't. Restoring a backup made with `--seal` is `tdl --unseal-delete-force backup.scroll`.
 - `--splash-quip <quip>` shows your own quip under the splash logo instead of a random one, just for this run: `tdl --splash-quip "Rip and tear, bestie!"`. Every `#<number>` in it is replaced by that built-in quip, counting from 1 (`tdl --list-quips` prints them all with their numbers): `#12` is quip 12 alone, and `#12, hun!` is quip 12 with `, hun!` right after it, no space added. Write `##` for a plain `#` in front of digits. It plays the splash even if the **splash** setting is off, and can't go with `--no-splash`. The progress windows keep their usual quips. `--no-quips` leaves the quips out of every window for this run, the same as the **quips** setting.
 - `--music <song>` plays your own song (wav, mp3, flac or ogg) instead of "Inevitable Doom". It is checked before tdl starts, so a file it can't play is reported right away. `--keep-music` keeps the music going in the launcher after the splash, as the **music** setting does. To use your song every time, pick it in the **song** setting. `--no-music` plays no music at all for this run, not even on the splash, and can't go with the other two.
 - `--uzdoom <file>` and `--base-wad <file>` play with that UZDoom or base wad for this run only, over every profile's own and the global one, for trying another UZDoom build or IWAD quickly. They are never saved and never asked about; the launcher's panels mark them **session**. A file that isn't there stops tdl before it starts.
-- `--seal <scroll>` seals every profile in the vault into a new `.scroll`, with no windows, and closes: `tdl --seal backup.scroll`. It never writes over a file that is already there. `--with-settings` seals your global settings in too (never your song); whoever unseals it gets them in place of their own. With `--delete` it then deletes the vault: every profile with its saved games and logs. The downloaded wads stay, so nothing has to be downloaded again, and so do your global settings and anything in its dirs that tdl didn't make. It asks `[y/N]` first, showing what goes; `--force` skips the question. If it was the vault tdl remembered from `--vault`, tdl forgets it.
+- `--seal <scroll>` seals every profile in the vault into a new `.scroll`, with no windows, and closes: `tdl --seal backup.scroll`. It never writes over a file that is already there. `--with-settings` seals your global settings in too (never your song); whoever unseals it gets them in place of their own.
 - `--with-pride` plays the pride splash for the run: a fire that burns through every color of the rainbow, under the logo in the trans flag's blue, pink and white.
-- `--forget-vault` opens the standard vault, and asks whether to stop opening the one remembered from `--vault`.
-- `--wads <dir>` (as many times as you like) says where your wads are: file pickers open there instead of the current directory, and joining looks there for wads you already have. tdl asks whether to keep the dirs for this **[S]ession** only, **[G]lobal**ly for every vault, or for this **[V]ault**. Kept dirs are used whenever tdl starts without `--wads`: the vault's own first, then the global ones.
+- `--forget-vault` opens the standard vault, and asks whether to stop opening the one remembered from `--vault`. `--forget-vault-once` opens the standard vault just for this run, and asks nothing.
+- `--wads <dir>` (as many times as you like) says where your wads are: file pickers open there instead of the current directory, and joining looks there for wads you already have. tdl asks whether to keep the dirs for this **[S]ession** only, **[G]lobal**ly for every vault, or for this **[V]ault**. Kept dirs are used whenever tdl starts without `--wads`: the vault's own first, then the global ones. `--wads-once <dir>` uses the dirs the same way, just for this run, without asking.
+- `--forget-wads` looks for wads only in the downloads this run, and asks whether to forget the wad dirs kept **[G]lobal**ly, for this **[V]ault**, or **[B]oth**. `--forget-wads-once` leaves them out just for this run, and asks nothing.
 
 #### Commands
 

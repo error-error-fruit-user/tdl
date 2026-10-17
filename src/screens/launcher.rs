@@ -15,7 +15,7 @@ use ratatui::{
 };
 
 use crate::{
-    cli::{Command, Seal},
+    cli::{Ask, Command, Forget, Seal},
     clipboard::Clipboard,
     error::{Error, Result},
     layout, music, picker,
@@ -86,10 +86,14 @@ pub struct Launcher {
     /// keeping it.
     passed_vault: Option<PathBuf>,
     ask_about_vault: bool,
-    forget_vault: bool,
+    forget_vault: Forget,
     passed_wads: Vec<PathBuf>,
+    ask_about_wads: bool,
+    forget_wads: Forget,
     /// The scroll from `--unseal`, until it has been imported.
     passed_scroll: Option<PathBuf>,
+    /// Whether the scroll replaces the vault's profiles (`--unseal-delete`), and asks first.
+    unseal_delete: Option<Ask>,
     global: Global,
     global_path: PathBuf,
     /// False if `global.rite` is from a newer tdl, so it is never overwritten.
@@ -108,11 +112,17 @@ pub struct Start {
     pub vault: Option<String>,
     /// Whether to ask about opening the passed vault every time; off for `--vault-once`.
     pub ask_about_vault: bool,
-    /// Opens the standard vault and offers to forget the remembered one.
-    pub forget_vault: bool,
+    /// Opens the standard vault, and maybe offers to forget the remembered one.
+    pub forget_vault: Forget,
     pub wads: Vec<String>,
+    /// Whether to ask about keeping the passed wad dirs; off for `--wads-once`.
+    pub ask_about_wads: bool,
+    /// Uses no wad dirs but the downloads, and maybe offers to forget the kept ones.
+    pub forget_wads: Forget,
     /// A scroll to import as soon as the launcher is up.
     pub unseal: Option<String>,
+    /// The scroll replaces every profile in the vault, asking first or not.
+    pub unseal_delete: Option<Ask>,
     pub splash: bool,
     /// The splash screen's quip, instead of a random one. Plays the splash even if the settings
     /// skip it, since asking for a quip is asking to see it.
@@ -204,7 +214,7 @@ impl Launcher {
         };
         let passed_vault = start.vault.as_deref().map(absolute);
         let kept_vault = global.vault.as_ref().map(PathBuf::from).filter(|kept| {
-            if start.forget_vault {
+            if start.forget_vault.is_on() {
                 return false;
             }
             let there = kept.is_dir();
@@ -223,10 +233,12 @@ impl Launcher {
         let mut vault = Vault::new(config_dir, data_dir);
         vault.notices.extend(notices);
         let passed_wads: Vec<_> = start.wads.iter().map(|dir| absolute(dir)).collect();
-        vault.wad_dirs = if passed_wads.is_empty() {
-            remembered_dirs(&vault.config.wad_dirs, &global.wad_dirs)
-        } else {
+        vault.wad_dirs = if !passed_wads.is_empty() {
             passed_wads.clone()
+        } else if start.forget_wads.is_on() {
+            Vec::new()
+        } else {
+            remembered_dirs(&vault.config.wad_dirs, &global.wad_dirs)
         };
         Self {
             vault,
@@ -244,7 +256,10 @@ impl Launcher {
             ask_about_vault: start.ask_about_vault,
             forget_vault: start.forget_vault,
             passed_wads,
+            ask_about_wads: start.ask_about_wads,
+            forget_wads: start.forget_wads,
             passed_scroll: start.unseal.as_deref().map(absolute),
+            unseal_delete: start.unseal_delete,
             global,
             global_path,
             global_writable,
@@ -354,12 +369,20 @@ impl Launcher {
             let before = self.vault.profiles.len();
             let mut index = before;
             let current = self.global.shared();
-            if let Some(settings) =
-                share::unseal_file(grimoire, &mut self.vault, &mut index, &scroll, &current)?
-            {
+            let replacing = self.unseal_delete;
+            if let Some(settings) = share::unseal_file(
+                grimoire,
+                &mut self.vault,
+                &mut index,
+                &scroll,
+                &current,
+                replacing,
+            )? {
                 self.take_shared(grimoire, settings)?;
             }
-            if self.vault.profiles.len() > before {
+            if replacing.is_some() {
+                self.table_state.select(Some(0));
+            } else if self.vault.profiles.len() > before {
                 self.table_state.select(Some(before));
             }
         }
@@ -371,7 +394,7 @@ impl Launcher {
     /// question (a file to upgrade) is an error instead; then the command runs (see
     /// [`plain`](crate::slayer::plain)). `Err` says what stopped it.
     pub fn summon_plain(start: Start) -> std::result::Result<(), String> {
-        let (mut launcher, _) = Self::open_plain(start)?;
+        let mut launcher = Self::open_plain(start)?;
         let command = launcher
             .command
             .take()
@@ -408,9 +431,8 @@ impl Launcher {
     }
 
     /// The launcher for a run with no windows, with the vault checked as fine to use: notices are
-    /// printed, and files from another edition of tdl are an error. Also gives the standard config
-    /// dir, to tell the standard vault from one of the user's own.
-    fn open_plain(start: Start) -> std::result::Result<(Self, PathBuf), String> {
+    /// printed, and files from another edition of tdl are an error.
+    fn open_plain(start: Start) -> std::result::Result<Self, String> {
         let project_dirs = ProjectDirs::from("error.error.fruit", "eef", "tdl")
             .ok_or("Could not find the home directory")?;
         let mut launcher = Self::new(start, project_dirs.config_dir(), project_dirs.data_dir());
@@ -427,42 +449,15 @@ impl Launcher {
                     .to_string(),
             );
         }
-        Ok((launcher, project_dirs.config_dir().to_path_buf()))
+        Ok(launcher)
     }
 
     /// `tdl --seal`: seals the whole vault into a scroll, with the global settings only if
-    /// `--with-settings` asks for them, with no windows. With `--delete` the vault is deleted afterwards (asked first unless `--force`),
-    /// and if it was the vault tdl remembered from `--vault`, it is forgotten.
+    /// `--with-settings` asks for them, with no windows.
     pub fn seal_plain(start: Start, seal: &Seal) -> std::result::Result<(), String> {
-        let (mut launcher, standard_config_dir) = Self::open_plain(start)?;
-        let vault = &launcher.vault;
+        let launcher = Self::open_plain(start)?;
         let settings = seal.with_settings.then(|| launcher.global.shared());
-        let scroll = plain::seal(vault, settings, &seal.scroll)?;
-        if !seal.delete {
-            return Ok(());
-        }
-        // 🗂️ a vault of the user's own has a dir around its config and data, which goes too
-        let root = (vault.config_dir != standard_config_dir)
-            .then(|| vault.config_dir.parent().map(Path::to_path_buf))
-            .flatten();
-        if !plain::delete_vault(vault, &scroll, root.as_deref(), seal.force)? {
-            return Ok(());
-        }
-        let remembered = launcher.global.vault.as_ref().map(PathBuf::from);
-        if root.is_some() && remembered == root {
-            if !launcher.global_writable {
-                return Err(
-                    "tdl still remembers the vault: your global settings are from a newer tdl"
-                        .to_string(),
-                );
-            }
-            launcher.global.vault = None;
-            launcher
-                .global
-                .keep(&launcher.global_path)
-                .map_err(|error| format!("Could not forget the vault: {error}"))?;
-            println!("tdl no longer opens it by default");
-        }
+        plain::seal(&launcher.vault, settings, &seal.scroll)?;
         Ok(())
     }
 
@@ -587,7 +582,7 @@ impl Launcher {
             };
         }
 
-        if self.forget_vault {
+        if self.forget_vault == Forget::Asking {
             match self.global.vault.clone() {
                 Some(kept) if self.global_writable => {
                     let question =
@@ -619,6 +614,13 @@ impl Launcher {
             }
         }
 
+        if self.forget_wads == Forget::Asking {
+            self.offer_to_forget_wads(grimoire)?;
+        }
+
+        if !self.ask_about_wads {
+            return Ok(());
+        }
         let passed: Vec<OsString> = self
             .passed_wads
             .iter()
@@ -657,6 +659,70 @@ impl Launcher {
             }
             // 🕯️ just for tonight: nothing is written
             _ => {}
+        }
+        Ok(())
+    }
+
+    /// `--forget-wads`: asks whether to forget the wad dirs kept for every vault, for this one, or
+    /// both, and forgets them for good if so.
+    fn offer_to_forget_wads(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+        let list = |dirs: &[OsString]| {
+            dirs.iter()
+                .map(|dir| Path::new(dir).display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let (global, vault) = match (
+            self.global.wad_dirs.is_empty(),
+            self.vault.config.wad_dirs.is_empty(),
+        ) {
+            (true, true) => return Warning::summon(grimoire, "No wad dirs were kept"),
+            (false, true) => {
+                let question = format!(
+                    "Forget the wad dirs kept for every vault, {}?",
+                    list(&self.global.wad_dirs)
+                );
+                (Dialog::summon(grimoire, &question)?, false)
+            }
+            (true, false) => {
+                let question = format!(
+                    "Forget the wad dirs kept for this vault, {}?",
+                    list(&self.vault.config.wad_dirs)
+                );
+                (false, Dialog::summon(grimoire, &question)?)
+            }
+            (false, false) => {
+                let question = format!(
+                    "Forget the wad dirs kept for every vault ({}), for this vault ({}), or both?",
+                    list(&self.global.wad_dirs),
+                    list(&self.vault.config.wad_dirs)
+                );
+                match ThreeWayDialog::summon(grimoire, &question, ["Global", "Vault", "Both"])? {
+                    Some(0) => (true, false),
+                    Some(1) => (false, true),
+                    Some(2) => (true, true),
+                    _ => (false, false),
+                }
+            }
+        };
+        if global && !self.global_writable {
+            Warning::summon(grimoire, "The global settings are from a newer tdl")?;
+        } else if global {
+            self.global.wad_dirs.clear();
+            if self.global.keep(&self.global_path).is_err() {
+                Warning::save_failed(grimoire)?;
+            }
+        }
+        if vault {
+            self.vault.config.wad_dirs.clear();
+            if self
+                .vault
+                .config
+                .write(&self.vault.config_dir, &self.vault.profiles)
+                .is_err()
+            {
+                Warning::save_failed(grimoire)?;
+            }
         }
         Ok(())
     }
@@ -1744,6 +1810,27 @@ mod tests {
     }
 
     #[test]
+    fn forgetting_the_wads_leaves_out_the_kept_dirs_this_run_but_keeps_them_saved() {
+        let altar = Altar::new("launcher-forget-wads");
+        let standard = altar.file("standard");
+        Global {
+            wad_dirs: vec!["/kept".into()],
+            ..Global::default()
+        }
+        .keep(&Global::path(&standard))
+        .unwrap();
+        for forget in [Forget::Once, Forget::Asking] {
+            let start = Start {
+                forget_wads: forget,
+                ..Start::default()
+            };
+            let opened = Launcher::new(start, &standard, &standard);
+            assert!(opened.vault.wad_dirs.is_empty(), "{forget:?}");
+            assert_eq!(opened.global.wad_dirs, [OsString::from("/kept")]);
+        }
+    }
+
+    #[test]
     fn forgetting_opens_the_standard_vault_even_with_one_kept() {
         let altar = Altar::new("launcher-forget-vault");
         let standard = altar.file("standard");
@@ -1756,7 +1843,7 @@ mod tests {
         .keep(&Global::path(&standard))
         .unwrap();
         let start = Start {
-            forget_vault: true,
+            forget_vault: Forget::Asking,
             ..Start::default()
         };
         let opened = Launcher::new(start, &standard, &standard);

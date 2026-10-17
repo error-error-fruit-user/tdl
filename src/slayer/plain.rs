@@ -6,7 +6,6 @@
 
 use std::{
     ffi::OsStr,
-    fs,
     io::{self, BufRead, IsTerminal, Write},
     ops::Deref,
     path::{Path, PathBuf},
@@ -357,86 +356,6 @@ pub fn seal(
     Ok(path)
 }
 
-/// What deleting `vault` removes: only what tdl made there. In the config dir that is
-/// `config.rite` (with its backup and anything left from a failed save) and the profiles dir;
-/// in the data dir, each profile's own dir (saved games, logs, a new ini). The downloaded
-/// wads stay, so nothing has to be downloaded again, and so do `global.rite` and anything else.
-fn vault_contents(vault: &Vault) -> Vec<PathBuf> {
-    let config = fs::read_dir(&vault.config_dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.file_name()
-                .is_some_and(|name| name.to_string_lossy().starts_with("config.rite"))
-        });
-    let profiles = vault
-        .profiles
-        .iter()
-        .map(|profile| vault.data_dir.join(&profile.name));
-    config
-        .chain([vault.config_dir.join(".profiles")])
-        .chain(profiles)
-        .filter(|path| path.exists())
-        .collect()
-}
-
-/// `tdl --seal --delete`: deletes what tdl made in `vault` (see [`vault_contents`]), then each of
-/// its dirs, and `root` (a vault's own dir) too, if that leaves them empty. Asks first,
-/// unless `force`; returns whether it was deleted. Refused if `scroll` is among what would go.
-pub fn delete_vault(
-    vault: &Vault,
-    scroll: &Path,
-    root: Option<&Path>,
-    force: bool,
-) -> std::result::Result<bool, String> {
-    let contents = vault_contents(vault);
-    let scroll = std::path::absolute(scroll).unwrap_or_else(|_| scroll.to_path_buf());
-    if contents.iter().any(|path| scroll.starts_with(path)) {
-        return Err(
-            "The scroll is inside the vault: seal it somewhere else to delete the vault"
-                .to_string(),
-        );
-    }
-    if !force {
-        println!("Deleting the vault deletes every profile, with its saved games and logs, from");
-        println!("  {}", vault.config_dir.display());
-        if vault.data_dir != vault.config_dir {
-            println!("  {}", vault.data_dir.display());
-        }
-        println!(
-            "The downloaded wads stay in {}, and your global settings stay too.",
-            vault.downloads_dir().display()
-        );
-        if !ask("Delete the vault?") {
-            println!("The vault stays");
-            return Ok(false);
-        }
-    }
-    for path in &contents {
-        let removed = if path.is_dir() {
-            fs::remove_dir_all(path)
-        } else {
-            fs::remove_file(path)
-        };
-        removed.map_err(|error| format!("Could not delete {}: {error}", path.display()))?;
-    }
-    // 🧹 only emptied dirs go: anything tdl didn't make is left where it was
-    for dir in [
-        Some(vault.data_dir.as_path()),
-        Some(&vault.config_dir),
-        root,
-    ]
-    .into_iter()
-    .flatten()
-    {
-        let _ = fs::remove_dir(dir);
-    }
-    println!("Deleted the vault");
-    Ok(true)
-}
-
 /// The name for a profile made to join `host`: `joined_` and the host with anything a profile
 /// name can't hold made `_`. If that is taken, `_v2`, `_v3` and so on go after it: a plain number
 /// would read as part of the address (`joined_10_0_0_3` for a second `10.0.0.2`).
@@ -519,22 +438,16 @@ mod tests {
         vault::{edition::Loaded, scribe::tests::Altar},
     };
 
-    /// The example vault in `altar`, with a data dir for each profile and one download.
-    fn example(altar: &Altar) -> (Vault, PathBuf) {
+    /// The example vault in `altar`.
+    fn example(altar: &Altar) -> Vault {
         let root = testing::example_vault(altar);
-        let vault = Vault::new(root.join("config"), root.join("data"));
-        for profile in &vault.profiles {
-            fs::create_dir_all(vault.data_dir.join(&profile.name).join("saves")).unwrap();
-        }
-        fs::create_dir_all(vault.downloads_dir().join("abc")).unwrap();
-        fs::write(vault.downloads_dir().join("abc").join("got.wad"), b"wad").unwrap();
-        (vault, root)
+        Vault::new(root.join("config"), root.join("data"))
     }
 
     #[test]
     fn sealing_puts_every_profile_and_the_settings_in_a_new_scroll() {
         let altar = Altar::new("plain-seal");
-        let (vault, _) = example(&altar);
+        let vault = example(&altar);
         let settings = Shared::default();
         let path = seal(&vault, Some(settings.clone()), &altar.file("all")).unwrap();
         assert_eq!(path, altar.file("all.scroll"), ".scroll is added");
@@ -552,54 +465,6 @@ mod tests {
         assert_eq!(bare.settings, None, "settings only go in when asked for");
         // 🚫 never over a file that is already there
         assert!(seal(&vault, None, &path).is_err());
-    }
-
-    #[test]
-    fn deleting_a_vault_takes_only_what_tdl_made_and_keeps_the_downloads() {
-        let altar = Altar::new("plain-delete");
-        let (vault, root) = example(&altar);
-        let scroll = seal(&vault, None, &altar.file("all")).unwrap();
-        // the standard vault's config dir holds the global settings, which must stay
-        fs::write(vault.config_dir.join("global.rite"), b"global").unwrap();
-        fs::write(vault.data_dir.join("notes.txt"), b"mine").unwrap();
-        assert_eq!(delete_vault(&vault, &scroll, Some(&root), true), Ok(true));
-        assert!(vault.config_dir.join("global.rite").is_file());
-        assert!(!vault.config_dir.join("config.rite").exists());
-        assert!(!vault.config_dir.join(".profiles").exists());
-        assert!(vault.data_dir.join("notes.txt").is_file());
-        assert!(
-            vault.downloads_dir().join("abc").join("got.wad").is_file(),
-            "nothing has to be downloaded again"
-        );
-        assert!(!vault.data_dir.join("brutal_doom").exists());
-        assert!(root.is_dir(), "not empty, so it stays");
-        assert!(scroll.is_file());
-    }
-
-    #[test]
-    fn an_emptied_vault_goes_with_its_dirs() {
-        let altar = Altar::new("plain-delete-empty");
-        let (vault, root) = example(&altar);
-        let scroll = seal(&vault, None, &altar.file("all")).unwrap();
-        fs::remove_dir_all(root.join("wads")).ok();
-        fs::remove_file(root.join("uzdoom.sh")).ok();
-        fs::remove_dir_all(vault.downloads_dir()).ok();
-        assert_eq!(delete_vault(&vault, &scroll, Some(&root), true), Ok(true));
-        assert!(!vault.config_dir.exists());
-        assert!(!vault.data_dir.exists());
-    }
-
-    #[test]
-    fn a_scroll_inside_the_vault_stops_the_delete() {
-        let altar = Altar::new("plain-delete-inside");
-        let (vault, root) = example(&altar);
-        let inside = vault.data_dir.join("brutal_doom").join("all.scroll");
-        let scroll = seal(&vault, None, &inside).unwrap();
-        assert!(delete_vault(&vault, &scroll, Some(&root), true).is_err());
-        assert!(
-            vault.config_dir.join("config.rite").is_file(),
-            "nothing was deleted"
-        );
     }
 
     #[test]

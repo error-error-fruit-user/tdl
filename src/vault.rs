@@ -288,6 +288,21 @@ impl Vault {
         }
         Ok(())
     }
+
+    /// Deletes every profile, each with its file, backup and data dir (saves and all). The
+    /// emptied list is saved first, so a failed save leaves every profile as it was.
+    pub fn remove_all(&mut self) -> Result<()> {
+        self.forget_lookup();
+        let removed = std::mem::take(&mut self.profiles);
+        if let Err(error) = self.config.write(&self.config_dir, &self.profiles) {
+            self.profiles = removed;
+            return Err(error.into());
+        }
+        for profile in removed {
+            profile.remove(&self.config_dir, &self.data_dir);
+        }
+        Ok(())
+    }
 }
 
 /// What [`Vault::insert_copies`] came to.
@@ -638,6 +653,50 @@ mod tests {
             fs::read(altar.file("data/brutal/saves/slot1")).unwrap(),
             b"my save"
         );
+    }
+
+    #[test]
+    fn removing_them_all_takes_every_profile_and_its_saves_but_not_the_downloads() {
+        let (altar, profile) = upgraded_altar("vault-remove-all");
+        let mut vault = vault(&altar);
+        profile.write(&vault.config_dir, &vault.data_dir).unwrap();
+        let mut index = 1;
+        vault.insert(&mut index, named("second")).unwrap();
+        fs::write(altar.file("data/brutal/saves/slot1"), b"my save").unwrap();
+        fs::create_dir_all(vault.downloads_dir()).unwrap();
+        fs::write(vault.downloads_dir().join("got.wad"), b"wad").unwrap();
+
+        vault.remove_all().unwrap();
+        assert!(vault.profiles.is_empty());
+        assert!(vault.config.profile_names.is_empty());
+        for gone in [
+            "config/.profiles/brutal.rite",
+            "config/.profiles/second.rite",
+            "data/brutal",
+        ] {
+            assert!(!altar.file(gone).exists(), "{gone}");
+        }
+        assert!(vault.downloads_dir().join("got.wad").is_file());
+        assert!(
+            self::vault(&altar).profiles.is_empty(),
+            "and it stays empty"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_remove_all_deletes_nothing() {
+        let (altar, profile) = upgraded_altar("vault-remove-all-fails");
+        let mut vault = vault(&altar);
+        profile.write(&vault.config_dir, &vault.data_dir).unwrap();
+        fs::write(altar.file("data/brutal/saves/slot1"), b"my save").unwrap();
+        let Some(_frozen) = Frozen::new(altar.file("config")) else {
+            return;
+        };
+        assert!(vault.remove_all().is_err());
+        assert_eq!(vault.profiles, [profile]);
+        assert!(altar.file("config/.profiles/brutal.rite").exists());
+        assert!(altar.file("data/brutal/saves/slot1").exists());
     }
 
     #[cfg(unix)]

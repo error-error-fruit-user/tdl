@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
+    cli::Ask,
     error::Result,
     picker,
     popups::{dialog::Dialog, hashing, progress::Kind, warning::Warning},
@@ -89,16 +90,19 @@ pub fn unseal(
     let Some(path) = picker::file(grimoire, Some(FILTER), None)? else {
         return Ok(None);
     };
-    unseal_file(grimoire, vault, index, &path, current)
+    unseal_file(grimoire, vault, index, &path, current, None)
 }
 
-/// [`unseal`], for the scroll at `path` rather than one picked, as `--unseal` asks for.
+/// [`unseal`], for the scroll at `path` rather than one picked, as `--unseal` asks for. With
+/// `replacing` (`--unseal-delete`), every profile in the vault is deleted to make room for the
+/// scroll's, once they are ready to go in, after asking if it says to.
 pub fn unseal_file(
     grimoire: &mut Grimoire,
     vault: &mut Vault,
     index: &mut usize,
     path: &Path,
     current: &Shared,
+    replacing: Option<Ask>,
 ) -> Result<Option<Shared>> {
     let Some(scroll) = read(grimoire, path)? else {
         return Ok(None);
@@ -131,11 +135,21 @@ pub fn unseal_file(
     let added = match <[Profile; 1]>::try_from(profiles) {
         // 📜 one profile is named as it always was, starting from the scroll's name
         Ok([profile]) => {
-            let Some(name) =
-                ProfileNamer::summon_suggesting(grimoire, &vault.profiles, &profile.name)?
+            // 🧹 the profiles being replaced take no names from it
+            let taken = if replacing.is_some() {
+                &[][..]
+            } else {
+                &vault.profiles[..]
+            };
+            let Some(name) = ProfileNamer::summon_suggesting(grimoire, taken, &profile.name)?
             else {
                 return Ok(None);
             };
+            if let Some(ask) = replacing
+                && !clear(grimoire, vault, index, ask)?
+            {
+                return Ok(None);
+            }
             if vault.insert(index, Profile { name, ..profile }).is_err() {
                 Warning::save_failed(grimoire)?;
                 return Ok(None);
@@ -144,6 +158,11 @@ pub fn unseal_file(
         }
         // 📚 several keep their names, and only the ones that are taken are asked about
         Err(profiles) => {
+            if let Some(ask) = replacing
+                && !clear(grimoire, vault, index, ask)?
+            {
+                return Ok(None);
+            }
             let inserted = vault.insert_copies(index, profiles, |profiles, name, tagged| {
                 ask_copy_name(grimoire, profiles, name, tagged)
             })?;
@@ -158,6 +177,35 @@ pub fn unseal_file(
     }
     // ⚙️ only once a profile is in: backing out of the import shouldn't change any settings
     Ok(scroll.settings.filter(|settings| settings != current))
+}
+
+/// For `--unseal-delete`: deletes every profile in `vault`, with its saves, to make room for a
+/// scroll's, asking first if `ask` says to, and puts `index` at the top. Returns whether they are
+/// gone; the downloaded wads and the global settings always stay.
+fn clear(grimoire: &mut Grimoire, vault: &mut Vault, index: &mut usize, ask: Ask) -> Result<bool> {
+    if ask == Ask::First {
+        let question = match vault.profiles.as_slice() {
+            [] => "Unseal the scroll into this empty vault?".to_string(),
+            [only] => format!(
+                "Delete '{}' and its saves, and put the scroll's profiles in its place?",
+                only.name
+            ),
+            all => format!(
+                "Delete the {} profiles in this vault and their saves, and put the scroll's in \
+                 their place?",
+                all.len()
+            ),
+        };
+        if !Dialog::summon(grimoire, &question)? {
+            return Ok(false);
+        }
+    }
+    if vault.remove_all().is_err() {
+        Warning::save_failed(grimoire)?;
+        return Ok(false);
+    }
+    *index = 0;
+    Ok(true)
 }
 
 /// A profile off a scroll, as it goes into `vault`. A base wad that is the global one already is

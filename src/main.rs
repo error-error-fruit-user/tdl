@@ -64,8 +64,11 @@ fn main() {
         vault: cli.vault,
         ask_about_vault: !cli.vault_once,
         forget_vault: cli.forget_vault,
+        ask_about_wads: !cli.wads_once,
+        forget_wads: cli.forget_wads,
         wads: cli.wads,
         unseal: cli.unseal,
+        unseal_delete: cli.unseal_delete,
         // 🎯 a command goes straight to the game, so it skips the splash
         splash: !cli.no_splash && cli.command.is_none(),
         quip: cli.quip,
