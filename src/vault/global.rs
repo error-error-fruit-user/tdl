@@ -66,6 +66,10 @@ pub struct Global {
     /// until a game is hosted on a port other than the default.
     #[serde(default)]
     pub host_port: Option<u16>,
+    /// Plays the pride splash every time, as `--with-pride` does for one run. Set in the settings;
+    /// missing in older files, which count as the usual splash.
+    #[serde(default)]
+    pub pride: bool,
     /// UZDoom from `--uzdoom`, for this session only: it is never saved, and it wins over every
     /// profile's own and the global one.
     #[serde(skip)]

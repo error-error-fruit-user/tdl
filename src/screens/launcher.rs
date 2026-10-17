@@ -323,6 +323,10 @@ impl Launcher {
         if self.keep_music || self.vault.global.music == Music::Kept {
             music::start(true);
         }
+        // 🏳️‍🌈 the pride splash, kept on in the settings (`--with-pride` already wore it for this run)
+        if self.vault.global.pride {
+            theme::wear_pride();
+        }
         if self.splash && (!self.vault.global.skip_splash || self.quip.is_some()) {
             // 💬 the command line's quip, or else the one kept in the settings, or else a random one
             let kept = quips::shown()

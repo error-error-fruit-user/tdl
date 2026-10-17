@@ -20,6 +20,8 @@ use crate::{
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub splash: bool,
+    /// Whether the splash is the pride one, for every vault.
+    pub pride: bool,
     pub music: Music,
     pub uzdoom_args: String,
     /// Whether windows show quips at all, for every vault.
@@ -35,6 +37,7 @@ impl Settings {
     pub fn of(global: &Global) -> Self {
         Self {
             splash: !global.skip_splash,
+            pride: global.pride,
             music: global.music,
             uzdoom_args: global.uzdoom_args.clone(),
             quips: !global.no_quips,
@@ -48,6 +51,7 @@ impl Settings {
     pub fn apply(self, global: &mut Global) -> std::result::Result<(), String> {
         let quip = SplashQuip::from_typed(&self.quip)?;
         global.skip_splash = !self.splash;
+        global.pride = self.pride;
         global.uzdoom_args = self.uzdoom_args.trim().to_string();
         global.splash_quip = quip;
         global.no_quips = !self.quips;
@@ -71,19 +75,20 @@ pub struct SettingsForm {
 impl SettingsForm {
     const TITLE: &str = "settings";
     const BORDER_COLOR: Color = theme::SCREEN;
-    const FIELDS: usize = 6;
+    const FIELDS: usize = 7;
     /// The longest the UZDoom arguments may get, so the field stays something that fits a window.
     const MAX_ARGS: usize = 120;
     /// The longest a quip may be typed; the splash cuts it shorter on a narrow terminal anyway.
     const MAX_QUIP: usize = 60;
     /// The fields before this are switched with J/K; the ones from here are typed into.
-    const TOGGLES: usize = 3;
+    const TOGGLES: usize = 4;
+    const PRIDE: usize = 1;
     /// The one toggle with three choices instead of two.
-    const MUSIC: usize = 1;
+    const MUSIC: usize = 2;
     /// Picked with a file dialog rather than typed.
-    const SONG: usize = 3;
-    const ARGS: usize = 4;
-    const QUIP: usize = 5;
+    const SONG: usize = 4;
+    const ARGS: usize = 5;
+    const QUIP: usize = 6;
     const TOGGLE_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Save"],
         ["Tab/↓, Backtab/↑", "Traverse"],
@@ -139,6 +144,7 @@ impl Ritual for SettingsForm {
         } else {
             "skipped"
         };
+        let pride = if self.settings.pride { "on" } else { "off" };
         let music = self.settings.music.label();
         let quips = if self.settings.quips {
             "shown"
@@ -156,6 +162,13 @@ impl Ritual for SettingsForm {
             Field {
                 label: "splash",
                 value: splash,
+                placeholder: "",
+                room: 13,
+                caret: None,
+            },
+            Field {
+                label: "pride",
+                value: pride,
                 placeholder: "",
                 room: 13,
                 caret: None,
@@ -289,6 +302,7 @@ impl SettingsForm {
             {
                 let toggle = match self.focus {
                     0 => &mut self.settings.splash,
+                    Self::PRIDE => &mut self.settings.pride,
                     _ => &mut self.settings.quips,
                 };
                 *toggle = !*toggle;
@@ -354,6 +368,7 @@ mod tests {
         let mut changed = Global::default();
         Settings {
             splash: false,
+            pride: true,
             music: Music::Kept,
             uzdoom_args: "  +sv_cheats 1  ".into(),
             quips: false,
@@ -363,6 +378,7 @@ mod tests {
         .apply(&mut changed)
         .unwrap();
         assert!(changed.skip_splash);
+        assert!(changed.pride);
         assert_eq!(changed.music, Music::Kept);
         // spaces around the arguments mean nothing, so they aren't kept
         assert_eq!(changed.uzdoom_args, "+sv_cheats 1");
@@ -439,6 +455,8 @@ mod tests {
             KeyCode::Tab,
             KeyCode::Char('j'),
             KeyCode::Tab,
+            KeyCode::Char('j'),
+            KeyCode::Tab,
             KeyCode::Tab,
         ]
         .into_iter()
@@ -450,6 +468,7 @@ mod tests {
             settings,
             Settings {
                 splash: false,
+                pride: true,
                 music: Music::Kept,
                 uzdoom_args: "-skill 4 ".into(),
                 quips: false,
@@ -482,6 +501,7 @@ mod tests {
     fn snapshot_the_settings_with_the_args_in_focus() {
         let mut form = SettingsForm::new(Settings {
             splash: true,
+            pride: true,
             music: Music::Splash,
             uzdoom_args: "-nomusic +vid_fps 1".into(),
             quips: true,
@@ -489,6 +509,6 @@ mod tests {
             song: Some("/songs/e1m1.ogg".into()),
         });
         form.focus = SettingsForm::ARGS;
-        assert_snapshot!(testing::draw(60, 18, |page| form.render(page)));
+        assert_snapshot!(testing::draw(60, 20, |page| form.render(page)));
     }
 }

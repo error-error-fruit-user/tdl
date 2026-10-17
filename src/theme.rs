@@ -104,7 +104,7 @@ pub const CHANGED_BADGE: Style = Style::new()
     .add_modifier(Modifier::BOLD);
 pub const VOLATILE_BADGE: Style = Style::new().fg(VOID).bg(SOUL).add_modifier(Modifier::BOLD);
 
-// Pride, for `--with-pride`: the splash's fire burns through the rainbow, under the logo in the
+// Pride, for `--with-pride` or the **pride** setting: the splash's fire burns through the rainbow, under the logo in the
 // trans flag's colors.
 
 static PRIDE: AtomicBool = AtomicBool::new(false);

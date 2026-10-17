@@ -1,11 +1,13 @@
 ---
 source: src/screens/settings.rs
-expression: "testing::draw(60, 18, |page| form.render(page))"
+expression: "testing::draw(60, 20, |page| form.render(page))"
 ---
 
          ┏━━━━━━━━━━━━━━[ settings ]━━━━━━━━━━━━━━┓
          ┃                                        ┃
          ┃      splash  shown                     ┃
+         ┃                                        ┃
+         ┃       pride  on                        ┃
          ┃                                        ┃
          ┃       music  splash only               ┃
          ┃                                        ┃
