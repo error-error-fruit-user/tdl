@@ -179,9 +179,10 @@ impl Launcher {
         ["}/{", "Swap (Selected, If Any)"],
         Selection::LEGEND,
         ["Y/Shift+Y", "Copy Selected/All Profiles"],
+        ["X", "Cut (Selected, If Any)"],
         ["P", "Paste"],
         ["A/E/D", "Add/Edit/Delete (Selected, If Any)"],
-        ["X/I", "Export (Selected or All)/Import Scroll"],
+        ["S/I", "Seal (Selected or All)/Import Scroll"],
         ["U/W", "Select UZDoom/Base Wad"],
         ["O", "Settings"],
         ["Esc", "Save and Quit (unselects first)"],
@@ -966,6 +967,46 @@ impl Launcher {
         })
     }
 
+    /// Cuts the picked profiles, or the one under the cursor: onto the clipboard, to be moved to
+    /// wherever they are pasted. Nothing moves or is deleted until then. Returns whether there was
+    /// anything to cut.
+    fn cut_profiles(&mut self) -> bool {
+        if !self.copy_profiles(false) {
+            return false;
+        }
+        if let Clipboard::Profiles(cut) = std::mem::take(&mut self.vault.clipboard) {
+            self.vault.clipboard = Clipboard::CutProfiles(cut);
+        }
+        true
+    }
+
+    /// Pastes cut profiles by moving them, in the order they were cut, to just in front of the
+    /// cursor, which lands on the first. Ones renamed or deleted since are left out. A cut pastes
+    /// once, so the clipboard is emptied. Like the other moves, the new order is saved on quit.
+    fn move_profiles(&mut self, cut: &[Profile]) {
+        self.vault.clipboard = Clipboard::Empty;
+        let rows: Vec<usize> = cut
+            .iter()
+            .filter_map(|cut| self.vault.profiles.iter().position(|p| p.name == cut.name))
+            .collect();
+        if rows.is_empty() {
+            return;
+        }
+        let cursor = self.cursor();
+        let at = cursor - rows.iter().filter(|&&row| row < cursor).count();
+        let moved: Vec<Profile> = rows
+            .iter()
+            .map(|&row| self.vault.profiles[row].clone())
+            .collect();
+        let mut row = 0;
+        self.vault.profiles.retain(|_| {
+            row += 1;
+            !rows.contains(&(row - 1))
+        });
+        self.vault.profiles.splice(at..at, moved);
+        self.table_state.select(Some(at));
+    }
+
     /// Copies the picked profiles (see [`Selection`]), or with `all` every profile, onto the
     /// clipboard, and lets go of the selection. Returns whether there was anything to copy.
     fn copy_profiles(&mut self, all: bool) -> bool {
@@ -1283,7 +1324,7 @@ impl Ritual for Launcher {
         // redone, and the selection and the search's matches are let go, since rows could move
         if !matches!(
             key_code,
-            KeyCode::Char('j' | 'k' | '?' | '/' | ';' | ',' | 'V' | 'm' | 'x' | 'y' | 'Y')
+            KeyCode::Char('j' | 'k' | '?' | '/' | ';' | ',' | 'V' | 'm' | 's' | 'x' | 'y' | 'Y')
                 | KeyCode::F(1)
                 | KeyCode::Up
                 | KeyCode::Down
@@ -1384,10 +1425,12 @@ impl Ritual for Launcher {
                     Clipboard::Empty => {}
                     Clipboard::Wads(wads) => self.paste_wads(grimoire, wads)?,
                     Clipboard::Profiles(profiles) => self.paste_profiles(grimoire, profiles)?,
+                    Clipboard::CutProfiles(profiles) => self.move_profiles(&profiles),
                 }
                 Ok(Phase::Render)
             }
-            KeyCode::Char('x') => self.seal_profiles(grimoire),
+            KeyCode::Char('x') => Ok(Phase::render_if(self.cut_profiles())),
+            KeyCode::Char('s') => self.seal_profiles(grimoire),
             KeyCode::Char('i') => {
                 let current = self.global.shared();
                 if let Some(settings) = share::unseal(grimoire, &mut self.vault, index, &current)? {
@@ -1680,6 +1723,60 @@ mod tests {
         let twins = named(&["Doom", "doom"]);
         assert_eq!(find_profile(&twins, "doom"), Some(1));
         assert_eq!(find_profile(&twins, "DOOM"), None);
+    }
+
+    #[test]
+    fn cut_profiles_stay_until_pasted_and_then_move_in_front_of_the_cursor() {
+        let altar = Altar::new("launcher-cut");
+        let mut launcher = launcher(&altar, 0);
+        let all = launcher.vault.profiles.clone();
+        let order = [
+            all[2].name.clone(),
+            all[0].name.clone(),
+            all[1].name.clone(),
+        ];
+        let names = |launcher: &Launcher| -> Vec<String> {
+            launcher
+                .vault
+                .profiles
+                .iter()
+                .map(|p| p.name.clone())
+                .collect()
+        };
+        launcher.selection.toggle_mark(0, all.len());
+        launcher.selection.toggle_mark(1, all.len());
+        assert!(launcher.cut_profiles());
+        assert_eq!(launcher.vault.profiles, all, "nothing moves on the cut");
+        assert_eq!(
+            launcher.vault.clipboard.note().as_deref(),
+            Some("2 profiles cut")
+        );
+        assert!(!launcher.selection.is_active());
+
+        // pasted on the new-profile row, they go to the end in the order they were cut
+        launcher.table_state.select(Some(all.len()));
+        let Clipboard::CutProfiles(cut) = launcher.vault.clipboard.clone() else {
+            panic!("the profiles should be cut");
+        };
+        launcher.move_profiles(&cut);
+        assert_eq!(names(&launcher), order);
+        assert_eq!(launcher.table_state.selected(), Some(1));
+        assert_eq!(
+            launcher.vault.clipboard,
+            Clipboard::Empty,
+            "a cut pastes once"
+        );
+        // moved, not copied: every profile is still there once, and nothing was written
+        assert_eq!(launcher.vault.profiles.len(), all.len());
+
+        // one cut and pasted on itself stays where it is
+        launcher.table_state.select(Some(0));
+        assert!(launcher.cut_profiles());
+        launcher.move_profiles(&[all[2].clone()]);
+        assert_eq!(names(&launcher), order);
+        // one deleted since its cut is left out
+        launcher.move_profiles(&[Profile::new("gone".into(), Vec::new())]);
+        assert_eq!(launcher.vault.profiles.len(), all.len());
     }
 
     #[test]

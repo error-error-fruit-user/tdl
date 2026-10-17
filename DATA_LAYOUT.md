@@ -88,7 +88,7 @@ Edition 4 (profiles and `config.rite`), and edition 1 of `global.rite`, only ren
 
 ## Scrolls
 
-A `.scroll` is one or more profiles sealed up to share (`X` in the launcher: the profile under the cursor, the ones selected, or the whole vault), written wherever you choose. Like the other files it is MessagePack in an edition wrapper, holding:
+A `.scroll` is one or more profiles sealed up to share (`S` in the launcher: the profile under the cursor, the ones selected, or the whole vault), written wherever you choose. Like the other files it is MessagePack in an edition wrapper, holding:
 
 | Field | Meaning |
 | --- | --- |

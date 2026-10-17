@@ -27,7 +27,7 @@ pub struct Config {
     /// The order profiles appear in the launcher. Kept in step with the profiles by [`Config::write`].
     #[serde(default)]
     pub profile_names: Vec<String>,
-    /// Goes straight to the launcher without the splash screen. Toggled with `S` in the launcher.
+    /// Goes straight to the launcher without the splash screen. Set with **splash** in the settings.
     #[serde(default)]
     pub skip_splash: bool,
     /// The port the host served its wads on last time, offered again in the host form. `None`

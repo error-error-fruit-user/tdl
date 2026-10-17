@@ -1,5 +1,5 @@
-//! What `Y` copied, for `P` to paste: wads from the editor, or whole profiles from the launcher.
-//! It lasts for the session and is never saved. Copying one kind replaces the other.
+//! What `Y` copied or `X` cut, for `P` to paste: wads from the editor, or whole profiles from the
+//! launcher. It lasts for the session and is never saved. Copying one kind replaces the other.
 
 use crate::vault::{profile::Profile, wad::Wad};
 
@@ -9,6 +9,9 @@ pub enum Clipboard {
     Empty,
     Wads(Vec<Wad>),
     Profiles(Vec<Profile>),
+    /// Profiles cut in the launcher, as they were then. They stay where they are until pasted,
+    /// which moves them there, once.
+    CutProfiles(Vec<Profile>),
 }
 
 impl Clipboard {
@@ -16,7 +19,7 @@ impl Clipboard {
         match self {
             Self::Empty => true,
             Self::Wads(wads) => wads.is_empty(),
-            Self::Profiles(profiles) => profiles.is_empty(),
+            Self::Profiles(profiles) | Self::CutProfiles(profiles) => profiles.is_empty(),
         }
     }
 
@@ -26,21 +29,24 @@ impl Clipboard {
         match self {
             Self::Empty => Vec::new(),
             Self::Wads(wads) => wads.clone(),
-            Self::Profiles(profiles) => profiles.iter().flat_map(|p| p.wads.clone()).collect(),
+            Self::Profiles(profiles) | Self::CutProfiles(profiles) => {
+                profiles.iter().flat_map(|p| p.wads.clone()).collect()
+            }
         }
     }
 
     /// What the note under the window says is copied, if anything is.
     pub fn note(&self) -> Option<String> {
-        let (count, kind) = match self {
+        let (count, kind, done) = match self {
             Self::Empty => return None,
-            Self::Wads(wads) => (wads.len(), "wad"),
-            Self::Profiles(profiles) => (profiles.len(), "profile"),
+            Self::Wads(wads) => (wads.len(), "wad", "copied"),
+            Self::Profiles(profiles) => (profiles.len(), "profile", "copied"),
+            Self::CutProfiles(profiles) => (profiles.len(), "profile", "cut"),
         };
         match count {
             0 => None,
-            1 => Some(format!("1 {kind} copied")),
-            n => Some(format!("{n} {kind}s copied")),
+            1 => Some(format!("1 {kind} {done}")),
+            n => Some(format!("{n} {kind}s {done}")),
         }
     }
 }
@@ -63,8 +69,12 @@ mod tests {
         );
         let profiles = vec![Profile::default(), Profile::default()];
         assert_eq!(
-            Clipboard::Profiles(profiles).note().as_deref(),
+            Clipboard::Profiles(profiles.clone()).note().as_deref(),
             Some("2 profiles copied")
+        );
+        assert_eq!(
+            Clipboard::CutProfiles(profiles).note().as_deref(),
+            Some("2 profiles cut")
         );
     }
 

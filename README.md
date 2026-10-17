@@ -104,11 +104,12 @@ tdl join 10.0.0.2 --code abc234 --port 9000           # the join form, filled in
 | `Shift+V` | Start selecting a range of profiles (`J`/`K` stretch it), or stop |
 | `M` | Mark or unmark the profile, to select profiles that aren't next to each other |
 | `Y` / `Shift+Y` | Copy the selected profiles (or the one under the cursor) / every profile |
+| `X` | Cut the selected profiles (or the one under the cursor): nothing moves until `P` pastes them, which moves them in front of the cursor, saves and all |
 | `P` | Paste: copied profiles go in front of the cursor, and copied wads go at the end of the profile (asks first) or, on `+`, start a new profile |
 | `A` | Add a profile |
 | `E` | Edit a profile |
 | `D` | Delete a profile |
-| `X` | Export the profile (or the selected ones, or the whole vault) as a `.scroll` to share |
+| `S` | Seal the profile (or the selected ones, or the whole vault) into a `.scroll` to share |
 | `I` | Import a `.scroll`, adding its profiles |
 | `U` | Select the UZDoom executable |
 | `W` | Select the base wad |
@@ -145,7 +146,7 @@ Pasting a wad whose file name the profile already has asks the same three things
 
 ### Sharing profiles
 
-`X` seals profiles into a `.scroll` file: it asks whether to seal the profile under the cursor (or the ones selected with `Shift+V`/`M`) or the whole vault. For each profile it keeps each wad's file name, size and hash, the base wad, and the host defaults (without the join code), but no paths, so it means the same thing on any computer. Send it to someone with the same wads and they press `I` to break the seal: tdl looks for each wad by name in their wad dirs (from `--wads`, or kept from it; with none, it asks for a dir), takes a file only if its size and then its hash match, and adds the profiles it finds. A scroll of one profile asks for its name; with several, each keeps its name, and one that is taken asks to **[T]ag** it (`brutal_2`), **[N]ame** it, or **[S]kip** it. Wads it can't find are left as placeholders in the editor, where `Space` says where they were looked for and `R` picks them.
+`S` seals profiles into a `.scroll` file: it asks whether to seal the profile under the cursor (or the ones selected with `Shift+V`/`M`) or the whole vault. For each profile it keeps each wad's file name, size and hash, the base wad, and the host defaults (without the join code), but no paths, so it means the same thing on any computer. Send it to someone with the same wads and they press `I` to break the seal: tdl looks for each wad by name in their wad dirs (from `--wads`, or kept from it; with none, it asks for a dir), takes a file only if its size and then its hash match, and adds the profiles it finds. A scroll of one profile asks for its name; with several, each keeps its name, and one that is taken asks to **[T]ag** it (`brutal_2`), **[N]ame** it, or **[S]kip** it. Wads it can't find are left as placeholders in the editor, where `Space` says where they were looked for and `R` picks them.
 
 Sealing also asks whether to seal in your global settings: the music, whether quips are shown, and the splash quip. Say no and the scroll carries none, so your friends' settings are left alone. Your song never goes in, nor anything about where things are on your computer. When a scroll carries settings, breaking its seal puts them in place of yours, once the profiles are in; a scroll without any leaves yours as they are.
 
