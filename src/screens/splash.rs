@@ -27,24 +27,38 @@ const LOGO: [&str; 6] = [
     "   ██║   ██████╔╝███████╗",
     "   ╚═╝   ╚═════╝ ╚══════╝",
 ];
-/// One color per row of the logo, white hot at the top down to blood at the bottom.
-const LOGO_COLORS: [Color; 6] = [
+/// One color for each row of the logo with blocks in it (the last row is only shadow), white hot
+/// at the top, cooling a step a row down to blood at the bottom.
+const LOGO_COLORS: [Color; 5] = [
     theme::FLAME,
-    theme::FLAME,
+    halfway(theme::FLAME, theme::HELLFIRE),
     theme::HELLFIRE,
-    theme::HELLFIRE,
-    theme::BLOOD,
+    halfway(theme::HELLFIRE, theme::BLOOD),
     theme::BLOOD,
 ];
-/// With pride: one stripe of the trans flag per row, blue, pink and white in the middle.
-const TRANS_COLORS: [Color; 6] = [
+/// With pride: the whole trans flag, a stripe a row: blue, pink, white, pink, blue.
+const TRANS_COLORS: [Color; 5] = [
     theme::TRANS_BLUE,
     theme::TRANS_PINK,
     theme::TRANS_WHITE,
-    theme::TRANS_WHITE,
     theme::TRANS_PINK,
     theme::TRANS_BLUE,
 ];
+
+/// The color halfway between `a` and `b`, for the logo's in-between rows.
+const fn halfway(a: Color, b: Color) -> Color {
+    match (a, b) {
+        (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) => {
+            Color::Rgb(mid(r1, r2), mid(g1, g2), mid(b1, b2))
+        }
+        _ => a,
+    }
+}
+
+/// The channel halfway between `x` and `y`.
+const fn mid(x: u8, y: u8) -> u8 {
+    ((x as u16 + y as u16) / 2) as u8
+}
 const SHADOW: Color = theme::GORE;
 const TAGLINE: &str = "t e r m i n a l   d o o m   l a u n c h e r";
 /// For terminals too narrow for the spaced-out tagline.
@@ -168,7 +182,9 @@ fn paint(fire: &Fire, elapsed: Duration, area: Rect, quip: Option<&str>, buffer:
     } else {
         LOGO_COLORS
     };
-    for (i, (row, color)) in LOGO.iter().zip(colors).enumerate() {
+    for (i, row) in LOGO.iter().enumerate() {
+        // 🌑 the last row has no blocks, only shadow, so it has no color of its own
+        let color = colors.get(i).copied().unwrap_or(SHADOW);
         for (j, character) in row.chars().enumerate() {
             let style = if character == '█' {
                 Style::new().fg(color)
@@ -283,7 +299,11 @@ mod tests {
     fn every_row_of_the_logo_is_the_same_width() {
         let width = LOGO[0].chars().count();
         assert!(LOGO.iter().all(|row| row.chars().count() == width));
-        assert_eq!(LOGO.len(), LOGO_COLORS.len());
+        // every row with blocks in it has a color, and the shadow row under them needs none
+        let with_blocks = LOGO.iter().filter(|row| row.contains('█')).count();
+        assert_eq!(with_blocks, LOGO_COLORS.len());
+        assert_eq!(with_blocks, TRANS_COLORS.len());
+        assert!(LOGO[..with_blocks].iter().all(|row| row.contains('█')));
     }
 
     #[test]
