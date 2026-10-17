@@ -213,7 +213,7 @@ fn clear(grimoire: &mut Grimoire, vault: &mut Vault, index: &mut usize, ask: Ask
 fn into_profile(vault: &Vault, unsealed: UnsealedProfile) -> Profile {
     let base_wad = unsealed.base_wad.filter(|wad| {
         vault
-            .config
+            .global
             .base_wad
             .as_ref()
             .is_none_or(|global| global.hash != wad.hash)

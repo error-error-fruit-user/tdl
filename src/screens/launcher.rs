@@ -96,6 +96,9 @@ pub struct Launcher {
     passed_scroll: Option<PathBuf>,
     /// Whether the scroll replaces the vault's profiles (`--unseal-delete`), and asks first.
     unseal_delete: Option<Ask>,
+    /// Whether the global settings took any from an older `config.rite`, to be saved before the
+    /// upgrade writes it without them.
+    adopted: bool,
     /// The search being typed, if one is.
     search: Option<Search>,
     /// The last search's matches, for `;` and `,` to step through.
@@ -244,6 +247,8 @@ impl Launcher {
         vault.global = global;
         vault.global_path = global_path;
         vault.global_writable = global_writable;
+        // 🌐 settings a vault kept before they all went global, saved once the upgrade is agreed to
+        let adopted = vault.global.adopt(&mut vault.config);
         Self {
             vault,
             table_state: TableState::new().with_selected(0),
@@ -264,6 +269,7 @@ impl Launcher {
             forget_wads: start.forget_wads,
             passed_scroll: start.unseal.as_deref().map(absolute),
             unseal_delete: start.unseal_delete,
+            adopted,
             search: None,
             found: Found::default(),
             selection: Selection::default(),
@@ -317,7 +323,7 @@ impl Launcher {
         if self.keep_music || self.vault.global.music == Music::Kept {
             music::start(true);
         }
-        if self.splash && (!self.vault.config.skip_splash || self.quip.is_some()) {
+        if self.splash && (!self.vault.global.skip_splash || self.quip.is_some()) {
             // 💬 the command line's quip, or else the one kept in the settings, or else a random one
             let kept = quips::shown()
                 .then(|| self.vault.global.splash_quip.text())
@@ -337,6 +343,11 @@ impl Launcher {
             if !Dialog::should_upgrade(grimoire)? {
                 return Err(Error::Interrupted);
             }
+            // 🌐 the vault's old settings are kept globally first, or the upgrade would lose them
+            if self.adopted && self.vault.keep_global().is_err() {
+                Warning::upgrade_failed(grimoire)?;
+                return Err(Error::Interrupted);
+            }
             // ⏳ checking every page takes a moment, so don't leave the old dialog hanging there
             status::summon(grimoire, "Upgrading", "Upgrading...", Self::BORDER_COLOR)?;
             let Ok(upgraded) = self.vault.upgrade() else {
@@ -350,12 +361,12 @@ impl Launcher {
         self.offer_to_keep(grimoire)?;
         // 🧪 this run's UZDoom and base wad, used over every other and never saved
         if let Some(uzdoom) = self.session_uzdoom.take() {
-            self.vault.config.session_uzdoom = Some(uzdoom.into_os_string());
+            self.vault.global.session_uzdoom = Some(uzdoom.into_os_string());
         }
         if let Some(path) = self.session_base_wad.take() {
             match hashing::wad(grimoire, &path)? {
                 Some(wad) => {
-                    self.vault.config.session_base_wad = Some(wad);
+                    self.vault.global.session_base_wad = Some(wad);
                     self.vault.forget_lookup();
                 }
                 None => Warning::summon(
@@ -405,12 +416,12 @@ impl Launcher {
         let vault = &mut launcher.vault;
         vault.wad_dirs.retain(|dir| dir.is_dir());
         if let Some(uzdoom) = launcher.session_uzdoom.take() {
-            vault.config.session_uzdoom = Some(uzdoom.into_os_string());
+            vault.global.session_uzdoom = Some(uzdoom.into_os_string());
         }
         if let Some(path) = launcher.session_base_wad.take() {
             let wad = Wad::hashed(&path, &mut ())
                 .map_err(|error| format!("Could not read --base-wad: {error}"))?;
-            vault.config.session_base_wad = Some(wad);
+            vault.global.session_base_wad = Some(wad);
             vault.forget_lookup();
         }
         match command {
@@ -478,7 +489,7 @@ impl Launcher {
                     let defaults = self.vault.profiles[index]
                         .host_defaults
                         .clone()
-                        .unwrap_or_else(|| HostSettings::new(self.vault.config.host_port));
+                        .unwrap_or_else(|| HostSettings::new(self.vault.global.host_port));
                     self.host_profile(grimoire, index, Some(overrides.apply(defaults)))
                 }
                 None => Ok(()),
@@ -521,19 +532,19 @@ impl Launcher {
     fn launch_profile(&mut self, grimoire: &mut Grimoire, index: usize) -> Result<()> {
         watch::refresh_saved(grimoire, &mut self.vault, index)?;
         let profile = &self.vault.profiles[index];
-        let Some(uzdoom) = profile.uzdoom(&self.vault.config) else {
+        let Some(uzdoom) = profile.uzdoom(&self.vault.global) else {
             return Warning::uzdoom_not_selected(grimoire);
         };
         // 🚧 a profile with a broken part is not fixed for you, but it isn't launched either
-        if Warning::faults(grimoire, &profile.faults(&self.vault.config))? {
+        if Warning::faults(grimoire, &profile.faults(&self.vault.global))? {
             return Ok(());
         }
         let details = [format!("profile {}", profile.name)];
         let result = uzdoom::launch(
             uzdoom,
-            profile.base_wad(&self.vault.config).map(Wad::deref),
+            profile.base_wad(&self.vault.global).map(Wad::deref),
             profile,
-            profile.uzdoom_args(&self.vault.config),
+            profile.uzdoom_args(&self.vault.global),
             &self.vault.data_dir.join(&profile.name),
         )
         .and_then(|game| running::summon(grimoire, "launching", &details, game));
@@ -551,10 +562,10 @@ impl Launcher {
     ) -> Result<()> {
         watch::refresh_saved(grimoire, &mut self.vault, index)?;
         let profile = &self.vault.profiles[index];
-        if profile.uzdoom(&self.vault.config).is_none() {
+        if profile.uzdoom(&self.vault.global).is_none() {
             return Warning::uzdoom_not_selected(grimoire);
         }
-        if Warning::faults(grimoire, &profile.faults(&self.vault.config))? {
+        if Warning::faults(grimoire, &profile.faults(&self.vault.global))? {
             return Ok(());
         }
         let Some(settings) = HostSettingsForm::summon(grimoire, &mut self.vault, index, start)?
@@ -733,41 +744,29 @@ impl Launcher {
         Ok(())
     }
 
-    /// Opens the settings, and saves whatever was changed straight away, since the splash is the
-    /// first thing the next start shows: the vault's settings in `config.rite`, the quip in
-    /// `global.rite` (unless that is from a newer tdl, in which case the quip isn't kept).
+    /// Opens the settings, and saves whatever was changed straight away in `global.rite`, since
+    /// the splash is the first thing the next start shows. Settings from a newer tdl can't be
+    /// changed at all.
     fn change_settings(&mut self, grimoire: &mut Grimoire) -> Result<()> {
-        let before = Settings::of(&self.vault.config, &self.vault.global);
+        let before = Settings::of(&self.vault.global);
         let Some(settings) = SettingsForm::summon(grimoire, before.clone())? else {
             return Ok(());
         };
         if settings == before {
             return Ok(());
         }
-        let changed = settings.music != before.music
-            || settings.quip != before.quip
-            || settings.quips != before.quips
-            || settings.song != before.song;
-        if !self.vault.global_writable && changed {
-            Warning::summon(
+        if !self.vault.global_writable {
+            return Warning::summon(
                 grimoire,
-                "The global settings are from a newer tdl, so the quips and the song can't be changed",
-            )?;
+                "The global settings are from a newer tdl, so they can't be changed",
+            );
         }
-        let kept_quip = self.vault.global.splash_quip.clone();
-        let kept_no_quips = self.vault.global.no_quips;
         let kept_song = self.vault.global.song.clone();
         let kept_music = self.vault.global.music;
-        if let Err(problem) = settings.apply(&mut self.vault.config, &mut self.vault.global) {
+        if let Err(problem) = settings.apply(&mut self.vault.global) {
             return Warning::summon(grimoire, &problem);
         }
-        if !self.vault.global_writable {
-            self.vault.global.splash_quip = kept_quip;
-            self.vault.global.no_quips = kept_no_quips;
-            self.vault.global.song = kept_song.clone();
-            self.vault.global.music = kept_music;
-        }
-        // 🎶 the song and the music change now, as they were kept
+        // 🎶 the song and the music change now
         if self.vault.global.song != kept_song {
             match &self.vault.global.song {
                 Some(song) if music::use_song(Path::new(song)).is_ok() => {}
@@ -778,15 +777,7 @@ impl Launcher {
         self.follow_music(kept_music, self.vault.global.music);
         // 💬 the quips come and go now, unless `--no-quips` said otherwise for this run
         quips::show(!self.no_quips && !self.vault.global.no_quips);
-        let config_saved = self
-            .vault
-            .config
-            .write(&self.vault.config_dir, &self.vault.profiles)
-            .is_ok();
-        let global_saved = !changed
-            || !self.vault.global_writable
-            || self.vault.global.keep(&self.vault.global_path).is_ok();
-        if !config_saved || !global_saved {
+        if self.vault.global.keep(&self.vault.global_path).is_err() {
             Warning::save_failed(grimoire)?;
         }
         Ok(())
@@ -1134,14 +1125,14 @@ impl Ritual for Launcher {
     fn render(&mut self, page: &mut Page) {
         let selected = self.table_state.selected();
         let profile = selected.and_then(|i| self.vault.profiles.get(i));
-        let global = Details::global(&self.vault.config);
+        let global = Details::global(&self.vault.global);
         let global_panel = layout::window(global.size().0, global.size().1);
         let (details, beside) = match profile {
             Some(profile) => (
                 Details::launch(
                     profile,
-                    &self.vault.config,
-                    &profile.faults(&self.vault.config),
+                    &self.vault.global,
+                    &profile.faults(&self.vault.global),
                 ),
                 Some(global),
             ),
@@ -1193,7 +1184,7 @@ impl Ritual for Launcher {
         for i in shown.clone() {
             self.marks
                 .entry(i)
-                .or_insert_with(|| Mark::of_profile(&self.vault.profiles[i], &self.vault.config));
+                .or_insert_with(|| Mark::of_profile(&self.vault.profiles[i], &self.vault.global));
         }
 
         // 🩸 a broken profile's row is discolored as well as badged, as in the editor
@@ -1482,7 +1473,11 @@ impl Ritual for Launcher {
             }
             KeyCode::Char('u') => {
                 if let Some(path) = picker::file(grimoire, None, None)? {
-                    self.vault.config.uzdoom = Some(path.into());
+                    self.vault.global.uzdoom = Some(path.into());
+                    if self.vault.keep_global().is_err() {
+                        Warning::save_failed(grimoire)?;
+                    }
+                    return Ok(Phase::Render);
                 }
                 Ok(Phase::Prompt)
             }
@@ -1492,8 +1487,11 @@ impl Ritual for Launcher {
                 {
                     // 🖼️ redrawn either way, since the hashing window may have covered the launcher
                     if let Some(wad) = hashing::wad(grimoire, &path)? {
-                        self.vault.config.base_wad = Some(wad);
+                        self.vault.global.base_wad = Some(wad);
                         self.vault.forget_lookup();
+                        if self.vault.keep_global().is_err() {
+                            Warning::save_failed(grimoire)?;
+                        }
                     }
                     return Ok(Phase::Render);
                 }

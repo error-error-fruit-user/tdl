@@ -5,7 +5,7 @@ use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 
 use crate::{
     theme,
-    vault::{config::Config, profile::Profile, wad::Fault, wad::Wad},
+    vault::{global::Global, profile::Profile, wad::Fault, wad::Wad},
 };
 
 /// How wide a badge is: the glyph with a space on either side.
@@ -50,9 +50,9 @@ impl Mark {
 
     /// The mark for a whole profile: the worst thing about it. This looks at the disk once for each
     /// of its files, so call it only for profiles that are on screen.
-    pub fn of_profile(profile: &Profile, config: &Config) -> Option<Self> {
-        let faults = profile.faults(config);
-        if profile.uzdoom(config).is_none() || faults.iter().any(|(_, f)| f.is_blocking()) {
+    pub fn of_profile(profile: &Profile, global: &Global) -> Option<Self> {
+        let faults = profile.faults(global);
+        if profile.uzdoom(global).is_none() || faults.iter().any(|(_, f)| f.is_blocking()) {
             Some(Self::Broken)
         } else if !faults.is_empty() {
             Some(Self::Changed)
@@ -95,38 +95,38 @@ mod tests {
     use super::*;
     use crate::vault::scribe::tests::Altar;
 
-    fn setup(name: &str) -> (Altar, Config, Wad) {
+    fn setup(name: &str) -> (Altar, Global, Wad) {
         let altar = Altar::new(name);
         fs::write(altar.file("uzdoom"), b"").unwrap();
         fs::write(altar.file("a.pk3"), b"1234").unwrap();
-        let config = Config {
+        let global = Global {
             uzdoom: Some(altar.file("uzdoom").into()),
-            ..Config::default()
+            ..Global::default()
         };
         let wad = Wad::from_path(&altar.file("a.pk3")).unwrap();
-        (altar, config, wad)
+        (altar, global, wad)
     }
 
     #[test]
     fn a_healthy_profile_has_no_mark() {
-        let (_altar, config, wad) = setup("mark-healthy");
+        let (_altar, global, wad) = setup("mark-healthy");
         let profile = Profile::new("p".into(), vec![wad]);
-        assert_eq!(Mark::of_profile(&profile, &config), None);
+        assert_eq!(Mark::of_profile(&profile, &global), None);
     }
 
     #[test]
     fn the_worst_thing_about_a_profile_wins() {
-        let (altar, config, wad) = setup("mark-worst");
+        let (altar, global, wad) = setup("mark-worst");
         let mut volatile = wad.clone();
         volatile.volatile = true;
         let profile = Profile::new("p".into(), vec![wad, volatile]);
-        assert_eq!(Mark::of_profile(&profile, &config), Some(Mark::Volatile));
+        assert_eq!(Mark::of_profile(&profile, &global), Some(Mark::Volatile));
 
         fs::write(altar.file("a.pk3"), b"123456").unwrap();
-        assert_eq!(Mark::of_profile(&profile, &config), Some(Mark::Changed));
+        assert_eq!(Mark::of_profile(&profile, &global), Some(Mark::Changed));
 
         fs::remove_file(altar.file("a.pk3")).unwrap();
-        assert_eq!(Mark::of_profile(&profile, &config), Some(Mark::Broken));
+        assert_eq!(Mark::of_profile(&profile, &global), Some(Mark::Broken));
     }
 
     #[test]
@@ -134,7 +134,7 @@ mod tests {
         let (_altar, _, wad) = setup("mark-no-uzdoom");
         let profile = Profile::new("p".into(), vec![wad]);
         assert_eq!(
-            Mark::of_profile(&profile, &Config::default()),
+            Mark::of_profile(&profile, &Global::default()),
             Some(Mark::Broken)
         );
     }

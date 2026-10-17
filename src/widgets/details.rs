@@ -11,7 +11,7 @@ use ratatui::{
 use crate::{
     layout, theme,
     vault::{
-        config::Config,
+        global::Global,
         profile::{Part, Profile},
         wad::{Fault, Wad},
     },
@@ -224,17 +224,17 @@ fn wads_line(wads: &[Wad], faults: impl Iterator<Item = Fault>) -> Detail {
 
 impl Details {
     /// What launching `profile` would use, with `faults` from [`Profile::faults`].
-    pub fn launch(profile: &Profile, config: &Config, faults: &[(Part, Fault)]) -> Self {
+    pub fn launch(profile: &Profile, global: &Global, faults: &[(Part, Fault)]) -> Self {
         let fault = |part| faults.iter().find(|(p, _)| *p == part).map(|(_, f)| f);
         let mut uzdoom = or_session(
             file_line(
                 "uzdoom",
                 profile.uzdoom.as_deref(),
-                config.uzdoom.as_deref(),
+                global.uzdoom.as_deref(),
                 fault(Part::Uzdoom),
                 "not set",
             ),
-            config.session_uzdoom.as_deref(),
+            global.session_uzdoom.as_deref(),
             fault(Part::Uzdoom),
         );
         if uzdoom.state == State::Unset {
@@ -247,11 +247,11 @@ impl Details {
                 file_line(
                     "base wad",
                     profile.base_wad.as_deref(),
-                    config.base_wad.as_deref(),
+                    global.base_wad.as_deref(),
                     fault(Part::BaseWad),
                     "auto",
                 ),
-                config.session_base_wad.as_deref(),
+                global.session_base_wad.as_deref(),
                 fault(Part::BaseWad),
             ),
             file_line(
@@ -263,7 +263,7 @@ impl Details {
             ),
             args_line(
                 profile.uzdoom_args.as_deref(),
-                Some(&config.uzdoom_args),
+                Some(&global.uzdoom_args),
                 "none",
             ),
             wads_line(
@@ -282,21 +282,21 @@ impl Details {
     }
 
     /// The global settings, which every profile without its own falls back on.
-    pub fn global(config: &Config) -> Self {
+    pub fn global(global: &Global) -> Self {
         // 🧪 what is in effect: this session's from the command line, else the saved ones
-        let uzdoom_fault = config
+        let uzdoom_fault = global
             .uzdoom_in_effect()
             .and_then(|p| Fault::of(Path::new(p), 0));
-        let base_fault = config.base_wad_in_effect().and_then(Wad::check);
+        let base_fault = global.base_wad_in_effect().and_then(Wad::check);
         let mut uzdoom = or_session(
             file_line(
                 "uzdoom",
                 None,
-                config.uzdoom.as_deref(),
+                global.uzdoom.as_deref(),
                 uzdoom_fault.as_ref(),
                 "not set",
             ),
-            config.session_uzdoom.as_deref(),
+            global.session_uzdoom.as_deref(),
             uzdoom_fault.as_ref(),
         );
         if uzdoom.state == State::Unset {
@@ -308,14 +308,14 @@ impl Details {
                 file_line(
                     "base wad",
                     None,
-                    config.base_wad.as_deref(),
+                    global.base_wad.as_deref(),
                     base_fault.as_ref(),
                     "auto",
                 ),
-                config.session_base_wad.as_deref(),
+                global.session_base_wad.as_deref(),
                 base_fault.as_ref(),
             ),
-            args_line(None, Some(&config.uzdoom_args), "none"),
+            args_line(None, Some(&global.uzdoom_args), "none"),
         ];
         // 🌐 everything here is global, so saying so on every line would only be noise
         let lines = lines
@@ -495,15 +495,15 @@ mod tests {
     fn a_healthy_profile_on_global_settings_is_ready() {
         let altar = Altar::new("details-ready");
         fs::write(altar.file("uzdoom"), b"").unwrap();
-        let config = Config {
+        let global = Global {
             uzdoom: Some(altar.file("uzdoom").into()),
-            ..Config::default()
+            ..Global::default()
         };
         let profile = Profile {
             wads: vec![wad(&altar, "a.pk3")],
             ..Profile::default()
         };
-        let details = Details::launch(&profile, &config, &profile.faults(&config));
+        let details = Details::launch(&profile, &global, &profile.faults(&global));
         assert_eq!(details.title, "ready");
         assert_eq!(details.lines[0].value, "uzdoom");
         assert_eq!(details.lines[0].note_text(), "global");
@@ -515,7 +515,7 @@ mod tests {
 
     #[test]
     fn no_uzdoom_at_all_is_broken() {
-        let details = Details::launch(&Profile::default(), &Config::default(), &[]);
+        let details = Details::launch(&Profile::default(), &Global::default(), &[]);
         assert_eq!(details.title, "broken");
         assert_eq!(details.lines[0].state, State::Bad);
         assert_eq!(details.lines[0].value, "not set");
@@ -525,9 +525,9 @@ mod tests {
     fn broken_and_changed_wads_are_counted() {
         let altar = Altar::new("details-wads");
         fs::write(altar.file("uzdoom"), b"").unwrap();
-        let config = Config {
+        let global = Global {
             uzdoom: Some(altar.file("uzdoom").into()),
-            ..Config::default()
+            ..Global::default()
         };
         let mut volatile = wad(&altar, "v.pk3");
         volatile.volatile = true;
@@ -537,7 +537,7 @@ mod tests {
         };
         fs::remove_file(altar.file("gone.pk3")).unwrap();
         fs::write(altar.file("grew.pk3"), b"123456").unwrap();
-        let details = Details::launch(&profile, &config, &profile.faults(&config));
+        let details = Details::launch(&profile, &global, &profile.faults(&global));
         let wads = details.line("wads");
         assert_eq!(wads.state, State::Bad);
         assert_eq!(wads.value, "3 wads");
@@ -554,8 +554,8 @@ mod tests {
             uzdoom: Some(altar.file("nope").into()),
             ..Profile::default()
         };
-        let config = Config::default();
-        let details = Details::launch(&profile, &config, &profile.faults(&config));
+        let global = Global::default();
+        let details = Details::launch(&profile, &global, &profile.faults(&global));
         assert_eq!(details.lines[0].note_text(), "missing");
         assert_eq!(details.lines[0].state, State::Bad);
     }
@@ -586,19 +586,19 @@ mod tests {
         let altar = crate::vault::scribe::tests::Altar::new("details-session");
         fs::write(altar.file("uzdoom-dev"), b"").unwrap();
         fs::write(altar.file("freedoom2.wad"), b"iwad").unwrap();
-        let config = Config {
+        let global = Global {
             uzdoom: Some("/global/uzdoom".into()),
             session_uzdoom: Some(altar.file("uzdoom-dev").into()),
             session_base_wad: Some(Wad::from_path(&altar.file("freedoom2.wad")).unwrap()),
-            ..Config::default()
+            ..Global::default()
         };
         let profile = Profile {
             uzdoom: Some("/own/uzdoom".into()),
             ..Profile::default()
         };
         for details in [
-            Details::launch(&profile, &config, &profile.faults(&config)),
-            Details::global(&config),
+            Details::launch(&profile, &global, &profile.faults(&global)),
+            Details::global(&global),
         ] {
             let uzdoom = details.line("uzdoom");
             assert_eq!(uzdoom.value, "uzdoom-dev");
@@ -621,7 +621,7 @@ mod tests {
 
     #[test]
     fn the_lines_line_up_and_the_size_fits_them() {
-        let details = Details::launch(&Profile::default(), &Config::default(), &[]);
+        let details = Details::launch(&Profile::default(), &Global::default(), &[]);
         let lines = details.lines();
         assert!(
             lines

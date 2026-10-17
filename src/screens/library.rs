@@ -126,6 +126,8 @@ impl<'a> Library<'a> {
 
     /// Looks in every dir again, after anything that could have changed what is in them.
     fn restack(&mut self) {
+        // 📌 what the cursor is on is read from the rows as they were, before they are redone
+        let before = self.current().and_then(|item| self.identity(item));
         self.sources = self.shelf.sources();
         self.stock = self
             .sources
@@ -140,7 +142,7 @@ impl<'a> Library<'a> {
                     .collect()
             })
             .collect();
-        self.arrange();
+        self.arrange_keeping(before);
     }
 
     /// The row the cursor is on.
@@ -160,7 +162,12 @@ impl<'a> Library<'a> {
     /// The rows for what is found, in the view that is on, and what they say. The cursor stays on
     /// the dir or wad it was on, if that is still shown.
     fn arrange(&mut self) {
-        let before = self.current().map(|item| self.identity(item));
+        let before = self.current().and_then(|item| self.identity(item));
+        self.arrange_keeping(before);
+    }
+
+    /// [`Library::arrange`], with the cursor going back to `before`, the dir or wad it was on.
+    fn arrange_keeping(&mut self, before: Option<PathBuf>) {
         self.rows.clear();
         let downloads = self.shelf.downloads.clone();
         if self.every {
@@ -226,7 +233,7 @@ impl<'a> Library<'a> {
             .and_then(|before| {
                 self.rows
                     .iter()
-                    .position(|&item| self.identity(item) == before)
+                    .position(|&item| self.identity(item).as_ref() == Some(&before))
             })
             .unwrap_or_else(|| self.cursor().min(self.rows.len().saturating_sub(1)));
         self.table_state.select(Some(at));
@@ -238,7 +245,11 @@ impl<'a> Library<'a> {
     fn identity(&self, item: Item) -> Option<PathBuf> {
         match item {
             Item::Source(source) => self.sources.get(source).cloned(),
-            Item::Wad(source, index) => Some(self.stock[source][index].path.clone()),
+            Item::Wad(source, index) => self
+                .stock
+                .get(source)?
+                .get(index)
+                .map(|wad| wad.path.clone()),
             Item::Add => None,
         }
     }
@@ -812,6 +823,26 @@ mod tests {
         library.every = true;
         library.arrange();
         assert_eq!(library.current(), Some(Item::Wad(0, 1)));
+    }
+
+    #[test]
+    fn taking_out_a_dir_before_the_cursor_keeps_it_on_the_same_wad() {
+        let altar = Altar::new("library-taken-out");
+        let mut shelf = stocked(&altar);
+        let mut clipboard = Clipboard::Empty;
+        let mut library = Library::new(&mut shelf, &mut clipboard);
+        // the download, in the last of three sources, which is about to be the second of two
+        library.table_state.select(Some(6));
+        assert_eq!(library.current(), Some(Item::Wad(2, 0)));
+        library.shelf.remove(&altar.file("mods"));
+        library.restack();
+        assert_eq!(library.current(), Some(Item::Wad(1, 0)));
+        // and with the cursor on what was taken out, it stays in range
+        library.table_state.select(Some(3));
+        library.shelf.remove(&altar.file("data/.downloads"));
+        library.shelf.remove(&altar.file("wads"));
+        library.restack();
+        assert!(library.cursor() < library.rows.len());
     }
 
     #[test]

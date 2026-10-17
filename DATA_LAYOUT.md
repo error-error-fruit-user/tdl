@@ -12,7 +12,7 @@ tdl stores two kinds of files: **config** (what you set up) and **data** (what t
 
 Pass `--vault /some/dir` to use `/some/dir/config` and `/some/dir/data` instead. The older form, the dir on its own (`tdl /some/dir`), still works. tdl then asks whether to open that vault every time; if you say yes, it is remembered in `global.rite` (below) and opened whenever tdl starts without `--vault`. If it has gone missing, tdl says so and opens the standard dirs. `--vault-once /some/dir` opens a vault the same way without asking. `tdl --forget-vault` opens the standard dirs and asks whether to forget the remembered vault; `tdl --forget-vault-once` opens them without asking.
 
-`global.rite` always lives in the standard config dir, whichever vault is open, since it is the one place every vault can find. It holds `vault` (the vault to open by default), `wad_dirs` (wad dirs kept for every vault from `--wads`) `music` (`Off`, `Splash` or `Kept`: no music, music on the splash screen only, or music that keeps playing in the launcher; missing in older files, which count as `Splash`), `splash_quip` (the splash screen's quip: `Random`, or `Custom` with the text as typed, in which every `#<number>` stands for that built-in quip; missing in older files, which count as `Random`, and a number this tdl has no quip for shows a random one), `no_quips` (`true` to leave the quips out of every window; missing in older files, which count as `false`) and `song` (the path of a song to play instead of the built-in track, picked in the settings; missing in older files, which count as the built-in one).
+`global.rite` always lives in the standard config dir, whichever vault is open, since it is the one place every vault can find. It holds `vault` (the vault to open by default), `wad_dirs` (wad dirs kept for every vault from `--wads`) `music` (`Off`, `Splash` or `Kept`: no music, music on the splash screen only, or music that keeps playing in the launcher; missing in older files, which count as `Splash`), `splash_quip` (the splash screen's quip: `Random`, or `Custom` with the text as typed, in which every `#<number>` stands for that built-in quip; missing in older files, which count as `Random`, and a number this tdl has no quip for shows a random one), `no_quips` (`true` to leave the quips out of every window; missing in older files, which count as `false`) `song` (the path of a song to play instead of the built-in track, picked in the settings; missing in older files, which count as the built-in one), `uzdoom` (the UZDoom executable used by profiles that don't set their own, `U` in the launcher), `base_wad` (the default base wad, saved like a profile's: `path`, `hash`, `size`, `volatile` and `modified`; `W` in the launcher), `uzdoom_args` (extra arguments for UZDoom, as one line of text split at spaces, passed on every launch, host and join before the wads; **uzdoom args** in the settings), `skip_splash` (`true` to go straight to the launcher; **splash** in the settings) and `host_port` (the port the last game was hosted on, offered again in the host form; empty for the default, 8080). Those last five were kept in each vault's `config.rite` before its edition 5, and are missing in older `global.rite` files, which count as none, `false` or empty.
 
 The macOS paths follow the `directories` crate's documentation and have not been tried on a Mac. On macOS the two dirs are the same, so the files below share one dir. That is why the profiles dir and the downloads dir start with a dot: profile names can't contain one, so those dirs can never be mistaken for a profile's data dir.
 
@@ -20,9 +20,9 @@ The macOS paths follow the `directories` crate's documentation and have not been
 
 ```
 <config dir>/
-├── config.rite                 global settings and the order of profiles
+├── config.rite                 the order of profiles and the vault's own wad dirs
 ├── config.rite.bak             the config as it was before the last save
-├── global.rite                 (standard config dir only) the default vault and global wad dirs
+├── global.rite                 (standard config dir only) every setting, the default vault and global wad dirs
 └── .profiles/                  (the dot keeps it from ever matching a profile's name)
     ├── brutal.rite             one file per profile, named after the profile
     ├── brutal.rite.bak         that profile as it was before the last save
@@ -57,13 +57,10 @@ Every `.rite` file is MessagePack, a compact binary format, in a wrapper that re
 
 | Field | Meaning |
 | --- | --- |
-| `uzdoom` | Path to the UZDoom executable, used by profiles that don't set their own. |
-| `base_wad` | The default base wad (`path`, `hash`, `size`, `volatile` and `modified`), used by profiles that don't set their own. |
 | `profile_names` | The profiles in the order the launcher shows them. |
-| `skip_splash` | `true` to go straight to the launcher without the splash screen. Missing in older files, which count as `false`. Set with **splash** in the settings (`O` in the launcher). |
-| `host_port` | The port the last game was hosted on, offered again in the host form. Empty for the default (8080). Missing in older files, which count as empty. |
 | `wad_dirs` | Wad dirs kept for this vault from `--wads`, used whenever tdl starts without it (before the global ones). Missing in older files, which count as none. |
-| `uzdoom_args` | Extra arguments for UZDoom, as one line of text split at spaces, passed on every launch, host and join before the wads. Missing in older files, which count as none. Set with **uzdoom args** in the settings. |
+
+Only what belongs to the vault is here; every setting is in `global.rite`, so it is the same whichever vault is open. Before edition 5, `config.rite` also held `uzdoom`, `base_wad`, `skip_splash`, `host_port` and `uzdoom_args`. They are still read from such a file and handed to `global.rite`, each one only if `global.rite` doesn't have it yet (so the first vault opened since keeps its own, and later vaults' are dropped), and `global.rite` is saved before the upgrade rewrites `config.rite` without them.
 
 **`.profiles/<name>.rite`** (`data`)
 

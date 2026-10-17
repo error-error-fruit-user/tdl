@@ -195,6 +195,15 @@ impl Vault {
         }
     }
 
+    /// Saves the global settings, which every vault shares. Refused if `global.rite` is from a
+    /// newer tdl, so it is never written over.
+    pub fn keep_global(&self) -> Result<()> {
+        if !self.global_writable {
+            return Err(crate::error::Error::GlobalTooNew);
+        }
+        Ok(self.global.keep(&self.global_path)?)
+    }
+
     /// Takes on what was done on the wads screen: its wad dirs become this session's, the kept
     /// ones are saved if they changed, and every wad (in the profiles, and the global base wad)
     /// whose file was moved is pointed at where it went, and saved. Everything is tried even if a
@@ -218,18 +227,21 @@ impl Vault {
             dirs.into_iter().map(PathBuf::into_os_string).collect()
         };
         let kept_global = saved(shelf.kept_global);
-        if self.global_writable && kept_global != self.global.wad_dirs {
+        let mut global_changed = self.global_writable && kept_global != self.global.wad_dirs;
+        if global_changed {
             self.global.wad_dirs = kept_global;
-            note(self.global.keep(&self.global_path));
         }
-        let kept_vault = saved(shelf.kept_vault);
-        let mut config_changed = kept_vault != self.config.wad_dirs;
-        self.config.wad_dirs = kept_vault;
         for (from, to) in &shelf.moves {
-            if let Some(base_wad) = &mut self.config.base_wad {
-                config_changed |= base_wad.follow(from, to);
+            if let Some(base_wad) = &mut self.global.base_wad {
+                global_changed |= base_wad.follow(from, to);
             }
         }
+        if global_changed {
+            note(self.keep_global().map_err(std::io::Error::other));
+        }
+        let kept_vault = saved(shelf.kept_vault);
+        let config_changed = kept_vault != self.config.wad_dirs;
+        self.config.wad_dirs = kept_vault;
         for profile in &mut self.profiles {
             let mut followed = false;
             for (from, to) in &shelf.moves {
@@ -475,7 +487,8 @@ mod tests {
         let (altar, profile) = legacy_altar("vault-legacy-load");
         let vault = vault(&altar);
         assert_eq!(vault.profiles, [profile]);
-        assert_eq!(vault.config.uzdoom, Some("/usr/bin/uzdoom".into()));
+        // the UZDoom it kept is still read, for the launcher to hand to the global settings
+        assert_eq!(vault.config.old_uzdoom, Some("/usr/bin/uzdoom".into()));
         assert!(vault.is_outdated());
         assert!(!vault.is_too_new());
         assert!(vault.notices.is_empty());
@@ -606,7 +619,7 @@ mod tests {
         fs::write(altar.file("config/config.rite"), b"not settings").unwrap();
         let vault = vault(&altar);
         assert_eq!(vault.profiles, [profile]);
-        assert_eq!(vault.config.uzdoom, None);
+        assert_eq!(vault.global.uzdoom, None);
         assert_eq!(
             vault.notices,
             [
@@ -1003,7 +1016,7 @@ mod tests {
         let reloaded = self::vault(&altar);
         assert_eq!(reloaded.profiles[0].ini, vault.profiles[0].ini);
         // (the wad and UZDoom paths in this fixture are made up, so only the ini is checked)
-        let faults = reloaded.profiles[0].faults(&reloaded.config);
+        let faults = reloaded.profiles[0].faults(&reloaded.global);
         assert!(faults.iter().all(|(part, _)| *part != Part::Ini));
     }
 }

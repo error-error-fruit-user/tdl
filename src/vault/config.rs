@@ -15,44 +15,46 @@ use crate::{
 
 const FILE: &str = "config.rite";
 
-/// Global settings, used by any profile that doesn't override them.
+/// What belongs to one vault: the order of its profiles and the wad dirs kept for it. Every
+/// setting lives in the global settings instead (see [`Global`](crate::vault::global::Global)), so
+/// it is the same whichever vault is open.
 ///
 /// Stored as `<config>/config.rite`. The field order is the layout of edition 0, where this was a
 /// bare `(uzdoom, base_wad, profile_names)` array, so it must not change.
-#[derive(Default, PartialEq, Deserialize, Serialize)]
+#[derive(Default, Deserialize, Serialize)]
 pub struct Config {
-    #[serde(with = "optional_path")]
-    pub uzdoom: Option<OsString>,
-    pub base_wad: Option<Wad>,
+    /// The settings a file from before edition 5 still holds, read but never written again: the
+    /// launcher hands them to the global settings (see
+    /// [`Global::adopt`](crate::vault::global::Global::adopt)).
+    #[serde(default, rename = "uzdoom", with = "optional_path", skip_serializing)]
+    pub old_uzdoom: Option<OsString>,
+    #[serde(default, rename = "base_wad", skip_serializing)]
+    pub old_base_wad: Option<Wad>,
     /// The order profiles appear in the launcher. Kept in step with the profiles by [`Config::write`].
     #[serde(default)]
     pub profile_names: Vec<String>,
-    /// Goes straight to the launcher without the splash screen. Set with **splash** in the settings.
-    #[serde(default)]
-    pub skip_splash: bool,
-    /// The port the host served its wads on last time, offered again in the host form. `None`
-    /// until a game is hosted on a port other than the default.
-    #[serde(default)]
-    pub host_port: Option<u16>,
+    #[serde(default, rename = "skip_splash", skip_serializing)]
+    pub old_skip_splash: bool,
+    #[serde(default, rename = "host_port", skip_serializing)]
+    pub old_host_port: Option<u16>,
     /// Wad dirs kept for this vault from `--wads`, used whenever tdl starts without it.
     /// Missing in older files, which count as none. Called `wad_folders` before edition 4.
     #[serde(default, alias = "wad_folders", with = "paths")]
     pub wad_dirs: Vec<OsString>,
-    /// Extra command-line arguments for UZDoom, split at spaces and passed on every launch, host
-    /// and join, before the wads. Set in the settings. Missing in older files, which count as none.
-    #[serde(default)]
-    pub uzdoom_args: String,
-    /// UZDoom from `--uzdoom`, for this session only: it is never saved, and it wins over every
-    /// profile's own and the global one.
-    #[serde(skip)]
-    pub session_uzdoom: Option<OsString>,
-    /// The base wad from `--base-wad`, for this session only, the same way.
-    #[serde(skip)]
-    pub session_base_wad: Option<Wad>,
+    #[serde(default, rename = "uzdoom_args", skip_serializing)]
+    pub old_uzdoom_args: String,
+}
+
+/// Two configs are the same if they save the same: the old settings are never written, so they
+/// don't count (an upgrade reads its file back and compares it this way).
+impl PartialEq for Config {
+    fn eq(&self, other: &Self) -> bool {
+        self.profile_names == other.profile_names && self.wad_dirs == other.wad_dirs
+    }
 }
 
 impl Edition for Config {
-    const UPGRADES: &[fn(Self) -> Self] = &[v0_to_v1, v1_to_v2, v2_to_v3, v3_to_v4];
+    const UPGRADES: &[fn(Self) -> Self] = &[v0_to_v1, v1_to_v2, v2_to_v3, v3_to_v4, v4_to_v5];
 }
 
 /// Edition 1 only wrapped the same data in a named, versioned map, so nothing needs fixing.
@@ -71,7 +73,7 @@ fn v1_to_v2(config: Config) -> Config {
 /// [`crate::vault::profile`] does for every profile's wads.
 fn v2_to_v3(config: Config) -> Config {
     Config {
-        base_wad: config.base_wad.map(Wad::with_size_backfilled),
+        old_base_wad: config.old_base_wad.map(Wad::with_size_backfilled),
         ..config
     }
 }
@@ -82,17 +84,14 @@ fn v3_to_v4(config: Config) -> Config {
     config
 }
 
+/// Edition 5 keeps no settings: UZDoom, the base wad, UZDoom's arguments, the splash and the last
+/// host port moved to `global.rite`, so they are the same in every vault. They are still read from
+/// older files (as `old_*`), for the launcher to hand over before the file is upgraded.
+fn v4_to_v5(config: Config) -> Config {
+    config
+}
+
 impl Config {
-    /// The UZDoom a profile without its own uses: this session's, else the global one.
-    pub fn uzdoom_in_effect(&self) -> Option<&OsString> {
-        self.session_uzdoom.as_ref().or(self.uzdoom.as_ref())
-    }
-
-    /// The base wad a profile without its own uses: this session's, else the global one.
-    pub fn base_wad_in_effect(&self) -> Option<&Wad> {
-        self.session_base_wad.as_ref().or(self.base_wad.as_ref())
-    }
-
     /// Where the config is kept.
     pub fn path(directory: &Path) -> PathBuf {
         directory.join(FILE)
@@ -114,10 +113,10 @@ mod tests {
         // the same data, minus the field that did not exist yet
         let old = rmp_serde::to_vec_named(&old_config()).unwrap();
         let config: Config = rmp_serde::from_slice(&old).unwrap();
-        assert!(!config.skip_splash);
-        assert_eq!(config.host_port, None);
+        assert!(!config.old_skip_splash);
+        assert_eq!(config.old_host_port, None);
         assert!(config.wad_dirs.is_empty());
-        assert!(config.uzdoom_args.is_empty());
+        assert!(config.old_uzdoom_args.is_empty());
         assert_eq!(config.profile_names, ["brutal"]);
     }
 
@@ -185,12 +184,12 @@ mod tests {
         fs::write(&path, bytes).unwrap();
 
         let config = Config::open(&path).unwrap();
-        assert_eq!(config.uzdoom, Some("/usr/bin/uzdoom".into()));
+        assert_eq!(config.old_uzdoom, Some("/usr/bin/uzdoom".into()));
         assert_eq!(
-            config.base_wad.as_ref().map(|wad| wad.path.clone()),
+            config.old_base_wad.as_ref().map(|wad| wad.path.clone()),
             Some("/iwads/DOOM2.WAD".into())
         );
-        assert_eq!(config.host_port, Some(9000));
+        assert_eq!(config.old_host_port, Some(9000));
         assert!(config.upgrade(&path).unwrap());
         assert_eq!(Config::stored_version(&path), Some(Config::current()));
         let bytes = fs::read(&path).unwrap();
@@ -233,8 +232,62 @@ mod tests {
         let config = Config::open(&path).unwrap();
         assert_eq!(config.wad_dirs, [OsString::from("/wads"), "/mods".into()]);
         assert!(config.upgrade(&path).unwrap());
-        assert_eq!(Config::stored_version(&path), Some(4));
+        assert_eq!(Config::stored_version(&path), Some(Config::current()));
         assert_eq!(Config::open(&path).unwrap().wad_dirs, config.wad_dirs);
+    }
+
+    #[test]
+    fn a_config_saved_by_edition_four_gives_up_its_settings_when_upgraded() {
+        use std::fs;
+
+        use crate::vault::scribe::tests::Altar;
+
+        let altar = Altar::new("config-edition-four");
+        let path = Config::path(&altar.file(""));
+        // edition 4 saved the settings with the profile order and the wad dirs
+        #[derive(Serialize)]
+        struct EditionFour {
+            uzdoom: Option<String>,
+            base_wad: Option<Wad>,
+            profile_names: Vec<String>,
+            skip_splash: bool,
+            host_port: Option<u16>,
+            wad_dirs: Vec<String>,
+            uzdoom_args: String,
+        }
+        #[derive(Serialize)]
+        struct Sealed {
+            version: u32,
+            data: EditionFour,
+        }
+        let bytes = rmp_serde::to_vec_named(&Sealed {
+            version: 4,
+            data: EditionFour {
+                uzdoom: Some("/usr/bin/uzdoom".into()),
+                base_wad: None,
+                profile_names: vec!["brutal".into()],
+                skip_splash: true,
+                host_port: Some(9000),
+                wad_dirs: vec!["/wads".into()],
+                uzdoom_args: "-nomusic".into(),
+            },
+        })
+        .unwrap();
+        fs::write(&path, bytes).unwrap();
+
+        let config = Config::open(&path).unwrap();
+        assert_eq!(config.old_uzdoom, Some("/usr/bin/uzdoom".into()));
+        assert!(config.old_skip_splash);
+        assert_eq!(config.old_host_port, Some(9000));
+        assert_eq!(config.old_uzdoom_args, "-nomusic");
+        assert!(config.upgrade(&path).unwrap());
+        assert_eq!(Config::stored_version(&path), Some(5));
+        // the upgraded file keeps only what is the vault's own
+        let upgraded = Config::open(&path).unwrap();
+        assert_eq!(upgraded.profile_names, ["brutal"]);
+        assert_eq!(upgraded.wad_dirs, [OsString::from("/wads")]);
+        assert_eq!(upgraded.old_uzdoom, None);
+        assert!(!upgraded.old_skip_splash && upgraded.old_uzdoom_args.is_empty());
     }
 
     #[test]
@@ -245,15 +298,20 @@ mod tests {
 
         let altar = Altar::new("config-edition-two");
         fs::write(altar.file("DOOM2.WAD"), b"12345").unwrap();
-        let old = Config {
+        /// How edition 2 saved the settings, as far as this test needs them.
+        #[derive(Serialize)]
+        struct EditionTwo {
+            base_wad: Option<Wad>,
+            profile_names: Vec<String>,
+        }
+        let old = EditionTwo {
             base_wad: Some(Wad::new(altar.file("DOOM2.WAD").into(), "ab".repeat(32), 0)),
             profile_names: vec!["brutal".into()],
-            ..Config::default()
         };
         #[derive(Serialize)]
         struct Sealed<'a> {
             version: u32,
-            data: &'a Config,
+            data: &'a EditionTwo,
         }
         let path = Config::path(&altar.file(""));
         let bytes = rmp_serde::to_vec_named(&Sealed {
@@ -264,7 +322,7 @@ mod tests {
         fs::write(&path, bytes).unwrap();
 
         let config = Config::open(&path).unwrap();
-        assert_eq!(config.base_wad.as_ref().map(|wad| wad.size), Some(5));
+        assert_eq!(config.old_base_wad.as_ref().map(|wad| wad.size), Some(5));
         assert_eq!(config.profile_names, ["brutal"]);
         assert!(config.upgrade(&path).unwrap());
         assert_eq!(Config::stored_version(&path), Some(Config::current()));

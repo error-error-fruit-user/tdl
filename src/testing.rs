@@ -4,7 +4,7 @@ use std::{fs, path::PathBuf};
 
 use ratatui::{Frame, Terminal, backend::TestBackend};
 
-use crate::vault::{Vault, profile::Profile, scribe::tests::Altar, wad::Wad};
+use crate::vault::{Vault, global::Global, profile::Profile, scribe::tests::Altar, wad::Wad};
 
 /// Draws `scene` on a `width` x `height` screen and returns what is on it, one line per row with
 /// trailing blanks trimmed, ready for a snapshot.
@@ -72,14 +72,23 @@ pub fn example_vault(altar: &Altar) -> PathBuf {
 
     let root = altar.file("vault");
     let mut vault = Vault::new(root.join("config"), root.join("data"));
-    vault.config.uzdoom = Some(altar.file("uzdoom.sh").into());
-    vault.config.base_wad = Some(wad("DOOM2.WAD"));
+    // 🌐 UZDoom and the base wad are global settings, kept in the altar's standard config dir
+    let global = Global {
+        uzdoom: Some(altar.file("uzdoom.sh").into()),
+        base_wad: Some(wad("DOOM2.WAD")),
+        ..Global::default()
+    };
+    global.keep(&Global::path(&altar.file(STANDARD))).unwrap();
+    vault.global = global;
     for profile in profiles {
         let mut index = vault.profiles.len();
         vault.insert(&mut index, profile).unwrap();
     }
     root
 }
+
+/// The standard config dir of an altar made by [`example_vault`], where its global settings are.
+pub const STANDARD: &str = "standard";
 
 /// Leaves the example vault in `$TDL_SCREENSHOT_DIR`, for `screenshots.tape` to take the README's
 /// screenshots of. It isn't a check, so it only runs when asked:
@@ -95,6 +104,10 @@ fn screenshot_vault() {
     fs::create_dir_all(&dir).unwrap();
     let altar = Altar(dir);
     example_vault(&altar);
+    // 🏠 the tape runs tdl with HOME in the altar, so the global settings go where tdl looks then
+    let config = altar.file("home/.config/tdl");
+    fs::create_dir_all(&config).unwrap();
+    fs::copy(Global::path(&altar.file(STANDARD)), Global::path(&config)).unwrap();
     // 📸 kept, unlike every other altar: the screenshots are taken from it afterwards
     std::mem::forget(altar);
 }

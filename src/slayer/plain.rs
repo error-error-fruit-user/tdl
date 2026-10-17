@@ -116,7 +116,7 @@ pub fn host(vault: &mut Vault, index: usize, overrides: &HostOverrides) -> Outco
     let defaults = profile
         .host_defaults
         .clone()
-        .unwrap_or_else(|| HostSettings::new(vault.config.host_port));
+        .unwrap_or_else(|| HostSettings::new(vault.global.host_port));
     let settings = overrides.apply(defaults);
     let port = settings
         .port()
@@ -124,13 +124,9 @@ pub fn host(vault: &mut Vault, index: usize, overrides: &HostOverrides) -> Outco
     let uzdoom = ready_to_play(vault, &profile)?;
     // 💾 only a port other than the default is worth remembering, as the host form does
     let remembered = (port != net::DEFAULT_PORT).then_some(port);
-    if vault.config.host_port != remembered {
-        vault.config.host_port = remembered;
-        if vault
-            .config
-            .write(&vault.config_dir, &vault.profiles)
-            .is_err()
-        {
+    if vault.global.host_port != remembered {
+        vault.global.host_port = remembered;
+        if vault.keep_global().is_err() {
             eprintln!("Could not save the port for next time, is the disk full?");
         }
     }
@@ -141,7 +137,7 @@ pub fn host(vault: &mut Vault, index: usize, overrides: &HostOverrides) -> Outco
         .map(|wad| wad.refreshed(&mut ()))
         .collect::<Result<_, _>>()
         .map_err(|_| "One of the profile's wads can't be read")?;
-    let base_wad = profile.base_wad(&vault.config);
+    let base_wad = profile.base_wad(&vault.global);
     let manifest = Manifest::build(&wads, base_wad.map(|w| w.hash.clone()).unwrap_or_default())
         .map_err(|_| "One of the profile's wads can't be read")?;
     let code = settings.code();
@@ -161,7 +157,7 @@ pub fn host(vault: &mut Vault, index: usize, overrides: &HostOverrides) -> Outco
         base_wad.map(Wad::deref),
         &profile,
         &settings,
-        profile.uzdoom_args(&vault.config),
+        profile.uzdoom_args(&vault.global),
         &vault.data_dir.join(&profile.name),
     )
     .map_err(|error| error.to_string())?;
@@ -209,7 +205,7 @@ pub fn join(vault: &mut Vault, address: &Address, always_download: bool) -> Outc
             differing.join(", ")
         );
     }
-    let base_wad = profile.base_wad(&vault.config);
+    let base_wad = profile.base_wad(&vault.global);
     if !manifest.base_wad_matches(base_wad) {
         eprintln!("Your base wad isn't the host's, joining anyway");
     }
@@ -218,7 +214,7 @@ pub fn join(vault: &mut Vault, address: &Address, always_download: bool) -> Outc
         base_wad.map(Wad::deref),
         &profile,
         &address.host,
-        profile.uzdoom_args(&vault.config),
+        profile.uzdoom_args(&vault.global),
         &vault.data_dir.join(&profile.name),
     )
     .map_err(|error| error.to_string())?;
@@ -233,11 +229,11 @@ fn ready_to_play(
     profile: &Profile,
 ) -> std::result::Result<std::ffi::OsString, String> {
     let uzdoom = profile
-        .uzdoom(&vault.config)
+        .uzdoom(&vault.global)
         .cloned()
         .ok_or("No UZDoom is selected: pick one in tdl with U, or pass --uzdoom")?;
     let broken: Vec<_> = profile
-        .faults(&vault.config)
+        .faults(&vault.global)
         .into_iter()
         .filter(|(_, fault)| fault.is_blocking())
         .collect();
@@ -265,7 +261,7 @@ fn make_profile(
     manifest: &Manifest,
     always_download: bool,
 ) -> std::result::Result<Option<Profile>, String> {
-    if vault.config.uzdoom_in_effect().is_none() {
+    if vault.global.uzdoom_in_effect().is_none() {
         return Err("No UZDoom is selected: pick one in tdl with U, or pass --uzdoom".to_string());
     }
     let lookup = vault.lookup();

@@ -34,7 +34,7 @@ The profiles here are examples made for the screenshots.
 | ![The search line, looking for a wad by name with a star](docs/screenshots/search.png) | ![Two profiles selected, with one profile already copied](docs/screenshots/selection.png) |
 | **Searching.** `/` and a name; a `*` in front looks in the wads instead. Nothing moves until `Enter`. | **Selecting and copying.** `Shift+V` and `M` pick rows; the row under the panel says what is selected and what is copied. |
 | ![The settings: splash, music, quips, song, UZDoom arguments and splash quip](docs/screenshots/settings.png) | |
-| **Settings.** `O` in the launcher: the splash and the UZDoom arguments for this vault, the music, song and quips for all of them. | |
+| **Settings.** `O` in the launcher: the splash, the UZDoom arguments, the music, song and quips, the same in every vault. | |
 
 ## Requirements
 
@@ -150,7 +150,7 @@ Pasting a wad whose file name the profile already has asks the same three things
 
 ### Settings
 
-`O` in the launcher opens the settings. The splash and the UZDoom arguments are kept for the vault that is open; the music, the song and the quips are kept in `global.rite`, for every vault. `↑`/`↓` (or `Tab`) move between the rows, `J`/`K` or `←`/`→` switch a choice, `Enter` saves. `Esc` leaves, and if anything changed it first asks whether to **[S]ave** it, **[D]iscard** it, or go **[B]ack** to the form.
+`O` in the launcher opens the settings. Everything here, like UZDoom and the base wad (`U` and `W`), is kept in `global.rite`, so it is the same whichever vault is open; a vault only keeps its profiles and its own wad dirs. `↑`/`↓` (or `Tab`) move between the rows, `J`/`K` or `←`/`→` switch a choice, `Enter` saves. `Esc` leaves, and if anything changed it first asks whether to **[S]ave** it, **[D]iscard** it, or go **[B]ack** to the form.
 
 - **splash**: whether the fire splash plays when tdl starts.
 - **music**: **off** (no music at all, as `--no-music` does for one run), **splash only** (it fades out with the splash), or **keeps playing** in the launcher (as `--keep-music` does for one run). `J`/`→` goes to the next choice and `K`/`←` back.

@@ -51,10 +51,10 @@ pub fn summon(
     else {
         return Ok(());
     };
-    let Some(uzdoom) = profile.uzdoom(&vault.config) else {
+    let Some(uzdoom) = profile.uzdoom(&vault.global) else {
         return Warning::uzdoom_not_selected(grimoire);
     };
-    if Warning::faults(grimoire, &profile.faults(&vault.config))? {
+    if Warning::faults(grimoire, &profile.faults(&vault.global))? {
         return Ok(());
     }
     // 🌀 volatile wads may legitimately differ from the host's, but not without the user knowing
@@ -62,7 +62,7 @@ pub fn summon(
     if !differing.is_empty() && !Dialog::should_join_with_different_wads(grimoire, &differing)? {
         return Ok(());
     }
-    let base_wad = profile.base_wad(&vault.config);
+    let base_wad = profile.base_wad(&vault.global);
     if manifest.base_wad_matches(base_wad)
         || Dialog::summon(
             grimoire,
@@ -75,7 +75,7 @@ pub fn summon(
             base_wad.map(Wad::deref),
             &profile,
             &address.host,
-            profile.uzdoom_args(&vault.config),
+            profile.uzdoom_args(&vault.global),
             &vault.data_dir.join(&profile.name),
         )
         .and_then(|game| running::summon(grimoire, "joining", &details, game));
@@ -118,7 +118,7 @@ fn download_profile(
     manifest: &Manifest,
     always_download: bool,
 ) -> Result<Option<Profile>> {
-    if vault.config.uzdoom_in_effect().is_none() {
+    if vault.global.uzdoom_in_effect().is_none() {
         Warning::uzdoom_not_selected(grimoire)?;
         return Ok(None);
     }

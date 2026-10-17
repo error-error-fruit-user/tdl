@@ -55,8 +55,8 @@ impl Lookup {
             .profiles
             .iter()
             .flat_map(|profile| profile.wads.iter().chain(&profile.base_wad))
-            .chain(&vault.config.base_wad)
-            .chain(&vault.config.session_base_wad);
+            .chain(&vault.global.base_wad)
+            .chain(&vault.global.session_base_wad);
         for wad in wads {
             if let Some(dir) = Path::new(&wad.path).parent()
                 && !dirs.iter().any(|known| known == dir)

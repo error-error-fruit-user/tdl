@@ -1,5 +1,5 @@
 //! Settings that belong to no vault: which vault to open when none is passed, wad dirs every
-//! vault uses, the music, and the quips. Kept in `global.rite` in the platform's standard config dir, the one place every
+//! vault uses, UZDoom, the base wad and UZDoom's arguments, the splash, the music, and the quips. Kept in `global.rite` in the platform's standard config dir, the one place every
 //! vault can find.
 
 use std::{
@@ -13,14 +13,16 @@ use serde::{Deserialize, Serialize};
 use crate::{
     quips,
     vault::{
+        config::Config,
         edition::Edition,
         saved::{optional_path, paths},
+        wad::Wad,
     },
 };
 
 const FILE: &str = "global.rite";
 
-#[derive(Debug, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct Global {
     /// The vault to open when tdl starts without `--vault`, kept from an earlier `--vault`.
     #[serde(default, with = "optional_path")]
@@ -46,6 +48,31 @@ pub struct Global {
     /// another. Picked in the settings; missing in older files, which count as the built-in one.
     #[serde(default, with = "optional_path")]
     pub song: Option<OsString>,
+    /// Path to the UZDoom executable, used by profiles that don't set their own. Kept in each
+    /// vault's `config.rite` before its edition 5; missing in older files, which count as none.
+    #[serde(default, with = "optional_path")]
+    pub uzdoom: Option<OsString>,
+    /// The base wad used by profiles that don't set their own, the same way.
+    #[serde(default)]
+    pub base_wad: Option<Wad>,
+    /// Extra command-line arguments for UZDoom, split at spaces and passed on every launch, host
+    /// and join, before the wads. Set in the settings.
+    #[serde(default)]
+    pub uzdoom_args: String,
+    /// Goes straight to the launcher without the splash screen. Set in the settings.
+    #[serde(default)]
+    pub skip_splash: bool,
+    /// The port the host served its wads on last time, offered again in the host form. `None`
+    /// until a game is hosted on a port other than the default.
+    #[serde(default)]
+    pub host_port: Option<u16>,
+    /// UZDoom from `--uzdoom`, for this session only: it is never saved, and it wins over every
+    /// profile's own and the global one.
+    #[serde(skip)]
+    pub session_uzdoom: Option<OsString>,
+    /// The base wad from `--base-wad`, for this session only, the same way.
+    #[serde(skip)]
+    pub session_base_wad: Option<Wad>,
 }
 
 /// The global settings a scroll can carry to someone else: how tdl looks and sounds, and nothing
@@ -177,6 +204,52 @@ fn v0_to_v1(global: Global) -> Global {
 }
 
 impl Global {
+    /// The UZDoom a profile without its own uses: this session's, else the global one.
+    pub fn uzdoom_in_effect(&self) -> Option<&OsString> {
+        self.session_uzdoom.as_ref().or(self.uzdoom.as_ref())
+    }
+
+    /// The base wad a profile without its own uses: this session's, else the global one.
+    pub fn base_wad_in_effect(&self) -> Option<&Wad> {
+        self.session_base_wad.as_ref().or(self.base_wad.as_ref())
+    }
+
+    /// Takes the settings a vault's `config.rite` kept before its edition 5, for each that isn't
+    /// set here yet, so the first vault opened since keeps its own; what is set here wins over
+    /// any other vault's. They are taken out of `config` either way. Returns whether any was
+    /// taken.
+    pub fn adopt(&mut self, config: &mut Config) -> bool {
+        let mut adopted = false;
+        if let Some(uzdoom) = config.old_uzdoom.take()
+            && self.uzdoom.is_none()
+        {
+            self.uzdoom = Some(uzdoom);
+            adopted = true;
+        }
+        if let Some(base_wad) = config.old_base_wad.take()
+            && self.base_wad.is_none()
+        {
+            self.base_wad = Some(base_wad);
+            adopted = true;
+        }
+        let args = std::mem::take(&mut config.old_uzdoom_args);
+        if !args.is_empty() && self.uzdoom_args.is_empty() {
+            self.uzdoom_args = args;
+            adopted = true;
+        }
+        if std::mem::take(&mut config.old_skip_splash) && !self.skip_splash {
+            self.skip_splash = true;
+            adopted = true;
+        }
+        if let Some(port) = config.old_host_port.take()
+            && self.host_port.is_none()
+        {
+            self.host_port = Some(port);
+            adopted = true;
+        }
+        adopted
+    }
+
     /// The settings that can be shared in a scroll.
     pub fn shared(&self) -> Shared {
         Shared {
@@ -225,8 +298,22 @@ mod tests {
             no_quips: true,
             song: Some("/songs/e1m1.ogg".into()),
             music: Music::Kept,
+            uzdoom: Some("/usr/bin/uzdoom".into()),
+            base_wad: Some(Wad::new("/iwads/DOOM2.WAD".into(), "ab".repeat(32), 3)),
+            uzdoom_args: "-nomusic".into(),
+            skip_splash: true,
+            host_port: Some(9000),
+            ..Global::default()
         };
         global.keep(&path).unwrap();
+        assert_eq!(Global::open(&path), Some(global.clone()));
+        // this session's UZDoom and base wad never reach the file
+        let session = Global {
+            session_uzdoom: Some("/test/uzdoom-dev".into()),
+            session_base_wad: Some(Wad::new("/test/freedoom2.wad".into(), "cd".repeat(32), 1)),
+            ..global.clone()
+        };
+        session.keep(&path).unwrap();
         assert_eq!(Global::open(&path), Some(global));
     }
 
@@ -262,6 +349,43 @@ mod tests {
     }
 
     #[test]
+    fn a_vaults_old_settings_are_taken_where_none_are_set_and_taken_out_either_way() {
+        let old = || Config {
+            old_uzdoom: Some("/vault/uzdoom".into()),
+            old_base_wad: Some(Wad::new("/vault/DOOM2.WAD".into(), "ab".repeat(32), 3)),
+            old_uzdoom_args: "-nomusic".into(),
+            old_skip_splash: true,
+            old_host_port: Some(9000),
+            profile_names: vec!["brutal".into()],
+            ..Config::default()
+        };
+        let mut config = old();
+        let mut global = Global::default();
+        assert!(global.adopt(&mut config));
+        assert_eq!(global.uzdoom, Some("/vault/uzdoom".into()));
+        assert_eq!(global.base_wad.as_ref().map(|wad| wad.size), Some(3));
+        assert_eq!(global.uzdoom_args, "-nomusic");
+        assert!(global.skip_splash);
+        assert_eq!(global.host_port, Some(9000));
+        assert!(
+            config
+                == Config {
+                    profile_names: vec!["brutal".into()],
+                    ..Config::default()
+                }
+        );
+
+        // another vault's: what is set already wins, and nothing is left behind
+        let mut other = old();
+        other.old_uzdoom = Some("/other/uzdoom".into());
+        assert!(!global.adopt(&mut other));
+        assert_eq!(global.uzdoom, Some("/vault/uzdoom".into()));
+        assert!(other.old_uzdoom.is_none() && other.old_base_wad.is_none());
+        // a config with none has nothing to give
+        assert!(!Global::default().adopt(&mut Config::default()));
+    }
+
+    #[test]
     fn sharing_leaves_out_the_song_and_everything_about_this_machine() {
         let mine = Global {
             vault: Some("/home/me/doom".into()),
@@ -270,6 +394,7 @@ mod tests {
             no_quips: false,
             song: Some("/songs/e1m1.ogg".into()),
             music: Music::Kept,
+            ..Global::default()
         };
         let shared = mine.shared();
         let mut theirs = Global {

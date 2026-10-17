@@ -104,7 +104,7 @@ impl HostSettingsForm {
         start: Option<HostSettings>,
     ) -> Result<Option<HostSettings>> {
         let defaults = vault.profiles[index].host_defaults.clone();
-        let mut form = Self::new(defaults, vault.config.host_port);
+        let mut form = Self::new(defaults, vault.global.host_port);
         if let Some(start) = start {
             form.settings = start;
         }

@@ -29,21 +29,17 @@ pub fn summon(
     };
     // 💾 only a port other than the default is worth remembering
     let remembered = (port != net::DEFAULT_PORT).then_some(port);
-    if vault.config.host_port != remembered {
-        vault.config.host_port = remembered;
-        if vault
-            .config
-            .write(&vault.config_dir, &vault.profiles)
-            .is_err()
-        {
+    if vault.global.host_port != remembered {
+        vault.global.host_port = remembered;
+        if vault.keep_global().is_err() {
             Warning::save_failed(grimoire)?;
         }
     }
     let profile = &vault.profiles[index];
-    let Some(uzdoom) = profile.uzdoom(&vault.config) else {
+    let Some(uzdoom) = profile.uzdoom(&vault.global) else {
         return Warning::uzdoom_not_selected(grimoire);
     };
-    let base_wad = profile.base_wad(&vault.config);
+    let base_wad = profile.base_wad(&vault.global);
     status::summon(grimoire, TITLE, "Hosting...", BORDER_COLOR)?;
 
     // 🌀 volatile wads are hashed fresh, so what the manifest says is what actually gets served
@@ -76,7 +72,7 @@ pub fn summon(
         base_wad.map(Wad::deref),
         profile,
         &settings,
-        profile.uzdoom_args(&vault.config),
+        profile.uzdoom_args(&vault.global),
         &vault.data_dir.join(&profile.name),
     )
     .and_then(|game| running::summon(grimoire, "hosting", &details, game));
