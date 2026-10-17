@@ -673,11 +673,11 @@ impl Launcher {
         if settings == before {
             return Ok(());
         }
-        let quip_changed = settings.music != before.music
+        let changed = settings.music != before.music
             || settings.quip != before.quip
             || settings.quips != before.quips
             || settings.song != before.song;
-        if !self.global_writable && quip_changed {
+        if !self.global_writable && changed {
             Warning::summon(
                 grimoire,
                 "The global settings are from a newer tdl, so the quips and the song can't be changed",
@@ -713,7 +713,7 @@ impl Launcher {
             .write(&self.vault.config_dir, &self.vault.profiles)
             .is_ok();
         let global_saved =
-            !quip_changed || !self.global_writable || self.global.keep(&self.global_path).is_ok();
+            !changed || !self.global_writable || self.global.keep(&self.global_path).is_ok();
         if !config_saved || !global_saved {
             Warning::save_failed(grimoire)?;
         }
