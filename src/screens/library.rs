@@ -190,7 +190,7 @@ impl<'a> Library<'a> {
                 .iter()
                 .map(|&(source, index)| self.wad(source, index).path.clone())
                 .collect();
-            let hints = tagged(&paths, shelf::hints(&paths, &downloads), &downloads);
+            let hints = shelf::hints(&paths, &downloads);
             self.labels = paths
                 .iter()
                 .map(|path| file_name(path))
@@ -212,7 +212,12 @@ impl<'a> Library<'a> {
                     .iter()
                     .map(|wad| wad.path.clone())
                     .collect();
-                let hints = tagged(&paths, vec![None; paths.len()], &downloads);
+                // 🏷️ in the downloads, two of a name are told apart by their hashes
+                let hints = if *dir == downloads {
+                    shelf::hints(&paths, &downloads)
+                } else {
+                    vec![None; paths.len()]
+                };
                 for (index, (path, hint)) in paths.iter().zip(hints).enumerate() {
                     let shown = match path.strip_prefix(dir) {
                         Ok(inside) if *dir != downloads => inside.display().to_string(),
@@ -555,22 +560,6 @@ impl<'a> Library<'a> {
     }
 }
 
-/// `hints`, with every download's said to be `.downloads` and the start of its hash, which is all
-/// that tells one download from another, and a download from a wad of the same name elsewhere.
-fn tagged(paths: &[PathBuf], hints: Vec<Option<String>>, downloads: &Path) -> Vec<Option<String>> {
-    paths
-        .iter()
-        .zip(hints)
-        .map(|(path, hint)| {
-            if shelf::is_download(path, downloads) {
-                Some(shelf::download_tag(path))
-            } else {
-                hint
-            }
-        })
-        .collect()
-}
-
 /// The file name of `path`, as text.
 fn file_name(path: &Path) -> String {
     path.file_name()
@@ -859,7 +848,7 @@ mod tests {
                 dir("mods"),
                 "brutal.pk3".into(),
                 dir("data/.downloads"),
-                "brutal.pk3 [.downloads 01234567]".into(),
+                "brutal.pk3".into(),
                 Library::NEW_ROW.into(),
             ]
         );
