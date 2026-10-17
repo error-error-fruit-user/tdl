@@ -43,6 +43,7 @@ use crate::{
     slayer::join_game,
     slayer::plain,
     slayer::share,
+    slayer::watch,
     theme, uzdoom,
     vault::Vault,
     vault::edition::{Edition, Loaded},
@@ -179,6 +180,7 @@ impl Launcher {
         ["X", "Cut (Selected, If Any)"],
         ["P", "Paste"],
         ["A/E/D", "Add/Edit/Delete (Selected, If Any)"],
+        ["F", "Add a Profile That Watches a Dir"],
         ["S/I", "Seal (Selected or All)/Import Scroll"],
         ["U/W", "Select UZDoom/Base Wad"],
         ["L", "Wads (Every Dir)"],
@@ -385,6 +387,8 @@ impl Launcher {
                 self.table_state.select(Some(before));
             }
         }
+        // 👀 the dirs profiles watch may have had wads put in or taken out since last time
+        watch::refresh_all(grimoire, &mut self.vault)?;
         Ok(())
     }
 
@@ -413,6 +417,7 @@ impl Launcher {
             Command::Host { profile, overrides } => {
                 let index = find_profile(&vault.profiles, &profile)
                     .ok_or(format!("There is no profile called '{profile}'"))?;
+                watch::refresh_plain(vault, index)?;
                 plain::host(vault, index, &overrides)
             }
             Command::Join {
@@ -513,7 +518,8 @@ impl Launcher {
 
     /// Plays the profile at `index`, unless it has no UZDoom or something it needs is broken, which
     /// is said instead.
-    fn launch_profile(&self, grimoire: &mut Grimoire, index: usize) -> Result<()> {
+    fn launch_profile(&mut self, grimoire: &mut Grimoire, index: usize) -> Result<()> {
+        watch::refresh_saved(grimoire, &mut self.vault, index)?;
         let profile = &self.vault.profiles[index];
         let Some(uzdoom) = profile.uzdoom(&self.vault.config) else {
             return Warning::uzdoom_not_selected(grimoire);
@@ -543,6 +549,7 @@ impl Launcher {
         index: usize,
         start: Option<HostSettings>,
     ) -> Result<()> {
+        watch::refresh_saved(grimoire, &mut self.vault, index)?;
         let profile = &self.vault.profiles[index];
         if profile.uzdoom(&self.vault.config).is_none() {
             return Warning::uzdoom_not_selected(grimoire);
@@ -1412,6 +1419,10 @@ impl Ritual for Launcher {
                     *index = previous_index;
                 },
             )),
+            KeyCode::Char('f') => {
+                watch::create(grimoire, &mut self.vault, index)?;
+                Ok(Phase::Render)
+            }
             KeyCode::Char('a') => {
                 if let Some(profile) = Editor::summon_blank(grimoire, &mut self.vault)?
                     && self.vault.insert(index, profile).is_err()

@@ -26,6 +26,7 @@ use crate::{
         wad_namer::WadNamer,
         wrap_around,
     },
+    slayer::watch,
     tag, theme,
     vault::Vault,
     vault::profile::Profile,
@@ -109,6 +110,7 @@ impl<'a> Editor<'a> {
         ["A", "Add"],
         ["F", "Import from Dir"],
         ["L", "Wads (Every Dir)"],
+        ["T", "Watch a Dir/Stop Watching"],
         ["D", "Delete (Selected, If Any)"],
         ["U/W/I/G", "Select UZDoom/Base Wad/Ini/Args"],
     ];
@@ -143,18 +145,25 @@ impl<'a> Editor<'a> {
 
     /// Edits `vault.profiles[index]` and saves the result. Cancelling keeps the original.
     pub fn summon_existing(grimoire: &mut Grimoire, vault: &mut Vault, index: usize) -> Result<()> {
+        // 👀 a watched dir's new wads are in before the edit starts
+        watch::refresh_saved(grimoire, vault, index)?;
         let mut editor = Editor::edit(&vault.profiles, &vault.data_dir, index);
         editor.clipboard = vault.clipboard.clone();
         editor.shelf = vault.shelf();
         let profile = editor.invoke(grimoire)?;
         let Editor {
-            clipboard, shelf, ..
+            clipboard,
+            shelf,
+            original,
+            ..
         } = editor;
         vault.clipboard = clipboard;
-        if let Some(profile) = profile
-            && vault.replace(index, profile).is_err()
-        {
-            Warning::save_failed(grimoire)?;
+        if let Some(mut profile) = profile {
+            // 🙈 a wad taken out of a watched dir's profile stays out
+            profile.note_dismissed(&original);
+            if vault.replace(index, profile).is_err() {
+                Warning::save_failed(grimoire)?;
+            }
         }
         // 🚚 after the edit is in, so a profile left unsaved still follows any file it moved
         if vault.restock(shelf).is_err() {
@@ -273,6 +282,33 @@ impl<'a> Editor<'a> {
                 .collect(),
         );
         true
+    }
+
+    /// Watches a dir the user picks, taking in its wads now, or stops watching one, after asking.
+    /// The wads stay in the profile either way.
+    fn toggle_watch(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+        if let Some(dir) = &self.profile.watched {
+            let question = format!(
+                "Stop watching {}? Its wads stay in the profile.",
+                Path::new(dir).display()
+            );
+            if Dialog::summon(grimoire, &question)? {
+                self.profile.watched = None;
+                self.profile.dismissed.clear();
+            }
+            return Ok(());
+        }
+        let Some(dir) = picker::dir(grimoire, None)? else {
+            return Ok(());
+        };
+        let dir = std::path::absolute(&dir).unwrap_or(dir);
+        self.profile.watched = Some(dir.into_os_string());
+        if watch::refresh(grimoire, &mut self.profile)? {
+            self.faults = check_wads(&self.profile.wads);
+            self.selection.clear();
+            self.found = Found::default();
+        }
+        Ok(())
     }
 
     /// Opens the wads screen. The profile (and how it was opened, so moving its files isn't a
@@ -823,6 +859,10 @@ impl Ritual for Editor<'_> {
             }
             KeyCode::Char('l') => {
                 self.open_library(grimoire)?;
+                Ok(Phase::Render)
+            }
+            KeyCode::Char('t') => {
+                self.toggle_watch(grimoire)?;
                 Ok(Phase::Render)
             }
             KeyCode::Char('f') => {

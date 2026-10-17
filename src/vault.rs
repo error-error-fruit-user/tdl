@@ -436,6 +436,8 @@ mod tests {
             ini: None,
             host_defaults: None,
             uzdoom_args: None,
+            watched: None,
+            dismissed: Vec::new(),
         };
         // the old profile layout, from before host defaults: a bare five-field array
         let old_profile = (

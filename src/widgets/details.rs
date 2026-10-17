@@ -88,6 +88,23 @@ fn file_name(path: &OsStr) -> String {
         .into_owned()
 }
 
+/// The line for the dir a profile watches, if it watches one. A dir that isn't there is only
+/// marked, since the profile still has its wads.
+fn watched_line(profile: &Profile) -> Option<Detail> {
+    let dir = profile.watched.as_deref()?;
+    let there = Path::new(dir).is_dir();
+    Some(Detail {
+        label: "dir",
+        state: if there { State::Good } else { State::Changed },
+        value: file_name(dir),
+        note: vec![if there {
+            ("watched".to_string(), State::Unset)
+        } else {
+            ("missing".to_string(), State::Changed)
+        }],
+    })
+}
+
 /// A line for a file that may be set on the profile, set globally, or not set at all.
 fn file_line(
     label: &'static str,
@@ -224,7 +241,7 @@ impl Details {
             // 🚫 without UZDoom there is no game, so this one is not optional
             uzdoom.state = State::Bad;
         }
-        let lines = vec![
+        let mut lines = vec![
             uzdoom,
             or_session(
                 file_line(
@@ -257,6 +274,10 @@ impl Details {
                     .map(|(_, fault)| fault.clone()),
             ),
         ];
+        // 👀 just above the wads, which it fills
+        if let Some(line) = watched_line(profile) {
+            lines.insert(lines.len() - 1, line);
+        }
         Self::summed_up(lines)
     }
 
@@ -321,7 +342,7 @@ impl Details {
         let uzdoom_fault = check(profile.uzdoom.as_ref());
         let base_fault = profile.base_wad.as_ref().and_then(Wad::check);
         let ini_fault = check(profile.ini.as_ref());
-        let lines = vec![
+        let mut lines = vec![
             file_line(
                 "uzdoom",
                 profile.uzdoom.as_deref(),
@@ -345,6 +366,7 @@ impl Details {
             ),
             args_line(profile.uzdoom_args.as_deref(), None, "global"),
         ];
+        lines.extend(watched_line(profile));
         Self {
             title: "overrides",
             title_color: theme::TITLE,

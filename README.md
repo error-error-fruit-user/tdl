@@ -12,7 +12,7 @@ A terminal launcher for [UZDoom](https://github.com/UZDoom/UZDoom). Group your w
 - **One-key launch**: pick a profile and press `Enter`
 - **Host**: choose player count, deathmatch or co-op, a starting map, the port and a join code
 - **Join**: enter the host's IP and join code; tdl picks a compatible profile, or offers to download the wads and create one
-- **Import** a whole dir of wads into a profile
+- **Import** a whole dir of wads into a profile, or make a profile that **watches a dir** and takes in whatever wads you put there
 - **Search** with `/`: profiles by name (or by their wads with `*`), and wads by file name in the editor
 - **Copy, cut and paste** profiles and wads, one or many at a time, with `Shift+V`/`M` to select, `Y`, `X` and `P`
 - **Wads screen** (`L`): every wad in every wad dir and the downloads, by dir or all in one list, to copy or move between dirs or paste into a profile
@@ -108,6 +108,7 @@ tdl join 10.0.0.2 --code abc234 --port 9000           # the join form, filled in
 | `X` | Cut the selected profiles (or the one under the cursor): nothing moves until `P` pastes them, which moves them in front of the cursor, saves and all |
 | `P` | Paste: copied profiles go in front of the cursor, and copied wads go at the end of the profile (asks first) or, on `+`, start a new profile |
 | `A` | Add a profile |
+| `F` | Add a profile that watches a dir (see below) |
 | `E` | Edit a profile |
 | `D` | Delete a profile |
 | `S` | Seal the profile (or the selected ones, or the whole vault) into a `.scroll` to share |
@@ -119,7 +120,11 @@ tdl join 10.0.0.2 --code abc234 --port 9000           # the join form, filled in
 | `Esc` | Save and quit |
 | `F1` / `?` | Show the keys for the current screen (`F1` works everywhere, even where `?` is typed as text) |
 
-Inside the profile editor, `Enter` saves and leaves; `Esc` leaves too, but if the profile changed it first asks whether to **[S]ave**, **[D]iscard**, or go **[B]ack**. `Tab` switches between the name and the wad list, where `A` adds a wad, `F` imports a dir, `D` removes one, `}`/`{` reorder, `U`/`W`/`I` set the profile's own UZDoom, base wad and ini, and `G` its own UZDoom arguments (used instead of the global ones from the settings; left empty, the global ones count). `/` searches the wads by file name (never by dir) and `;`/`,` step through the matches. `Shift+V` and `M` select wads, `Y` copies the selected ones (or the one under the cursor), `Shift+Y` copies every wad, `X` cuts (copies, then takes them out), and `P` pastes in front of the cursor; copied profiles paste as all their wads. `L` opens the wads screen.
+Inside the profile editor, `Enter` saves and leaves; `Esc` leaves too, but if the profile changed it first asks whether to **[S]ave**, **[D]iscard**, or go **[B]ack**. `Tab` switches between the name and the wad list, where `A` adds a wad, `F` imports a dir, `D` removes one, `}`/`{` reorder, `U`/`W`/`I` set the profile's own UZDoom, base wad and ini, and `G` its own UZDoom arguments (used instead of the global ones from the settings; left empty, the global ones count). `/` searches the wads by file name (never by dir) and `;`/`,` step through the matches. `Shift+V` and `M` select wads, `Y` copies the selected ones (or the one under the cursor), `Shift+Y` copies every wad, `X` cuts (copies, then takes them out), and `P` pastes in front of the cursor; copied profiles paste as all their wads. `L` opens the wads screen, and `T` makes the profile watch a dir, or stop watching one.
+
+### Profiles that watch a dir
+
+`F` in the launcher picks a dir and makes a profile named after it, with every wad in it (at any depth). From then on the profile keeps up with the dir by itself: whenever tdl starts, before the profile is launched or hosted, and when it is opened in the editor, wads put in the dir are added at the end (in path order) and wads whose files have left it are taken out. The panel under the launcher shows the dir it watches. Otherwise it is a profile like any other: wads can be reordered, and wads from anywhere else added. A wad from the dir taken out by hand stays out until it is put back. `T` in the editor gives any profile a dir to watch, or stops watching one (its wads stay). A watched dir that isn't there, like an unplugged drive, changes nothing, and a sealed scroll holds the profile's wads as they are, as an ordinary profile.
 
 ### The wads screen
 

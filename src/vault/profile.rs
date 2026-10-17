@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ffi::OsString,
     io,
     path::{Path, PathBuf},
@@ -13,6 +13,7 @@ use crate::{
     vault::host_settings::HostSettings,
     vault::saved::{SavedPath, SavedWad},
     vault::scribe,
+    vault::shelf,
     vault::wad::{Fault, Wad},
 };
 
@@ -43,6 +44,21 @@ pub struct Profile {
     pub host_defaults: Option<HostSettings>,
     /// Overrides [`Config::uzdoom_args`]: extra arguments for UZDoom, for this profile only.
     pub uzdoom_args: Option<String>,
+    /// A dir the profile watches: wads put in it (at any depth) are added on their own, and wads
+    /// whose files leave it are taken out (see [`Profile::look`]).
+    pub watched: Option<OsString>,
+    /// Wads in the watched dir that were taken out of the profile by hand, so they aren't added
+    /// back. Forgotten once their files are gone.
+    pub dismissed: Vec<OsString>,
+}
+
+/// What changed in a watched dir since the profile last looked.
+#[derive(Debug, Default, PartialEq)]
+pub struct Watching {
+    /// The positions of the profile's wads whose files have left the dir, in order.
+    pub gone: Vec<usize>,
+    /// Wad files in the dir that the profile doesn't have yet, in path order.
+    pub new: Vec<PathBuf>,
 }
 
 /// A profile as it is saved. The field order is the layout of edition 0, where this was a bare
@@ -64,6 +80,11 @@ struct SavedProfile {
     /// Missing in files from before profiles had arguments of their own, which count as none.
     #[serde(default)]
     uzdoom_args: Option<String>,
+    /// Missing in files from before profiles could watch a dir, which count as watching none.
+    #[serde(default)]
+    watched: Option<SavedPath>,
+    #[serde(default)]
+    dismissed: Vec<SavedPath>,
 }
 
 /// One wad in a saved profile.
@@ -126,6 +147,12 @@ impl From<Profile> for SavedProfile {
             host_defaults: profile.host_defaults,
             dirs,
             uzdoom_args: profile.uzdoom_args,
+            watched: profile.watched.as_deref().map(SavedPath::from),
+            dismissed: profile
+                .dismissed
+                .iter()
+                .map(|path| SavedPath::from(path.as_os_str()))
+                .collect(),
         }
     }
 }
@@ -172,6 +199,8 @@ impl TryFrom<SavedProfile> for Profile {
             ini: saved.ini.map(OsString::from),
             host_defaults: saved.host_defaults,
             uzdoom_args: saved.uzdoom_args,
+            watched: saved.watched.map(OsString::from),
+            dismissed: saved.dismissed.into_iter().map(OsString::from).collect(),
         })
     }
 }
@@ -237,7 +266,75 @@ impl Profile {
         for wad in self.wads.iter_mut().chain(&mut self.base_wad) {
             followed |= wad.follow(from, to);
         }
+        for dismissed in &mut self.dismissed {
+            if Path::new(dismissed) == from {
+                *dismissed = to.as_os_str().to_os_string();
+                followed = true;
+            }
+        }
         followed
+    }
+
+    /// What changed in the watched dir: wads whose files left it, and wad files new to it that
+    /// weren't taken out by hand. `None` if the profile watches no dir, if the dir isn't there
+    /// (an unplugged drive changes nothing), or if nothing changed.
+    pub fn look(&self) -> Option<Watching> {
+        let dir = Path::new(self.watched.as_ref()?);
+        if !dir.is_dir() {
+            return None;
+        }
+        let gone = self
+            .wads
+            .iter()
+            .enumerate()
+            .filter(|(_, wad)| {
+                let path = Path::new(&wad.path);
+                path.starts_with(dir) && !path.is_file()
+            })
+            .map(|(i, _)| i)
+            .collect();
+        let known: HashSet<&Path> = self
+            .wads
+            .iter()
+            .map(|wad| Path::new(&wad.path))
+            .chain(self.dismissed.iter().map(Path::new))
+            .collect();
+        let new = shelf::scan(dir)
+            .into_iter()
+            .filter(|path| !known.contains(path.as_path()))
+            .collect();
+        let watching = Watching { gone, new };
+        (watching != Watching::default()).then_some(watching)
+    }
+
+    /// Takes in what [`Profile::look`] found, with `new` the wads hashed from its new files: the
+    /// gone ones are taken out, the new ones go at the end, and dismissed wads whose files are gone
+    /// are forgotten.
+    pub fn take_in(&mut self, watching: &Watching, new: Vec<Wad>) {
+        for &gone in watching.gone.iter().rev() {
+            self.wads.remove(gone);
+        }
+        self.wads.extend(new);
+        self.dismissed.retain(|path| Path::new(path).is_file());
+    }
+
+    /// After an edit from `before`, remembers each wad in the watched dir that was taken out, so
+    /// looking doesn't add it back, and forgets any that was put back in.
+    pub fn note_dismissed(&mut self, before: &Profile) {
+        let Some(dir) = self.watched.as_ref().map(PathBuf::from) else {
+            return;
+        };
+        let kept: HashSet<&OsString> = self.wads.iter().map(|wad| &wad.path).collect();
+        let taken_out: Vec<OsString> = before
+            .wads
+            .iter()
+            .map(|wad| &wad.path)
+            .filter(|path| !kept.contains(path) && Path::new(path).starts_with(&dir))
+            .filter(|path| !self.dismissed.contains(path))
+            .cloned()
+            .collect();
+        self.dismissed.retain(|path| !kept.contains(path));
+        self.dismissed.extend(taken_out);
     }
 
     /// A profile with no overrides, as created when downloading from a host.
@@ -250,6 +347,8 @@ impl Profile {
             ini: None,
             host_defaults: None,
             uzdoom_args: None,
+            watched: None,
+            dismissed: Vec::new(),
         }
     }
 
@@ -839,6 +938,117 @@ mod tests {
         // the upgraded file says dirs, and nothing is a folder anymore
         let bytes = fs::read(&path).unwrap();
         assert!(!bytes.windows(6).any(|window| window == b"folder"));
+    }
+
+    // 👀 a profile that watches a dir
+
+    #[test]
+    fn a_watched_dir_brings_in_new_wads_and_lets_go_of_gone_ones_but_not_others() {
+        let altar = Altar::new("profile-watch");
+        let dir = altar.file("watched");
+        fs::create_dir_all(dir.join("deep")).unwrap();
+        for name in ["a.wad", "b.pk3", "deep/c.wad", "notes.txt"] {
+            fs::write(dir.join(name), name).unwrap();
+        }
+        fs::write(altar.file("elsewhere.wad"), b"x").unwrap();
+        let wad = |path: PathBuf| Wad::new(path.into(), "ab".repeat(32), 1);
+        let mut profile = Profile {
+            watched: Some(dir.clone().into_os_string()),
+            ..Profile::new(
+                "watching".into(),
+                vec![
+                    wad(dir.join("a.wad")),
+                    wad(dir.join("gone.wad")),
+                    // gone too, but not from the dir: a placeholder as ever
+                    wad(altar.file("missing.wad")),
+                ],
+            )
+        };
+        profile.dismissed = vec![dir.join("b.pk3").into(), dir.join("long_gone.wad").into()];
+
+        let watching = profile.look().unwrap();
+        assert_eq!(watching.gone, [1]);
+        assert_eq!(
+            watching.new,
+            [dir.join("deep/c.wad")],
+            "a.wad is in, b.pk3 dismissed"
+        );
+        profile.take_in(&watching, vec![wad(dir.join("deep/c.wad"))]);
+        let paths: Vec<_> = profile
+            .wads
+            .iter()
+            .map(|wad| PathBuf::from(&wad.path))
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                dir.join("a.wad"),
+                altar.file("missing.wad"),
+                dir.join("deep/c.wad")
+            ]
+        );
+        assert_eq!(profile.dismissed, [dir.join("b.pk3").into_os_string()]);
+        assert_eq!(profile.look(), None, "nothing more to take in");
+
+        // a dir that is gone (an unplugged drive) changes nothing
+        let unplugged = Profile {
+            watched: Some(altar.file("unplugged").into_os_string()),
+            ..profile.clone()
+        };
+        assert_eq!(unplugged.look(), None);
+        assert_eq!(Profile::default().look(), None);
+    }
+
+    #[test]
+    fn a_wad_taken_out_of_a_watched_dir_is_dismissed_until_it_is_put_back() {
+        let dir = PathBuf::from("/watched");
+        let wad = |path: &str| Wad::new(path.into(), "ab".repeat(32), 1);
+        let before = Profile {
+            watched: Some(dir.clone().into_os_string()),
+            ..Profile::new(
+                "watching".into(),
+                vec![
+                    wad("/watched/a.wad"),
+                    wad("/watched/b.wad"),
+                    wad("/other/c.wad"),
+                ],
+            )
+        };
+        let mut after = Profile {
+            wads: vec![wad("/watched/b.wad")],
+            ..before.clone()
+        };
+        after.note_dismissed(&before);
+        assert_eq!(
+            after.dismissed,
+            [OsString::from("/watched/a.wad")],
+            "only the dir's"
+        );
+        let mut put_back = Profile {
+            wads: vec![wad("/watched/a.wad"), wad("/watched/b.wad")],
+            ..after.clone()
+        };
+        put_back.note_dismissed(&after);
+        assert!(put_back.dismissed.is_empty());
+        // a profile that watches nothing dismisses nothing
+        let mut plain = Profile::new("plain".into(), Vec::new());
+        plain.note_dismissed(&before);
+        assert!(plain.dismissed.is_empty());
+    }
+
+    #[test]
+    fn a_watched_dir_and_the_dismissed_wads_are_saved_and_follow_a_move() {
+        let altar = Altar::new("profile-watch-saved");
+        let path = altar.file("watching.rite");
+        let mut profile = Profile {
+            watched: Some("/watched".into()),
+            dismissed: vec!["/watched/a.wad".into()],
+            ..spread_out()
+        };
+        profile.save(&path).unwrap();
+        assert_eq!(Profile::open(&path), Some(profile.clone()));
+        assert!(profile.follow(Path::new("/watched/a.wad"), Path::new("/mods/a.wad")));
+        assert_eq!(profile.dismissed, [OsString::from("/mods/a.wad")]);
     }
 
     #[test]
