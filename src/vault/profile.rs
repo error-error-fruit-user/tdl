@@ -236,9 +236,14 @@ impl Profile {
         }
     }
 
-    /// The profile's own UZDoom path, falling back to the global one.
+    /// The UZDoom path to use: this session's from `--uzdoom` if there is one, else the profile's
+    /// own, else the global one.
     pub fn uzdoom<'a>(&'a self, config: &'a Config) -> Option<&'a OsString> {
-        self.uzdoom.as_ref().or(config.uzdoom.as_ref())
+        config
+            .session_uzdoom
+            .as_ref()
+            .or(self.uzdoom.as_ref())
+            .or(config.uzdoom.as_ref())
     }
 
     /// Everything wrong with the files this profile needs to run, UZDoom first. The UZDoom path,
@@ -276,9 +281,14 @@ impl Profile {
         self.uzdoom_args.as_deref().unwrap_or(&config.uzdoom_args)
     }
 
-    /// The profile's own base wad, falling back to the global one.
+    /// The base wad to use: this session's from `--base-wad` if there is one, else the profile's
+    /// own, else the global one.
     pub fn base_wad<'a>(&'a self, config: &'a Config) -> Option<&'a Wad> {
-        self.base_wad.as_ref().or(config.base_wad.as_ref())
+        config
+            .session_base_wad
+            .as_ref()
+            .or(self.base_wad.as_ref())
+            .or(config.base_wad.as_ref())
     }
 
     /// Where the profile called `name` is kept.
@@ -449,6 +459,38 @@ mod tests {
         let path = altar.file("own.rite");
         own.save(&path).unwrap();
         assert_eq!(Profile::open(&path), Some(own));
+    }
+
+    #[test]
+    fn the_sessions_uzdoom_and_base_wad_win_over_the_profiles_own_and_are_never_saved() {
+        let base = |path: &str| Wad::new(path.into(), "ab".repeat(32), 1);
+        let own = Profile {
+            uzdoom: Some("/own/uzdoom".into()),
+            base_wad: Some(base("/own/DOOM2.WAD")),
+            ..Profile::default()
+        };
+        let mut config = Config {
+            uzdoom: Some("/global/uzdoom".into()),
+            base_wad: Some(base("/global/DOOM2.WAD")),
+            ..Config::default()
+        };
+        assert_eq!(own.uzdoom(&config), Some(&"/own/uzdoom".into()));
+        config.session_uzdoom = Some("/test/uzdoom-dev".into());
+        config.session_base_wad = Some(base("/test/freedoom2.wad"));
+        assert_eq!(own.uzdoom(&config), Some(&"/test/uzdoom-dev".into()));
+        assert_eq!(
+            own.base_wad(&config).map(|w| w.path.clone()),
+            Some("/test/freedoom2.wad".into())
+        );
+        assert_eq!(config.uzdoom_in_effect(), Some(&"/test/uzdoom-dev".into()));
+        // the session's never reach the file
+        let altar = Altar::new("profile-session");
+        let path = Config::path(&altar.0);
+        config.save(&path).unwrap();
+        let saved = Config::open(&path).unwrap();
+        assert_eq!(saved.session_uzdoom, None);
+        assert_eq!(saved.session_base_wad, None);
+        assert_eq!(saved.uzdoom, Some("/global/uzdoom".into()));
     }
 
     #[test]

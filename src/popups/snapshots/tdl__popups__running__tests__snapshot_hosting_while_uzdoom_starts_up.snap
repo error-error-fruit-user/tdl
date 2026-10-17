@@ -12,6 +12,6 @@ expression: "testing::draw(60, 16, |page| waiting.draw(page))"
    ┃                                                    ┃
    ┃        The Icon of Sin, but make it iconic!        ┃
    ┃                                                    ┃
-   ┃           quit UZDoom to come back here            ┃
+   ┃     quit UZDoom to come back · Ctrl+C stops it     ┃
    ┃                                                    ┃
    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛

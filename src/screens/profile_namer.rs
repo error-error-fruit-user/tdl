@@ -2,7 +2,7 @@ use ratatui::{crossterm::event::KeyCode, style::Color};
 
 use crate::{
     error::Result,
-    popups::{legend::Legend, warning::Warning},
+    popups::{legend::Legend, three_way_dialog::ThreeWayDialog, warning::Warning},
     ritual::{Grimoire, Page, Phase, Ritual},
     theme,
     vault::profile::Profile,
@@ -118,4 +118,22 @@ impl Ritual for ProfileNamer<'_> {
 /// A character a profile name may hold: it is also a file and folder name, so only `A-Z a-z 0-9 _`.
 pub fn name_character(c: char) -> Option<char> {
     (c.is_ascii_alphanumeric() || c == '_').then_some(c)
+}
+
+/// Asks what to call a copy of the profile called `name`, which is taken: `tagged` (`brutal_2`), a
+/// name the user types (starting from `tagged`), or none, to skip it.
+pub fn ask_copy_name(
+    grimoire: &mut Grimoire,
+    profiles: &[Profile],
+    name: &str,
+    tagged: &str,
+) -> Result<Option<String>> {
+    let question = format!("'{name}' already exists. Add it as '{tagged}', or name it?");
+    Ok(
+        match ThreeWayDialog::summon(grimoire, &question, ["Tag", "Name", "Skip"])? {
+            Some(0) => Some(tagged.to_string()),
+            Some(1) => ProfileNamer::summon_suggesting(grimoire, profiles, tagged)?,
+            _ => None,
+        },
+    )
 }

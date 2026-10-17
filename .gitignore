@@ -1,11 +1,5 @@
 /target
+/secrets
 /temp
-/wads
 /.helix
-session.log
-token.txt
-commit.sh
-push.sh
-config.ini
-published
-TODO.md
+/published

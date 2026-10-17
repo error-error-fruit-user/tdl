@@ -5,14 +5,14 @@
 use std::time::{Duration, Instant};
 
 use ratatui::{
-    crossterm::event,
+    crossterm::event::{self, Event, KeyCode, KeyModifiers},
     layout::Rect,
     style::{Modifier, Style},
     text::Line,
 };
 
 use crate::{
-    error::Result,
+    error::{Error, Result},
     layout, quips,
     ritual::{self, Grimoire, Haunted, Page},
     theme,
@@ -25,11 +25,12 @@ const FRAME: Duration = Duration::from_millis(100);
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 /// How wide the window is, so it doesn't change size as UZDoom's lines come and go.
 const WIDTH: u16 = 50;
-const HINT: &str = "quit UZDoom to come back here";
+const HINT: &str = "quit UZDoom to come back · Ctrl+C stops it";
 
 /// Waits for `game` to quit, redrawing the window as it goes. `details` are extra lines to keep
-/// on screen, such as the join code a host has to pass on. Keys pressed meanwhile are thrown away:
-/// the game has the keyboard.
+/// on screen, such as the join code a host has to pass on. Keys pressed meanwhile are thrown away,
+/// since the game has the keyboard, except Ctrl+C, which stops the game and then tdl, as it does
+/// anywhere else.
 pub fn summon(
     grimoire: &mut Grimoire,
     title: &str,
@@ -51,8 +52,14 @@ pub fn summon(
             show_quip: quips::shown(),
         };
         grimoire.bewitch(|page| waiting.draw(page))?;
-        if event::poll(FRAME)? {
-            let _ = event::read()?;
+        if event::poll(FRAME)?
+            && let Event::Key(key) = event::read()?
+            && key.is_press()
+            && key.code == KeyCode::Char('c')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+        {
+            game.stop()?;
+            return Err(Error::Interrupted);
         }
     }
 }

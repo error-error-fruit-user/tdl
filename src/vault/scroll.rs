@@ -1,6 +1,7 @@
-//! `.scroll` files: a profile to share with someone else. Each wad is only its file name, size
-//! and hash, with no paths, since paths only mean something on the machine that wrote them.
-//! Breaking the seal (importing) finds each wad again by joining its name onto the wad folders.
+//! `.scroll` files: profiles to share with someone else, one or a whole vault. Each wad is only
+//! its file name, size and hash, with no paths, since paths only mean something on the machine
+//! that wrote them. Breaking the seal (importing) finds each wad again by joining its name onto the
+//! wad folders.
 
 use std::{
     ffi::OsStr,
@@ -26,14 +27,31 @@ use crate::{
 
 /// What a scroll's file name ends in, so it is never mistaken for a profile's `.rite`.
 pub const EXTENSION: &str = "scroll";
-/// The most wads a scroll may hold. Far more than the network's [`net::MAX_FILES`], since a scroll
-/// is only read from disk, but still a bound, since it comes from someone else.
+/// The most wads a scroll may hold, across all its profiles. Far more than the network's
+/// [`net::MAX_FILES`], since a scroll is only read from disk, but still a bound, since it comes
+/// from someone else.
 pub const MAX_WADS: usize = 4096;
+/// The most profiles a scroll may hold, for the same reason.
+pub const MAX_PROFILES: usize = 512;
+/// The longest name a profile on a scroll may have.
+const MAX_NAME: usize = 64;
 
-/// A shared profile: its name, its wads in load order, its base wad, its host defaults, and, if its
-/// maker chose to, their global settings.
+/// Profiles to share, in order, and, if their maker chose to, their global settings.
+///
+/// Saved as `{profiles, settings}`. Scrolls from before several profiles could be shared held one
+/// profile's fields at the top level; they still read, as a scroll of that one profile.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(from = "SavedScroll")]
 pub struct Scroll {
+    pub profiles: Vec<SealedProfile>,
+    /// The maker's music and quip settings, if they chose to share them. Never their song.
+    #[serde(default)]
+    pub settings: Option<Shared>,
+}
+
+/// One profile on a scroll: its name, its wads in load order, its base wad and its host defaults.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct SealedProfile {
     pub name: String,
     pub wads: Vec<Inscribed>,
     #[serde(default)]
@@ -41,10 +59,36 @@ pub struct Scroll {
     /// Shared without the join code, which is the host's password.
     #[serde(default)]
     pub host_defaults: Option<HostSettings>,
-    /// The maker's music and quip settings, if they chose to share them. Never their song. Missing
-    /// in older scrolls, which carry none.
-    #[serde(default)]
-    pub settings: Option<Shared>,
+}
+
+/// A scroll as it is read. Untagged, so a scroll of edition 0, which was one profile with no
+/// `profiles` list, lands in [`SavedScroll::One`].
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum SavedScroll {
+    Many {
+        profiles: Vec<SealedProfile>,
+        #[serde(default)]
+        settings: Option<Shared>,
+    },
+    One {
+        #[serde(flatten)]
+        profile: SealedProfile,
+        #[serde(default)]
+        settings: Option<Shared>,
+    },
+}
+
+impl From<SavedScroll> for Scroll {
+    fn from(saved: SavedScroll) -> Self {
+        match saved {
+            SavedScroll::Many { profiles, settings } => Self { profiles, settings },
+            SavedScroll::One { profile, settings } => Self {
+                profiles: vec![profile],
+                settings,
+            },
+        }
+    }
 }
 
 /// One wad on a scroll.
@@ -61,28 +105,45 @@ pub struct Inscribed {
 }
 
 impl Edition for Scroll {
-    /// Born after editions existed, so it starts at the first one and has nothing to upgrade.
-    const UPGRADES: &[fn(Self) -> Self] = &[];
+    const UPGRADES: &[fn(Self) -> Self] = &[v0_to_v1];
 }
 
-/// What breaking the seal turned up: the wads in load order, each found or a placeholder.
+/// Edition 1 holds a list of profiles. A scroll of edition 0, one profile, reads as a list of one
+/// already (see [`SavedScroll`]); the new edition number is what keeps older builds, which only
+/// know one profile, from reading a scroll of several as nothing.
+fn v0_to_v1(scroll: Scroll) -> Scroll {
+    scroll
+}
+
+/// What breaking the seal turned up: each profile with its wads in load order, each wad found or
+/// a placeholder.
 #[derive(Debug, PartialEq)]
 pub struct Unsealed {
-    pub wads: Vec<Wad>,
-    pub base_wad: Option<Wad>,
-    /// How many of the wads (base wad included) weren't found, and are placeholders.
+    pub profiles: Vec<UnsealedProfile>,
+    /// How many of the wads (base wads included) weren't found, and are placeholders.
     pub missing: usize,
 }
 
-impl Scroll {
-    /// The scroll for `profile`. Fails, naming the wad, if one has no hash to share, since
-    /// whoever reads the scroll would have no way to know they found the right file.
+/// One profile off a scroll, its wads looked for, ready to be named and added.
+#[derive(Debug, PartialEq)]
+pub struct UnsealedProfile {
+    pub name: String,
+    pub wads: Vec<Wad>,
+    pub base_wad: Option<Wad>,
+    pub host_defaults: Option<HostSettings>,
+}
+
+impl SealedProfile {
+    /// `profile` as it goes on a scroll. Fails, naming the profile and the wad, if a wad has no
+    /// hash to share, since whoever reads the scroll would have no way to know they found the
+    /// right file.
     pub fn of(profile: &Profile) -> std::result::Result<Self, String> {
         let inscribe = |wad: &Wad| {
             if wad.hash.is_empty() {
                 return Err(format!(
-                    "{} has no hash to share: pick it again with R in the editor",
-                    wad.file_name()
+                    "{} in '{}' has no hash to share: pick it again with R in the editor",
+                    wad.file_name(),
+                    profile.name
                 ));
             }
             Ok(Inscribed {
@@ -104,20 +165,62 @@ impl Scroll {
                 code: String::new(),
                 ..defaults
             }),
+        })
+    }
+
+    /// The wads to look for: the list, then the base wad.
+    fn all_wads(&self) -> impl Iterator<Item = &Inscribed> {
+        self.wads.iter().chain(&self.base_wad)
+    }
+}
+
+impl Scroll {
+    /// The scroll for `profiles`, in their order, with no settings. Fails if a wad has no hash
+    /// (see [`SealedProfile::of`]).
+    pub fn of<'a>(
+        profiles: impl IntoIterator<Item = &'a Profile>,
+    ) -> std::result::Result<Self, String> {
+        Ok(Self {
+            profiles: profiles
+                .into_iter()
+                .map(SealedProfile::of)
+                .collect::<std::result::Result<_, _>>()?,
             settings: None,
         })
     }
 
-    /// Whether a scroll from someone else is safe to break: not too many wads, and every name a
+    /// How many wads (base wads included) breaking the seal looks for.
+    pub fn wad_count(&self) -> usize {
+        self.profiles
+            .iter()
+            .map(|profile| profile.all_wads().count())
+            .sum()
+    }
+
+    /// Whether a scroll from someone else is safe to break: not too many profiles or wads, every
+    /// profile name one tdl could have made (it becomes a file and a folder name), every wad name a
     /// bare file name and every hash a real one, the same rule as a host's manifest.
     pub fn check(&self) -> std::result::Result<(), &'static str> {
-        if self.wads.len() > MAX_WADS {
+        if self.profiles.is_empty() {
+            return Err("The scroll has no profiles on it");
+        }
+        if self.profiles.len() > MAX_PROFILES {
+            return Err("The scroll lists too many profiles");
+        }
+        if self.wad_count() > MAX_WADS {
             return Err("The scroll lists too many wads");
         }
         if !self
-            .wads
+            .profiles
             .iter()
-            .chain(&self.base_wad)
+            .all(|profile| is_profile_name(&profile.name))
+        {
+            return Err("The scroll has a profile whose name tdl can't use");
+        }
+        if !self
+            .profiles
+            .iter()
+            .flat_map(SealedProfile::all_wads)
             .all(|wad| net::is_safe(&wad.name, &wad.hash))
         {
             return Err("The scroll lists a wad with a name or hash that isn't safe");
@@ -153,19 +256,30 @@ impl Scroll {
                 )
             })
         };
-        let wads = self.wads.iter().map(&mut find).collect::<Result<_>>()?;
-        let base_wad = self.base_wad.as_ref().map(&mut find).transpose()?;
-        Ok(Unsealed {
-            wads,
-            base_wad,
-            missing,
-        })
+        let mut profiles = Vec::with_capacity(self.profiles.len());
+        for profile in &self.profiles {
+            profiles.push(UnsealedProfile {
+                name: profile.name.clone(),
+                wads: profile.wads.iter().map(&mut find).collect::<Result<_>>()?,
+                base_wad: profile.base_wad.as_ref().map(&mut find).transpose()?,
+                host_defaults: profile.host_defaults.clone(),
+            });
+        }
+        Ok(Unsealed { profiles, missing })
     }
 
-    /// The file name a scroll of the profile `name` gets by default: `<name>.scroll`.
+    /// The file name a scroll called `name` gets by default: `<name>.scroll`.
     pub fn file_name(name: &str) -> String {
         format!("{name}.{EXTENSION}")
     }
+}
+
+/// Whether `name` is one a profile could have: not empty, not too long, and only the characters
+/// a profile's name may hold, since it becomes a file and a folder name.
+fn is_profile_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= MAX_NAME
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
 /// `path`, if it is `wad`: the right size (unless the size is unknown) and then the right hash.
@@ -180,7 +294,7 @@ fn check(path: &Path, wad: &Inscribed, tally: &mut impl Tally) -> Result<Option<
     }
     let hash = match hash::hash(path, tally) {
         Ok(hash) => hash,
-        Err(error @ (Error::Cancelled | Error::Exit)) => return Err(error),
+        Err(error @ (Error::Cancelled | Error::Interrupted)) => return Err(error),
         Err(_) => return Ok(None),
     };
     if !wad.volatile && hash != wad.hash {
@@ -208,12 +322,20 @@ mod tests {
         }
     }
 
-    fn scroll(wads: Vec<Inscribed>) -> Scroll {
-        Scroll {
-            name: "shared".into(),
+    /// A profile on a scroll called `name`, with these wads and no base wad.
+    fn sealed(name: &str, wads: Vec<Inscribed>) -> SealedProfile {
+        SealedProfile {
+            name: name.into(),
             wads,
             base_wad: None,
             host_defaults: None,
+        }
+    }
+
+    /// A scroll of one profile with these wads.
+    fn scroll(wads: Vec<Inscribed>) -> Scroll {
+        Scroll {
+            profiles: vec![sealed("shared", wads)],
             settings: None,
         }
     }
@@ -236,8 +358,11 @@ mod tests {
             .unseal(std::slice::from_ref(&first), &mut ())
             .unwrap();
         assert_eq!(unsealed.missing, 0);
-        assert_eq!(unsealed.wads[0].path, first.join("a.wad").into_os_string());
-        assert_ne!(unsealed.wads[0].modified, 0);
+        assert_eq!(
+            unsealed.profiles[0].wads[0].path,
+            first.join("a.wad").into_os_string()
+        );
+        assert_ne!(unsealed.profiles[0].wads[0].modified, 0);
     }
 
     #[test]
@@ -283,7 +408,7 @@ mod tests {
             .unseal(&[first.clone(), second], &mut ())
             .unwrap();
         assert_eq!(unsealed.missing, 1);
-        let placeholder = &unsealed.wads[0];
+        let placeholder = &unsealed.profiles[0].wads[0];
         assert_eq!(placeholder.path, first.join("gone.wad").into_os_string());
         assert_eq!(
             (placeholder.hash.as_str(), placeholder.size),
@@ -307,8 +432,14 @@ mod tests {
         ])
         .unseal(&[first.clone(), second.clone()], &mut ())
         .unwrap();
-        assert_eq!(unsealed.wads[0].path, second.join("a.wad").into_os_string());
-        assert_eq!(unsealed.wads[1].path, first.join("b.wad").into_os_string());
+        assert_eq!(
+            unsealed.profiles[0].wads[0].path,
+            second.join("a.wad").into_os_string()
+        );
+        assert_eq!(
+            unsealed.profiles[0].wads[1].path,
+            first.join("b.wad").into_os_string()
+        );
     }
 
     #[test]
@@ -322,9 +453,9 @@ mod tests {
         };
         let unsealed = scroll(vec![wad]).unseal(&[first], &mut ()).unwrap();
         assert_eq!(unsealed.missing, 0);
-        assert!(unsealed.wads[0].volatile);
+        assert!(unsealed.profiles[0].wads[0].volatile);
         assert_eq!(
-            unsealed.wads[0].hash,
+            unsealed.profiles[0].wads[0].hash,
             blake3::hash(b"newer and bigger").to_hex().to_string()
         );
     }
@@ -355,11 +486,14 @@ mod tests {
         }
         // the base wad is held to the same rule
         let sneaky = Scroll {
-            base_wad: Some(Inscribed {
-                name: "../DOOM2.WAD".into(),
-                ..good
-            }),
-            ..scroll(vec![])
+            profiles: vec![SealedProfile {
+                base_wad: Some(Inscribed {
+                    name: "../DOOM2.WAD".into(),
+                    ..good
+                }),
+                ..sealed("shared", vec![])
+            }],
+            settings: None,
         };
         assert!(sneaky.check().is_err());
     }
@@ -383,36 +517,168 @@ mod tests {
         assert!(fine.check().is_ok());
     }
 
+    /// How edition 0 saved a scroll: one profile's fields at the top, settings beside them.
+    #[derive(Serialize)]
+    struct EditionZero {
+        name: String,
+        wads: Vec<Inscribed>,
+        base_wad: Option<Inscribed>,
+        host_defaults: Option<HostSettings>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        settings: Option<Shared>,
+    }
+
+    #[derive(Serialize)]
+    struct Wrapped<T> {
+        version: u32,
+        data: T,
+    }
+
+    fn write_edition_zero(path: &Path, old: EditionZero) {
+        let bytes = rmp_serde::to_vec_named(&Wrapped {
+            version: 0,
+            data: old,
+        })
+        .unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn a_scroll_of_one_profile_from_edition_zero_reads_as_a_list_of_one() {
+        let altar = Altar::new("scroll-edition-zero");
+        let path = altar.file("old.scroll");
+        let wad = inscribed("a.wad", b"a");
+        write_edition_zero(
+            &path,
+            EditionZero {
+                name: "old".into(),
+                wads: vec![wad.clone()],
+                base_wad: Some(inscribed("DOOM2.WAD", b"iwad")),
+                host_defaults: Some(HostSettings::new(Some(9000))),
+                settings: Some(Shared {
+                    no_quips: true,
+                    ..Shared::default()
+                }),
+            },
+        );
+        assert_eq!(Scroll::stored_version(&path), Some(0));
+        let scroll = Scroll::open(&path).unwrap();
+        assert_eq!(scroll.profiles.len(), 1);
+        let profile = &scroll.profiles[0];
+        assert_eq!(profile.name, "old");
+        assert_eq!(profile.wads, [wad]);
+        assert_eq!(profile.base_wad.as_ref().unwrap().name, "DOOM2.WAD");
+        assert_eq!(profile.host_defaults.as_ref().unwrap().port, "9000");
+        assert!(scroll.settings.unwrap().no_quips);
+    }
+
     #[test]
     fn a_scroll_from_before_settings_could_be_shared_carries_none() {
-        #[derive(Serialize)]
-        struct Before {
-            name: String,
-            wads: Vec<Inscribed>,
-            base_wad: Option<Inscribed>,
-            host_defaults: Option<HostSettings>,
-        }
-        #[derive(Serialize)]
-        struct Sealed {
-            version: u32,
-            data: Before,
-        }
         let altar = Altar::new("scroll-before-settings");
         let path = altar.file("old.scroll");
-        let bytes = rmp_serde::to_vec_named(&Sealed {
-            version: Scroll::current(),
-            data: Before {
+        write_edition_zero(
+            &path,
+            EditionZero {
                 name: "old".into(),
                 wads: Vec::new(),
                 base_wad: None,
                 host_defaults: None,
+                settings: None,
             },
-        })
-        .unwrap();
-        fs::write(&path, bytes).unwrap();
+        );
         let scroll = Scroll::open(&path).unwrap();
         assert_eq!(scroll.settings, None);
-        assert_eq!(scroll.name, "old");
+        assert_eq!(scroll.profiles[0].name, "old");
+    }
+
+    #[test]
+    fn a_scroll_of_several_profiles_saves_as_the_new_edition_and_opens_back() {
+        let altar = Altar::new("scroll-several");
+        let path = altar.file("vault.scroll");
+        let written = Scroll {
+            profiles: vec![
+                sealed("one", vec![inscribed("a.wad", b"a")]),
+                sealed(
+                    "two",
+                    vec![inscribed("b.wad", b"b"), inscribed("c.wad", b"c")],
+                ),
+            ],
+            settings: Some(Shared::default()),
+        };
+        written.save(&path).unwrap();
+        assert_eq!(Scroll::stored_version(&path), Some(1));
+        assert_eq!(Scroll::open(&path), Some(written.clone()));
+        assert_eq!(written.wad_count(), 3);
+    }
+
+    #[test]
+    fn every_profile_on_a_scroll_is_unsealed_and_the_missing_wads_are_counted_across_them() {
+        let altar = Altar::new("scroll-unseal-several");
+        let [first, _] = folders(&altar);
+        fs::write(first.join("a.wad"), b"a").unwrap();
+        fs::write(first.join("c.wad"), b"c").unwrap();
+        let scroll = Scroll {
+            profiles: vec![
+                sealed("one", vec![inscribed("a.wad", b"a")]),
+                SealedProfile {
+                    base_wad: Some(inscribed("gone.wad", b"gone")),
+                    ..sealed(
+                        "two",
+                        vec![inscribed("b.wad", b"b"), inscribed("c.wad", b"c")],
+                    )
+                },
+            ],
+            settings: None,
+        };
+        let unsealed = scroll.unseal(&[first], &mut ()).unwrap();
+        let names: Vec<_> = unsealed.profiles.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["one", "two"]);
+        assert_eq!(unsealed.profiles[1].wads.len(), 2);
+        assert!(unsealed.profiles[1].base_wad.is_some());
+        // b.wad and the base wad aren't there
+        assert_eq!(unsealed.missing, 2);
+    }
+
+    #[test]
+    fn a_profile_name_tdl_could_not_have_made_gets_the_scroll_refused() {
+        for bad in [
+            "",
+            "../config",
+            "has space",
+            "dot.name",
+            &"a".repeat(MAX_NAME + 1),
+        ] {
+            let named = Scroll {
+                profiles: vec![sealed(bad, vec![])],
+                settings: None,
+            };
+            assert!(named.check().is_err(), "{bad:?}");
+        }
+        assert!(scroll(vec![]).check().is_ok());
+        let empty = Scroll {
+            profiles: Vec::new(),
+            settings: None,
+        };
+        assert!(empty.check().is_err(), "a scroll with nothing on it");
+    }
+
+    #[test]
+    fn too_many_profiles_or_too_many_wads_across_them_are_refused() {
+        let many = Scroll {
+            profiles: vec![sealed("p", vec![]); MAX_PROFILES + 1],
+            settings: None,
+        };
+        assert!(many.check().is_err());
+        // each profile is within the bound, but all of them together aren't
+        let wad = inscribed("a.wad", b"a");
+        let spread = Scroll {
+            profiles: vec![
+                sealed("one", vec![wad.clone(); MAX_WADS / 2 + 1]),
+                sealed("two", vec![wad; MAX_WADS / 2 + 1]),
+            ],
+            settings: None,
+        };
+        assert!(spread.check().is_err());
     }
 
     #[test]
@@ -439,10 +705,12 @@ mod tests {
                 )],
             )
         };
-        let scroll = Scroll::of(&profile).unwrap();
-        assert_eq!(scroll.wads[0].name, "brutal.pk3");
-        assert_eq!(scroll.base_wad.as_ref().unwrap().name, "DOOM2.WAD");
-        let defaults = scroll.host_defaults.unwrap();
+        let scroll = Scroll::of([&profile]).unwrap();
+        let sealed = &scroll.profiles[0];
+        assert_eq!(sealed.wads[0].name, "brutal.pk3");
+        assert_eq!(sealed.base_wad.as_ref().unwrap().name, "DOOM2.WAD");
+        assert_eq!(scroll.settings, None, "settings only go on when asked for");
+        let defaults = sealed.host_defaults.clone().unwrap();
         assert_eq!(defaults.code, "");
         assert_eq!(defaults.port, "9000");
     }
@@ -453,7 +721,11 @@ mod tests {
             "p".into(),
             vec![Wad::new("/w/a.wad".into(), String::new(), 0)],
         );
-        assert!(Scroll::of(&profile).unwrap_err().contains("a.wad"));
+        let problem = Scroll::of([&profile]).unwrap_err();
+        assert!(
+            problem.contains("a.wad") && problem.contains("'p'"),
+            "{problem}"
+        );
     }
 
     #[test]

@@ -6,6 +6,7 @@ license = "0BSD"
 
 [dependencies]
 blake3 = "1.8.7"
+clap = { version = "4.5.41", features = ["derive", "wrap_help"] }
 directories = "6.0.0"
 ratatui = "0.30.2"
 rfd = "0.17.2"

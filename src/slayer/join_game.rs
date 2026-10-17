@@ -31,12 +31,14 @@ use crate::{
 const BORDER_COLOR: Color = Color::LightMagenta;
 
 /// Fetches the host's manifest and picks a profile to join with: the only compatible one, a choice
-/// among several, or a new profile downloaded from the host when none match.
+/// among several, or a new profile downloaded from the host when none match. With
+/// `always_download`, the wads that aren't installed are downloaded without asking first.
 pub fn summon(
     grimoire: &mut Grimoire,
     vault: &mut Vault,
     index: &mut usize,
     address: &Address,
+    always_download: bool,
 ) -> Result<()> {
     status::summon(grimoire, "Joining", "Joining...", BORDER_COLOR)?;
     let manifest = match Manifest::fetch(address) {
@@ -44,7 +46,9 @@ pub fn summon(
         Err(Error::Refused) => return Warning::code_refused(grimoire),
         Err(_) => return Warning::host_unreachable(grimoire),
     };
-    let Some(profile) = resolve_profile(grimoire, vault, index, address, &manifest)? else {
+    let Some(profile) =
+        resolve_profile(grimoire, vault, index, address, &manifest, always_download)?
+    else {
         return Ok(());
     };
     let Some(uzdoom) = profile.uzdoom(&vault.config) else {
@@ -89,6 +93,7 @@ fn resolve_profile(
     index: &mut usize,
     address: &Address,
     manifest: &Manifest,
+    always_download: bool,
 ) -> Result<Option<Profile>> {
     let compatible_profiles: Vec<_> = vault
         .profiles
@@ -96,22 +101,24 @@ fn resolve_profile(
         .filter(|p| manifest.is_compatible_with(p))
         .collect();
     match compatible_profiles.len() {
-        0 => download_profile(grimoire, vault, index, address, manifest),
+        0 => download_profile(grimoire, vault, index, address, manifest, always_download),
         1 => Ok(Some(compatible_profiles[0].clone())),
         _ => ProfilePicker::summon(grimoire, &compatible_profiles),
     }
 }
 
 /// Offers to make a new profile, named by the user, from the host's wads: the ones already on this
-/// machine are used where they are, and only the rest are downloaded.
+/// machine are used where they are, and only the rest are downloaded. With `always_download`
+/// there is no asking first when some have to be downloaded.
 fn download_profile(
     grimoire: &mut Grimoire,
     vault: &mut Vault,
     index: &mut usize,
     address: &Address,
     manifest: &Manifest,
+    always_download: bool,
 ) -> Result<Option<Profile>> {
-    if vault.config.uzdoom.is_none() {
+    if vault.config.uzdoom_in_effect().is_none() {
         Warning::uzdoom_not_selected(grimoire)?;
         return Ok(None);
     }
@@ -127,7 +134,8 @@ fn download_profile(
         (0, _) => "You don't have the profile, would you like to download?".to_string(),
         _ => format!("{found} of {total} wads are already here. Download the other {missing}?"),
     };
-    if !Dialog::summon(grimoire, &question)? {
+    let asked = !(always_download && missing > 0);
+    if asked && !Dialog::summon(grimoire, &question)? {
         return Ok(None);
     }
     let Some(profile_name) = ProfileNamer::summon(grimoire, &vault.profiles)? else {
@@ -149,7 +157,7 @@ fn download_profile(
         match download_wads(grimoire, address, wanted, vault.downloads_dir()) {
             Ok(wads) => wads,
             Err(Error::Cancelled) => return Ok(None),
-            Err(Error::Exit) => return Err(Error::Exit),
+            Err(Error::Interrupted) => return Err(Error::Interrupted),
             Err(_) => {
                 Warning::download_failed(grimoire)?;
                 return Ok(None);
@@ -168,7 +176,7 @@ fn download_profile(
 
 /// The host's wads in load order: the local ones where they were found, and each gap filled by the
 /// next of `downloaded` (which are in the same order). `None` if there weren't enough downloads.
-fn fill_gaps(local: Vec<Option<Wad>>, downloaded: Vec<Wad>) -> Option<Vec<Wad>> {
+pub(crate) fn fill_gaps(local: Vec<Option<Wad>>, downloaded: Vec<Wad>) -> Option<Vec<Wad>> {
     let mut downloaded = downloaded.into_iter();
     local
         .into_iter()
@@ -211,11 +219,15 @@ fn find_local(
 
 /// The first of `paths` whose contents hash to `entry`'s hash. A file that can't be read just isn't
 /// the one; only Esc or Ctrl+C stop the search.
-fn first_match(paths: Vec<PathBuf>, entry: &Entry, tally: &mut impl Tally) -> Result<Option<Wad>> {
+pub(crate) fn first_match(
+    paths: Vec<PathBuf>,
+    entry: &Entry,
+    tally: &mut impl Tally,
+) -> Result<Option<Wad>> {
     for path in paths {
         match Wad::hashed(&path, tally) {
             Ok(wad) if wad.hash == entry.hash => return Ok(Some(wad)),
-            Err(error @ (Error::Cancelled | Error::Exit)) => return Err(error),
+            Err(error @ (Error::Cancelled | Error::Interrupted)) => return Err(error),
             _ => {}
         }
     }

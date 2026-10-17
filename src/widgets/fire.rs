@@ -7,7 +7,11 @@ use ratatui::{
     style::{Color, Style},
 };
 
-/// From cold to white hot, as in the original. Heat is an index into this.
+use crate::theme;
+
+/// From cold to white hot, as in the original. Heat is an index into this. No heat at all is
+/// drawn as the screen's own background instead of the first entry, so there is no seam where the
+/// fire meets the rest of the screen.
 const PALETTE: [(u8, u8, u8); 37] = [
     (0x07, 0x07, 0x07),
     (0x1F, 0x07, 0x07),
@@ -126,12 +130,31 @@ impl Fire {
         }
     }
 
-    /// Draws into `area`: each cell is an upper half block, its top pixel the foreground color
-    /// and its bottom pixel the background.
+    /// Draws into `area` in the original's colors.
     pub fn render(&self, area: Rect, buffer: &mut Buffer) {
-        let color = |heat: u8| {
+        self.render_with(area, buffer, |heat| {
             let (r, g, b) = PALETTE[heat.min(HOTTEST) as usize];
             Color::Rgb(r, g, b)
+        });
+    }
+
+    /// Draws into `area` in the colors of the rainbow: `hue` (0 to 1, round the color wheel from
+    /// red) for the body of the flames, the cooler wisps a little further round the wheel, and the
+    /// hottest going white. Turning `hue` over time takes the fire through every color.
+    pub fn render_rainbow(&self, area: Rect, buffer: &mut Buffer, hue: f32) {
+        self.render_with(area, buffer, |heat| rainbow(heat, hue));
+    }
+
+    /// Draws into `area`: each cell is an upper half block, its top pixel the foreground color
+    /// and its bottom pixel the background, each heat colored by `color`, but no heat at all
+    /// always the screen's background.
+    fn render_with(&self, area: Rect, buffer: &mut Buffer, color: impl Fn(u8) -> Color) {
+        let color = |heat: u8| {
+            if heat == 0 {
+                theme::BACKGROUND
+            } else {
+                color(heat)
+            }
         };
         for row in 0..area.height.min((self.height / 2) as u16) {
             for column in 0..area.width.min(self.width as u16) {
@@ -142,6 +165,61 @@ impl Fire {
                     .set_style(Style::new().fg(color(top)).bg(color(bottom)));
             }
         }
+    }
+}
+
+/// How hot the body of the flames is, as a share of the hottest: below it they darken toward
+/// black, above it they whiten.
+const BODY: f32 = 0.75;
+/// How much of the way to white the hottest pixels get.
+const WHITE_HOT: f32 = 0.7;
+/// How far round the color wheel the coldest wisps are from the body, so the flames show a few
+/// colors at once.
+const WISPS: f32 = 0.15;
+
+/// The color of `heat` in a fire of `hue`: rising out of the screen's background, so the coolest
+/// wisps melt into it, to the full color, then toward white.
+fn rainbow(heat: u8, hue: f32) -> Color {
+    let warmth = f32::from(heat.min(HOTTEST)) / f32::from(HOTTEST);
+    let (r, g, b) = full_color(hue + (1.0 - warmth) * WISPS);
+    let (light, white) = if warmth < BODY {
+        (warmth / BODY, 0.0)
+    } else {
+        (1.0, (warmth - BODY) / (1.0 - BODY) * WHITE_HOT)
+    };
+    // 🌑 a background the terminal picks (`Color::Reset`) can't be blended from, so black it is
+    let Color::Rgb(dark_r, dark_g, dark_b) = theme::BACKGROUND else {
+        return rainbow_over((0, 0, 0), (r, g, b), light, white);
+    };
+    rainbow_over((dark_r, dark_g, dark_b), (r, g, b), light, white)
+}
+
+/// `color` (each channel 0 to 1) risen `light` of the way out of `dark`, then `white` of the rest
+/// of the way to white.
+fn rainbow_over(dark: (u8, u8, u8), color: (f32, f32, f32), light: f32, white: f32) -> Color {
+    let channel = |dark: u8, c: f32| {
+        let lit = f32::from(dark) / 255.0 * (1.0 - light) + c * light;
+        ((lit + (1.0 - lit) * white) * 255.0) as u8
+    };
+    Color::Rgb(
+        channel(dark.0, color.0),
+        channel(dark.1, color.1),
+        channel(dark.2, color.2),
+    )
+}
+
+/// The brightest, fullest color at `hue` on the color wheel (0 and 1 are red), each channel 0 to 1.
+fn full_color(hue: f32) -> (f32, f32, f32) {
+    let sixth = hue.rem_euclid(1.0) * 6.0;
+    let rising = sixth.fract();
+    let falling = 1.0 - rising;
+    match sixth as u8 {
+        0 => (1.0, rising, 0.0),
+        1 => (falling, 1.0, 0.0),
+        2 => (0.0, 1.0, rising),
+        3 => (0.0, falling, 1.0),
+        4 => (rising, 0.0, 1.0),
+        _ => (1.0, 0.0, falling),
     }
 }
 
@@ -171,6 +249,36 @@ mod tests {
         }
         let reach = |fire: &Fire| fire.heat.iter().position(|&h| h > 0).unwrap() / fire.width;
         assert!(reach(&kindled) <= reach(&later) + 2);
+    }
+
+    #[test]
+    fn the_rainbow_goes_round_the_wheel_and_from_dark_to_white_hot() {
+        assert_eq!(full_color(0.0), (1.0, 0.0, 0.0));
+        assert_eq!(full_color(1.0 / 3.0), (0.0, 1.0, 0.0));
+        assert_eq!(full_color(2.0 / 3.0), (0.0, 0.0, 1.0));
+        assert_eq!(full_color(1.0), full_color(0.0));
+        // the coldest melts into the background, where the fire draws nothing at all
+        assert_eq!(rainbow(0, 0.5), theme::BACKGROUND);
+        let Color::Rgb(r, g, b) = rainbow(HOTTEST, 0.0) else {
+            unreachable!()
+        };
+        assert_eq!(r, 255);
+        assert!(g > 150 && g == b, "red going white: {g} {b}");
+    }
+
+    #[test]
+    fn where_the_fire_is_cold_is_the_same_as_the_rest_of_the_screen() {
+        let fire = Fire::new(AREA, 7);
+        for rainbow in [false, true] {
+            let mut buffer = Buffer::empty(AREA);
+            if rainbow {
+                fire.render_rainbow(AREA, &mut buffer, 0.3);
+            } else {
+                fire.render(AREA, &mut buffer);
+            }
+            let top = &buffer[(0, 0)];
+            assert_eq!((top.fg, top.bg), (theme::BACKGROUND, theme::BACKGROUND));
+        }
     }
 
     #[test]

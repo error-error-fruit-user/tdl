@@ -1,5 +1,5 @@
-//! Sharing profiles as `.scroll` files: sealing one up to send, and breaking the seal on one
-//! received, finding its wads in the wad folders.
+//! Sharing profiles as `.scroll` files: sealing some (or a whole vault) up to send, and breaking
+//! the seal on one received, finding their wads in the wad folders.
 
 use std::path::{Path, PathBuf};
 
@@ -8,23 +8,29 @@ use crate::{
     picker,
     popups::{dialog::Dialog, hashing, progress::Kind, warning::Warning},
     ritual::Grimoire,
-    screens::profile_namer::ProfileNamer,
+    screens::profile_namer::{ProfileNamer, ask_copy_name},
     vault::{
         Vault,
         edition::Edition,
         global::Shared,
         profile::Profile,
-        scroll::{self, Scroll},
+        scroll::{self, Scroll, UnsealedProfile},
     },
 };
 
 const FILTER: picker::Filter = ("scroll", &[scroll::EXTENSION]);
 
-/// Saves the profile at `index` as a scroll, wherever the user picks, with `settings` (the user's
-/// global settings, never their song) on it too if they agree.
-pub fn seal(grimoire: &mut Grimoire, vault: &Vault, index: usize, settings: Shared) -> Result<()> {
-    let profile = &vault.profiles[index];
-    let mut scroll = match Scroll::of(profile) {
+/// Saves the profiles at `rows` (in that order) as one scroll, wherever the user picks, offered
+/// as `<name>.scroll`. `settings` (the user's global settings, never their song) go on it too only
+/// if the user says so, so whoever opens it isn't handed settings they didn't ask for.
+pub fn seal(
+    grimoire: &mut Grimoire,
+    vault: &Vault,
+    rows: &[usize],
+    name: &str,
+    settings: Shared,
+) -> Result<()> {
+    let mut scroll = match Scroll::of(rows.iter().map(|&row| &vault.profiles[row])) {
         Ok(scroll) => scroll,
         Err(problem) => return Warning::summon(grimoire, &problem),
     };
@@ -35,26 +41,26 @@ pub fn seal(grimoire: &mut Grimoire, vault: &Vault, index: usize, settings: Shar
     if Dialog::summon(grimoire, &question)? {
         scroll.settings = Some(settings);
     }
-    let Some(path) = picker::save(grimoire, Some(FILTER), &Scroll::file_name(&profile.name))?
-    else {
+    let Some(path) = picker::save(grimoire, Some(FILTER), &Scroll::file_name(name))? else {
         return Ok(());
     };
     let path = with_extension(path);
     if scroll.save(&path).is_err() {
         return Warning::save_failed(grimoire);
     }
+    let what = match rows {
+        [row] => format!("{} is", vault.profiles[*row].name),
+        _ => format!("{} profiles are", rows.len()),
+    };
     Warning::announce(
         grimoire,
         "sealed",
-        &[
-            format!("{} is sealed in", profile.name),
-            path.display().to_string(),
-        ],
+        &[format!("{what} sealed in"), path.display().to_string()],
     )
 }
 
 /// `path`, ending in `.scroll` even if the user typed a name without it.
-fn with_extension(path: PathBuf) -> PathBuf {
+pub fn with_extension(path: PathBuf) -> PathBuf {
     if path
         .extension()
         .is_some_and(|extension| extension == scroll::EXTENSION)
@@ -68,11 +74,12 @@ fn with_extension(path: PathBuf) -> PathBuf {
     }
 }
 
-/// Reads a scroll the user picks and makes a profile from it at `index`. Its wads are looked for
-/// in the session's wad folders only; with none, the user is asked for a folder to look in.
+/// Reads a scroll the user picks and adds its profiles at `index`. Their wads are looked for in the
+/// session's wad folders only; with none, the user is asked for a folder to look in.
 ///
-/// If the scroll carries its maker's global settings and they differ from `current`, the user is
-/// asked whether to take them; the ones they agree to are returned, for the caller to keep.
+/// If the scroll carries its maker's global settings and they differ from `current`, they are
+/// returned, for the caller to put in place of the user's; a scroll without any leaves the user's
+/// as they are.
 pub fn unseal(
     grimoire: &mut Grimoire,
     vault: &mut Vault,
@@ -99,7 +106,7 @@ pub fn unseal_file(
     let Some(folders) = folders_to_look_in(grimoire, vault)? else {
         return Ok(None);
     };
-    let total = scroll.wads.len() + usize::from(scroll.base_wad.is_some());
+    let total = scroll.wad_count();
     let Some(unsealed) = hashing::watch_as(grimoire, Kind::Unsealing, total, |tally| {
         scroll.unseal(&folders, tally)
     })?
@@ -116,11 +123,46 @@ pub fn unseal_file(
             ],
         )?;
     }
-    let Some(name) = ProfileNamer::summon_suggesting(grimoire, &vault.profiles, &scroll.name)?
-    else {
-        return Ok(None);
+    let profiles: Vec<Profile> = unsealed
+        .profiles
+        .into_iter()
+        .map(|unsealed| into_profile(vault, unsealed))
+        .collect();
+    let added = match <[Profile; 1]>::try_from(profiles) {
+        // 📜 one profile is named as it always was, starting from the scroll's name
+        Ok([profile]) => {
+            let Some(name) =
+                ProfileNamer::summon_suggesting(grimoire, &vault.profiles, &profile.name)?
+            else {
+                return Ok(None);
+            };
+            if vault.insert(index, Profile { name, ..profile }).is_err() {
+                Warning::save_failed(grimoire)?;
+                return Ok(None);
+            }
+            1
+        }
+        // 📚 several keep their names, and only the ones that are taken are asked about
+        Err(profiles) => {
+            let inserted = vault.insert_copies(index, profiles, |profiles, name, tagged| {
+                ask_copy_name(grimoire, profiles, name, tagged)
+            })?;
+            if inserted.failed {
+                Warning::save_failed(grimoire)?;
+            }
+            inserted.count
+        }
     };
-    // 🧭 a base wad that is the global one already is left to the global setting
+    if added == 0 {
+        return Ok(None);
+    }
+    // ⚙️ only once a profile is in: backing out of the import shouldn't change any settings
+    Ok(scroll.settings.filter(|settings| settings != current))
+}
+
+/// A profile off a scroll, as it goes into `vault`. A base wad that is the global one already is
+/// left to the global setting.
+fn into_profile(vault: &Vault, unsealed: UnsealedProfile) -> Profile {
     let base_wad = unsealed.base_wad.filter(|wad| {
         vault
             .config
@@ -128,25 +170,10 @@ pub fn unseal_file(
             .as_ref()
             .is_none_or(|global| global.hash != wad.hash)
     });
-    let profile = Profile {
+    Profile {
         base_wad,
-        host_defaults: scroll.host_defaults,
-        ..Profile::new(name, unsealed.wads)
-    };
-    if vault.insert(index, profile).is_err() {
-        Warning::save_failed(grimoire)?;
-        return Ok(None);
-    }
-    // ⚙️ only once the profile is in: backing out of the import shouldn't change any settings
-    match scroll.settings {
-        Some(settings) if settings != *current => {
-            let question = format!(
-                "The scroll carries its maker's settings: {}. Use them?",
-                settings.summary()
-            );
-            Ok(Dialog::summon(grimoire, &question)?.then_some(settings))
-        }
-        _ => Ok(None),
+        host_defaults: unsealed.host_defaults,
+        ..Profile::new(unsealed.name, unsealed.wads)
     }
 }
 

@@ -14,8 +14,8 @@ impl CancelHandler {
     pub const HINT: &str = "[Esc] Cancel";
 
     /// Reads every key pressed since the last check, without waiting. Esc is
-    /// [`Error::Cancelled`] and Ctrl+C is [`Error::Exit`]; any other key is thrown away, so it
-    /// isn't replayed on the next screen.
+    /// [`Error::Cancelled`] and Ctrl+C is [`Error::Interrupted`]; any other key is thrown away, so
+    /// it isn't replayed on the next screen.
     pub fn check() -> Result<()> {
         while event::poll(Duration::ZERO)? {
             if let Event::Key(key) = event::read()?
@@ -25,7 +25,7 @@ impl CancelHandler {
                     return Err(Error::Cancelled);
                 }
                 if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                    return Err(Error::Exit);
+                    return Err(Error::Interrupted);
                 }
             }
         }

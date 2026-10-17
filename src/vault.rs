@@ -19,7 +19,7 @@ use crate::{
         config::Config,
         edition::{Edition, Loaded},
         lookup::Lookup,
-        profile::{Profile, SUBDIRECTORY},
+        profile::{Profile, SUBDIRECTORY, tagged_name},
     },
 };
 
@@ -224,6 +224,53 @@ impl Vault {
         Ok(profile.create_saves_dir(&self.data_dir)?)
     }
 
+    /// Puts copies of `profiles` in at `index`, in their order: in front of the profile there, or at
+    /// the end from the new-profile row (where `index` moves down with the row). A copy keeps its
+    /// name if no profile has it; otherwise `choose` is told the profiles so far, the name, and a
+    /// tagged one (`brutal_2`), and gives the copy's name, or `None` to leave it out. A copy gets an
+    /// ini of its own, as [`Profile::copied_as`] says.
+    pub fn insert_copies(
+        &mut self,
+        index: &mut usize,
+        profiles: Vec<Profile>,
+        mut choose: impl FnMut(&[Profile], &str, &str) -> Result<Option<String>>,
+    ) -> Result<InsertedCopies> {
+        let mut inserted = InsertedCopies::default();
+        for profile in profiles {
+            let taken = |name: &str| self.profiles.iter().any(|p| p.name == name);
+            let name = if taken(&profile.name) {
+                let tagged = tagged_name(&profile.name, &self.profiles);
+                match choose(&self.profiles, &profile.name, &tagged)? {
+                    Some(name) if !taken(&name) => name,
+                    Some(_) => {
+                        inserted.failed = true;
+                        continue;
+                    }
+                    None => continue,
+                }
+            } else {
+                profile.name.clone()
+            };
+            let Ok(copy) = profile.copied_as(name, &self.data_dir) else {
+                inserted.failed = true;
+                continue;
+            };
+            let on_new_row = *index == self.profiles.len();
+            let landed = *index;
+            if self.insert(index, copy).is_err() {
+                inserted.failed = true;
+                continue;
+            }
+            // 📋 the next copy goes after this one; on the new-profile row `insert` moved along already
+            if !on_new_row {
+                *index += 1;
+            }
+            inserted.first.get_or_insert(landed);
+            inserted.count += 1;
+        }
+        Ok(inserted)
+    }
+
     /// Deletes the profile and its saves, then keeps `index` in range.
     ///
     /// The settings stop listing it first, and its files are only deleted once that has been saved.
@@ -241,6 +288,17 @@ impl Vault {
         }
         Ok(())
     }
+}
+
+/// What [`Vault::insert_copies`] came to.
+#[derive(Debug, Default, PartialEq)]
+pub struct InsertedCopies {
+    /// Where the first copy went, if any did.
+    pub first: Option<usize>,
+    /// How many went in.
+    pub count: usize,
+    /// Whether any copy couldn't be saved (or was given a name that is taken), and was left out.
+    pub failed: bool,
 }
 
 /// The profile names that have a file in `dir`, in alphabetical order. Backups and other leftovers

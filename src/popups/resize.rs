@@ -48,7 +48,7 @@ pub fn summon(grimoire: &mut Grimoire) -> Result<()> {
             && key.code == KeyCode::Char('c')
             && key.modifiers.contains(KeyModifiers::CONTROL)
         {
-            return Err(Error::Exit);
+            return Err(Error::Interrupted);
         }
     }
 }

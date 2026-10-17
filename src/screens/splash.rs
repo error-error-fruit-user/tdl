@@ -36,6 +36,15 @@ const LOGO_COLORS: [Color; 6] = [
     theme::BLOOD,
     theme::BLOOD,
 ];
+/// With pride: one stripe of the trans flag per row, blue, pink and white in the middle.
+const TRANS_COLORS: [Color; 6] = [
+    theme::TRANS_BLUE,
+    theme::TRANS_PINK,
+    theme::TRANS_WHITE,
+    theme::TRANS_WHITE,
+    theme::TRANS_PINK,
+    theme::TRANS_BLUE,
+];
 const SHADOW: Color = theme::GORE;
 const TAGLINE: &str = "t e r m i n a l   d o o m   l a u n c h e r";
 /// For terminals too narrow for the spaced-out tagline.
@@ -51,6 +60,8 @@ const PULSE: Duration = Duration::from_millis(1600);
 const FRAME: Duration = Duration::from_millis(33);
 /// The fire fills the screen from this far down.
 const FIRE_TOP_PERCENT: u16 = 45;
+/// With pride: how long the fire takes to burn through every color of the rainbow.
+const RAINBOW: Duration = Duration::from_secs(6);
 
 /// Plays the splash, fading in from black, until a key is pressed, then fades it to black along
 /// with the music. `quip` (from `--splash-quip` or the settings) replaces the usual random
@@ -97,7 +108,7 @@ pub fn summon(grimoire: &mut Grimoire, quip: Option<&str>) -> Result<()> {
                     if key.code == KeyCode::Char('c')
                         && key.modifiers.contains(KeyModifiers::CONTROL) =>
                 {
-                    return Err(Error::Exit);
+                    return Err(Error::Interrupted);
                 }
                 Event::Key(key) if key.is_press() && leaving.is_none() => {
                     music::splash_over();
@@ -141,13 +152,23 @@ fn fire_area(area: Rect) -> Rect {
 /// are in their pulses.
 fn paint(fire: &Fire, elapsed: Duration, area: Rect, quip: Option<&str>, buffer: &mut Buffer) {
     let flames = fire_area(area);
-    fire.render(flames, buffer);
+    if theme::pride() {
+        let hue = elapsed.as_secs_f32() / RAINBOW.as_secs_f32();
+        fire.render_rainbow(flames, buffer, hue);
+    } else {
+        fire.render(flames, buffer);
+    }
 
     let logo_width = LOGO[0].chars().count() as u16;
     let logo_x = area.x + area.width.saturating_sub(logo_width) / 2;
     // the logo, a blank row, the tagline, a blank row, the hint, then the flames
     let logo_y = flames.y.saturating_sub(LOGO.len() as u16 + 4).max(area.y);
-    for (i, (row, color)) in LOGO.iter().zip(LOGO_COLORS).enumerate() {
+    let colors = if theme::pride() {
+        TRANS_COLORS
+    } else {
+        LOGO_COLORS
+    };
+    for (i, (row, color)) in LOGO.iter().zip(colors).enumerate() {
         for (j, character) in row.chars().enumerate() {
             let style = if character == '█' {
                 Style::new().fg(color)

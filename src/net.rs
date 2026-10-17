@@ -14,7 +14,7 @@ use std::{
 };
 
 pub use self::{
-    download::{Report, download_in_background},
+    download::{Report, download, download_in_background},
     manifest::{Entry, Manifest},
 };
 

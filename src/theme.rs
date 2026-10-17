@@ -1,6 +1,8 @@
 //! Every color, border and glyph the interface uses, in one place. Tune the look here; the screens
 //! only ever ask for a role ("a screen border", "something broken"), never for a color.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use ratatui::{
     style::{Color, Modifier, Style},
     widgets::BorderType,
@@ -101,3 +103,23 @@ pub const CHANGED_BADGE: Style = Style::new()
     .bg(HELLFIRE)
     .add_modifier(Modifier::BOLD);
 pub const VOLATILE_BADGE: Style = Style::new().fg(VOID).bg(SOUL).add_modifier(Modifier::BOLD);
+
+// Pride, for `--with-pride`: the splash's fire burns through the rainbow, under the logo in the
+// trans flag's colors.
+
+static PRIDE: AtomicBool = AtomicBool::new(false);
+
+/// The trans flag's stripes, which the splash logo wears.
+pub const TRANS_BLUE: Color = Color::Rgb(91, 206, 250);
+pub const TRANS_PINK: Color = Color::Rgb(245, 169, 184);
+pub const TRANS_WHITE: Color = Color::Rgb(255, 255, 255);
+
+/// Wears pride for the rest of the run.
+pub fn wear_pride() {
+    PRIDE.store(true, Ordering::Relaxed);
+}
+
+/// Whether this run wears pride.
+pub fn pride() -> bool {
+    PRIDE.load(Ordering::Relaxed)
+}

@@ -93,15 +93,21 @@ impl HostSettingsForm {
         }
     }
 
-    /// Asks how to host the profile at `index`. Saving or clearing its defaults asks first, writes
-    /// the profile straight away, and comes back to the form as it was. `None` if cancelled.
+    /// Asks how to host the profile at `index`, starting from `start` if given (as `tdl host` does
+    /// with its flags), else from the profile's defaults. Saving or clearing its defaults asks
+    /// first, writes the profile straight away, and comes back to the form as it was. `None` if
+    /// cancelled.
     pub fn summon(
         grimoire: &mut Grimoire,
         vault: &mut Vault,
         index: usize,
+        start: Option<HostSettings>,
     ) -> Result<Option<HostSettings>> {
         let defaults = vault.profiles[index].host_defaults.clone();
         let mut form = Self::new(defaults, vault.config.host_port);
+        if let Some(start) = start {
+            form.settings = start;
+        }
         loop {
             match form.invoke(grimoire)? {
                 Choice::Launch(settings) => return Ok(Some(settings)),

@@ -226,7 +226,8 @@ impl<T> Vibe<T> {
 }
 
 // 🔑 beckon: ask nicely. consent is key_code 💜
-/// Waits for one Portent. Ctrl+C becomes [`Curse::Exit`], a curse that unwinds out of every ritual.
+/// Waits for one Portent. Ctrl+C becomes [`Curse::Interrupted`], a curse that unwinds out of every
+/// ritual.
 fn beckon<T>(
     grimoire: &mut Grimoire,
     question: &mut impl FnMut(&mut Grimoire, Chant) -> Omen<Vibe<T>>,
@@ -243,7 +244,7 @@ fn beckon<T>(
     {
         // 🛑 Ctrl+C is the safe word: everything stops, no questions asked
         if key.code == Chant::Char('c') && key.modifiers.contains(Charm::CONTROL) {
-            Err(Curse::Exit)
+            Err(Curse::Interrupted)
         } else {
             question(grimoire, key.code)
         }

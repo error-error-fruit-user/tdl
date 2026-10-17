@@ -15,6 +15,7 @@ use ratatui::{
 };
 
 use crate::{
+    cli::{Command, Seal},
     clipboard::Clipboard,
     error::{Error, Result},
     layout, music, picker,
@@ -31,7 +32,7 @@ use crate::{
     screens::editor::{self, Editor},
     screens::host_settings::HostSettingsForm,
     screens::join_address::JoinAddressForm,
-    screens::profile_namer::ProfileNamer,
+    screens::profile_namer::ask_copy_name,
     screens::search::{self, Found, Search, Typed},
     screens::selection::{self, Selection},
     screens::settings::{Settings, SettingsForm},
@@ -39,12 +40,14 @@ use crate::{
     screens::wrap_around,
     slayer::host_game,
     slayer::join_game,
+    slayer::plain,
     slayer::share,
     theme, uzdoom,
     vault::Vault,
     vault::edition::{Edition, Loaded},
     vault::global::{Global, Music, Shared},
-    vault::profile::{Profile, tagged_name},
+    vault::host_settings::HostSettings,
+    vault::profile::Profile,
     vault::scribe,
     vault::wad::Wad,
     widgets::{
@@ -70,6 +73,12 @@ pub struct Launcher {
     keep_music: bool,
     /// `--no-music`: no music at all this run, whatever the settings say.
     no_music: bool,
+    /// `--uzdoom` and `--base-wad`, until they are put into the config for the session (after any
+    /// upgrade, since an upgrade compares the config with what it saved).
+    session_uzdoom: Option<PathBuf>,
+    session_base_wad: Option<PathBuf>,
+    /// The command from the command line, until it is done.
+    command: Option<Command>,
     /// Each profile's mark, by position. A profile is only checked once its row is on screen, and
     /// the marks are forgotten whenever something could have changed them.
     marks: HashMap<usize, Option<Mark>>,
@@ -114,6 +123,12 @@ pub struct Start {
     pub keep_music: bool,
     /// Plays no music at all for this run.
     pub no_music: bool,
+    /// The UZDoom to play with for this run only, over every profile's own and the global one.
+    pub uzdoom: Option<PathBuf>,
+    /// The base wad to play with for this run only, the same way. Hashed once the launcher is up.
+    pub base_wad: Option<PathBuf>,
+    /// `run`, `host` or `join`: done without the launcher, after which tdl closes.
+    pub command: Option<Command>,
 }
 
 /// `path` as an absolute path, so a folder kept from `tdl --wads .` still means the same folder
@@ -156,7 +171,7 @@ impl Launcher {
         ["Y/Shift+Y", "Copy Selected/All Profiles"],
         ["P", "Paste"],
         ["A/E/D", "Add/Edit/Delete (Selected, If Any)"],
-        ["X/I", "Export/Import Scroll"],
+        ["X/I", "Export (Selected or All)/Import Scroll"],
         ["U/W", "Select UZDoom/Base Wad"],
         ["O", "Settings"],
         ["Esc", "Save and Quit (unselects first)"],
@@ -221,6 +236,9 @@ impl Launcher {
             no_quips: start.no_quips,
             keep_music: start.keep_music,
             no_music: start.no_music,
+            session_uzdoom: start.uzdoom,
+            session_base_wad: start.base_wad,
+            command: start.command,
             marks: HashMap::new(),
             passed_vault,
             ask_about_vault: start.ask_about_vault,
@@ -237,10 +255,312 @@ impl Launcher {
     }
 
     /// Builds the launcher and runs it until the user quits, after the splash screen if asked.
+    ///
+    /// With a command (`run`, `host`, `join`) it does that instead, with everything set up the same
+    /// way first, and then returns, so tdl closes: the launcher itself is never shown.
     pub fn summon(grimoire: &mut Grimoire, start: Start) -> Result<()> {
         let project_dirs = ProjectDirs::from("error.error.fruit", "eef", "tdl")
             .expect("Could not find home directory!");
-        Self::new(start, project_dirs.config_dir(), project_dirs.data_dir()).invoke(grimoire)
+        let mut launcher = Self::new(start, project_dirs.config_dir(), project_dirs.data_dir());
+        match launcher.command.take() {
+            Some(command) => {
+                launcher.prepare(grimoire)?;
+                launcher.perform(grimoire, command)
+            }
+            None => launcher.invoke(grimoire),
+        }
+    }
+
+    /// Everything the launcher does as it opens, which a command needs just as much: the resize
+    /// notice, the music and the splash, files saved by other editions (newer ones end the session
+    /// untouched, older ones are upgraded if the user agrees, and the originals deleted only if
+    /// they agree to that too), notices, the questions about what was passed on the command line,
+    /// this session's UZDoom and base wad, and a scroll from `--unseal`.
+    fn prepare(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+        let area = grimoire.consult().area();
+
+        if layout::is_too_small(area.width, area.height) {
+            resize::summon(grimoire)?;
+        }
+        quips::show(!self.no_quips && !self.global.no_quips);
+        // 🔇 nothing plays at all, not even on the splash
+        if self.no_music || self.global.music == Music::Off {
+            music::mute();
+        }
+        // 🎶 the song from the settings, unless `--music` already chose one; a song that has gone
+        // missing is said, and the built-in track plays instead
+        if !music::has_song()
+            && !self.no_music
+            && self.global.music != Music::Off
+            && let Some(song) = &self.global.song
+            && let Err(problem) = music::use_song(Path::new(song))
+        {
+            Warning::summon(grimoire, &problem)?;
+        }
+        // 🎵 music kept on plays from the start, through the splash and past it
+        if self.keep_music || self.global.music == Music::Kept {
+            music::start(true);
+        }
+        if self.splash && (!self.vault.config.skip_splash || self.quip.is_some()) {
+            // 💬 the command line's quip, or else the one kept in the settings, or else a random one
+            let kept = quips::shown()
+                .then(|| self.global.splash_quip.text())
+                .flatten();
+            let quip = self.quip.clone().or(kept);
+            splash::summon(grimoire, quip.as_deref())?;
+        }
+        if self.vault.is_too_new() {
+            Warning::files_too_new(grimoire)?;
+            return Err(Error::Interrupted);
+        }
+        // 📜 anything that was fished out of the wreckage on the way in
+        for notice in std::mem::take(&mut self.vault.notices) {
+            Warning::summon(grimoire, &notice)?;
+        }
+        if self.vault.is_outdated() {
+            if !Dialog::should_upgrade(grimoire)? {
+                return Err(Error::Interrupted);
+            }
+            // ⏳ checking every page takes a moment, so don't leave the old dialog hanging there
+            status::summon(grimoire, "Upgrading", "Upgrading...", Self::BORDER_COLOR)?;
+            let Ok(upgraded) = self.vault.upgrade() else {
+                Warning::upgrade_failed(grimoire)?;
+                return Err(Error::Interrupted);
+            };
+            if Dialog::should_delete_originals(grimoire)? {
+                upgraded.iter().for_each(|path| scribe::retire(path));
+            }
+        }
+        self.offer_to_keep(grimoire)?;
+        // 🧪 this run's UZDoom and base wad, used over every other and never saved
+        if let Some(uzdoom) = self.session_uzdoom.take() {
+            self.vault.config.session_uzdoom = Some(uzdoom.into_os_string());
+        }
+        if let Some(path) = self.session_base_wad.take() {
+            match hashing::wad(grimoire, &path)? {
+                Some(wad) => {
+                    self.vault.config.session_base_wad = Some(wad);
+                    self.vault.forget_lookup();
+                }
+                None => Warning::summon(
+                    grimoire,
+                    "The base wad from --base-wad wasn't read, so the usual ones are used",
+                )?,
+            }
+        }
+        picker::set_wad_folders(&self.vault.wad_folders);
+        if let Some(scroll) = self.passed_scroll.take() {
+            // 📜 the new profile goes last, and the cursor lands on it
+            let before = self.vault.profiles.len();
+            let mut index = before;
+            let current = self.global.shared();
+            if let Some(settings) =
+                share::unseal_file(grimoire, &mut self.vault, &mut index, &scroll, &current)?
+            {
+                self.take_shared(grimoire, settings)?;
+            }
+            if self.vault.profiles.len() > before {
+                self.table_state.select(Some(before));
+            }
+        }
+        Ok(())
+    }
+
+    /// `tdl host --headless` and `tdl join --headless`: set up like [`Launcher::prepare`], but with no
+    /// windows at all. What would be a notice is a line on stderr, and anything that would need a
+    /// question (a file to upgrade) is an error instead; then the command runs (see
+    /// [`plain`](crate::slayer::plain)). `Err` says what stopped it.
+    pub fn summon_plain(start: Start) -> std::result::Result<(), String> {
+        let (mut launcher, _) = Self::open_plain(start)?;
+        let command = launcher
+            .command
+            .take()
+            .ok_or("--headless needs host or join")?;
+        let vault = &mut launcher.vault;
+        vault.wad_folders.retain(|folder| folder.is_dir());
+        if let Some(uzdoom) = launcher.session_uzdoom.take() {
+            vault.config.session_uzdoom = Some(uzdoom.into_os_string());
+        }
+        if let Some(path) = launcher.session_base_wad.take() {
+            let wad = Wad::hashed(&path, &mut ())
+                .map_err(|error| format!("Could not read --base-wad: {error}"))?;
+            vault.config.session_base_wad = Some(wad);
+            vault.forget_lookup();
+        }
+        match command {
+            Command::Host { profile, overrides } => {
+                let index = find_profile(&vault.profiles, &profile)
+                    .ok_or(format!("There is no profile called '{profile}'"))?;
+                plain::host(vault, index, &overrides)
+            }
+            Command::Join {
+                host,
+                port,
+                code,
+                always_download,
+            } => {
+                let address = Command::address(&host, port, code.as_deref())
+                    .ok_or("join --headless needs the host's join code: --code <code>")?;
+                plain::join(vault, &address, always_download)
+            }
+            Command::Launch { .. } => Err("--headless only goes with host or join".to_string()),
+        }
+    }
+
+    /// The launcher for a run with no windows, with the vault checked as fine to use: notices are
+    /// printed, and files from another edition of tdl are an error. Also gives the standard config
+    /// folder, to tell the standard vault from one of the user's own.
+    fn open_plain(start: Start) -> std::result::Result<(Self, PathBuf), String> {
+        let project_dirs = ProjectDirs::from("error.error.fruit", "eef", "tdl")
+            .ok_or("Could not find the home directory")?;
+        let mut launcher = Self::new(start, project_dirs.config_dir(), project_dirs.data_dir());
+        let vault = &mut launcher.vault;
+        if vault.is_too_new() {
+            return Err("Your files are from a newer tdl, please update".to_string());
+        }
+        for notice in std::mem::take(&mut vault.notices) {
+            eprintln!("{notice}");
+        }
+        if vault.is_outdated() {
+            return Err(
+                "Your files are from an older tdl: open tdl once to upgrade them, then try again"
+                    .to_string(),
+            );
+        }
+        Ok((launcher, project_dirs.config_dir().to_path_buf()))
+    }
+
+    /// `tdl --seal`: seals the whole vault into a scroll, with the global settings only if
+    /// `--with-settings` asks for them, with no windows. With `--delete` the vault is deleted afterwards (asked first unless `--force`),
+    /// and if it was the vault tdl remembered from `--vault`, it is forgotten.
+    pub fn seal_plain(start: Start, seal: &Seal) -> std::result::Result<(), String> {
+        let (mut launcher, standard_config_dir) = Self::open_plain(start)?;
+        let vault = &launcher.vault;
+        let settings = seal.with_settings.then(|| launcher.global.shared());
+        let scroll = plain::seal(vault, settings, &seal.scroll)?;
+        if !seal.delete {
+            return Ok(());
+        }
+        // 🗂️ a vault of the user's own has a folder around its config and data, which goes too
+        let root = (vault.config_dir != standard_config_dir)
+            .then(|| vault.config_dir.parent().map(Path::to_path_buf))
+            .flatten();
+        if !plain::delete_vault(vault, &scroll, root.as_deref(), seal.force)? {
+            return Ok(());
+        }
+        let remembered = launcher.global.vault.as_ref().map(PathBuf::from);
+        if root.is_some() && remembered == root {
+            if !launcher.global_writable {
+                return Err(
+                    "tdl still remembers the vault: your global settings are from a newer tdl"
+                        .to_string(),
+                );
+            }
+            launcher.global.vault = None;
+            launcher
+                .global
+                .keep(&launcher.global_path)
+                .map_err(|error| format!("Could not forget the vault: {error}"))?;
+            println!("tdl no longer opens it by default");
+        }
+        Ok(())
+    }
+
+    /// Does a command from the command line. Whatever happens (the game ends, it couldn't start,
+    /// the user backs out of a question), it returns, and tdl closes.
+    fn perform(&mut self, grimoire: &mut Grimoire, command: Command) -> Result<()> {
+        match command {
+            Command::Launch { profile } => match self.find(grimoire, &profile)? {
+                Some(index) => self.launch_profile(grimoire, index),
+                None => Ok(()),
+            },
+            Command::Host { profile, overrides } => match self.find(grimoire, &profile)? {
+                Some(index) => {
+                    let defaults = self.vault.profiles[index]
+                        .host_defaults
+                        .clone()
+                        .unwrap_or_else(|| HostSettings::new(self.vault.config.host_port));
+                    self.host_profile(grimoire, index, Some(overrides.apply(defaults)))
+                }
+                None => Ok(()),
+            },
+            Command::Join {
+                host,
+                port,
+                code,
+                always_download,
+            } => {
+                let Some(address) =
+                    JoinAddressForm::summon_with(grimoire, &host, port, code.as_deref())?
+                else {
+                    return Ok(());
+                };
+                let mut index = self.vault.profiles.len();
+                join_game::summon(
+                    grimoire,
+                    &mut self.vault,
+                    &mut index,
+                    &address,
+                    always_download,
+                )
+            }
+        }
+    }
+
+    /// The profile called `name`: that exact name, or else the only one that is it but for case.
+    /// Says so and gives `None` if there is no such profile.
+    fn find(&self, grimoire: &mut Grimoire, name: &str) -> Result<Option<usize>> {
+        let found = find_profile(&self.vault.profiles, name);
+        if found.is_none() {
+            Warning::summon(grimoire, &format!("There is no profile called '{name}'"))?;
+        }
+        Ok(found)
+    }
+
+    /// Plays the profile at `index`, unless it has no UZDoom or something it needs is broken, which
+    /// is said instead.
+    fn launch_profile(&self, grimoire: &mut Grimoire, index: usize) -> Result<()> {
+        let profile = &self.vault.profiles[index];
+        let Some(uzdoom) = profile.uzdoom(&self.vault.config) else {
+            return Warning::uzdoom_not_selected(grimoire);
+        };
+        // 🚧 a profile with a broken part is not fixed for you, but it isn't launched either
+        if Warning::faults(grimoire, &profile.faults(&self.vault.config))? {
+            return Ok(());
+        }
+        let details = [format!("profile {}", profile.name)];
+        let result = uzdoom::launch(
+            uzdoom,
+            profile.base_wad(&self.vault.config).map(Wad::deref),
+            profile,
+            profile.uzdoom_args(&self.vault.config),
+            &self.vault.data_dir.join(&profile.name),
+        )
+        .and_then(|game| running::summon(grimoire, "launching", &details, game));
+        Warning::report_spawn(grimoire, result)
+    }
+
+    /// Hosts the profile at `index` with what the host form is left with, the form starting from
+    /// `start` if given (`tdl host` with its flags), else from the profile's defaults; unless the
+    /// profile has no UZDoom or something it needs is broken.
+    fn host_profile(
+        &mut self,
+        grimoire: &mut Grimoire,
+        index: usize,
+        start: Option<HostSettings>,
+    ) -> Result<()> {
+        let profile = &self.vault.profiles[index];
+        if profile.uzdoom(&self.vault.config).is_none() {
+            return Warning::uzdoom_not_selected(grimoire);
+        }
+        if Warning::faults(grimoire, &profile.faults(&self.vault.config))? {
+            return Ok(());
+        }
+        let Some(settings) = HostSettingsForm::summon(grimoire, &mut self.vault, index, start)?
+        else {
+            return Ok(());
+        };
+        host_game::summon(grimoire, &mut self.vault, index, settings)
     }
 
     /// The startup questions about what was passed on the command line: whether to open the
@@ -490,6 +810,52 @@ impl Launcher {
         Ok(())
     }
 
+    /// Seals profiles into a scroll: the one under the cursor or the ones selected, or the whole
+    /// vault, as the user picks. On the new-profile row with nothing selected, it offers the whole
+    /// vault alone.
+    fn seal_profiles(&mut self, grimoire: &mut Grimoire) -> Result<Phase<()>> {
+        let count = self.vault.profiles.len();
+        if count == 0 {
+            return Ok(Phase::Prompt);
+        }
+        let picked = self.selection.rows(self.cursor(), count);
+        let all: Vec<usize> = (0..count).collect();
+        let whole = format!("the whole vault ({count} profiles)");
+        let rows = if picked.is_empty() {
+            if !Dialog::summon(grimoire, &format!("Seal {whole}?"))? {
+                return Ok(Phase::Render);
+            }
+            all
+        } else if picked.len() == count {
+            all
+        } else {
+            let (option, these) = match picked.as_slice() {
+                [row] => (
+                    "This profile",
+                    format!("'{}'", self.vault.profiles[*row].name),
+                ),
+                _ => (
+                    "Selected",
+                    format!("the {} selected profiles", picked.len()),
+                ),
+            };
+            let question = format!("Seal {these}, or {whole}?");
+            match ThreeWayDialog::summon(grimoire, &question, [option, "Whole vault", "Back"])? {
+                Some(0) => picked,
+                Some(1) => all,
+                _ => return Ok(Phase::Render),
+            }
+        };
+        let name = match rows.as_slice() {
+            [row] => self.vault.profiles[*row].name.clone(),
+            _ if rows.len() == count => "tdl_vault".to_string(),
+            _ => "profiles".to_string(),
+        };
+        self.selection.clear();
+        share::seal(grimoire, &self.vault, &rows, &name, self.global.shared())?;
+        Ok(Phase::Render)
+    }
+
     /// The row the cursor is on.
     fn cursor(&self) -> usize {
         self.table_state.selected().unwrap_or(0)
@@ -556,16 +922,15 @@ impl Launcher {
         true
     }
 
-    /// Pastes copies of `profiles` in front of the cursor (see [`paste_profiles`]), asking about
+    /// Pastes copies of `profiles` in front of the cursor (see [`Vault::insert_copies`]), asking about
     /// each name that is taken: Tag, Name or Skip. The cursor lands on the first copy.
     fn paste_profiles(&mut self, grimoire: &mut Grimoire, profiles: Vec<Profile>) -> Result<()> {
         let mut at = self.cursor();
-        let pasted = paste_profiles(
-            &mut self.vault,
-            &mut at,
-            profiles,
-            |profiles, name, tagged| ask_copy_name(grimoire, profiles, name, tagged),
-        )?;
+        let pasted = self
+            .vault
+            .insert_copies(&mut at, profiles, |profiles, name, tagged| {
+                ask_copy_name(grimoire, profiles, name, tagged)
+            })?;
         if pasted.failed {
             Warning::save_failed(grimoire)?;
         }
@@ -608,77 +973,20 @@ impl Launcher {
     }
 }
 
-/// What pasting profiles came to.
-#[derive(Debug, Default, PartialEq)]
-struct PastedProfiles {
-    /// Where the first copy went, if any did.
-    first: Option<usize>,
-    /// Whether any copy couldn't be saved, and was left out.
-    failed: bool,
-}
-
-/// Puts copies of `profiles` into the vault at `at`, in their order: in front of the profile there,
-/// or at the end from the new-profile row (where `at` moves down with the row). A copy keeps its
-/// name if no profile has it; otherwise `choose` is told the name and a tagged one (`brutal_2`) and
-/// gives the copy's name, or `None` to leave it out. The profiles so far are passed along, so a name
-/// can be checked against them.
-fn paste_profiles(
-    vault: &mut Vault,
-    at: &mut usize,
-    profiles: Vec<Profile>,
-    mut choose: impl FnMut(&[Profile], &str, &str) -> Result<Option<String>>,
-) -> Result<PastedProfiles> {
-    let mut pasted = PastedProfiles::default();
-    for profile in profiles {
-        let taken = |name: &str| vault.profiles.iter().any(|p| p.name == name);
-        let name = if taken(&profile.name) {
-            let tagged = tagged_name(&profile.name, &vault.profiles);
-            match choose(&vault.profiles, &profile.name, &tagged)? {
-                Some(name) if !taken(&name) => name,
-                Some(_) => {
-                    pasted.failed = true;
-                    continue;
-                }
-                None => continue,
-            }
-        } else {
-            profile.name.clone()
-        };
-        let Ok(copy) = profile.copied_as(name, &vault.data_dir) else {
-            pasted.failed = true;
-            continue;
-        };
-        let on_new_row = *at == vault.profiles.len();
-        let landed = *at;
-        if vault.insert(at, copy).is_err() {
-            pasted.failed = true;
-            continue;
-        }
-        // 📋 the next copy goes after this one; on the new-profile row `insert` moved along already
-        if !on_new_row {
-            *at += 1;
-        }
-        pasted.first.get_or_insert(landed);
+/// The position of the profile called `name`: that exact name, or else the only one that matches
+/// it but for case (`Brutal_Doom` for `brutal_doom`), or `None`.
+fn find_profile(profiles: &[Profile], name: &str) -> Option<usize> {
+    if let Some(exact) = profiles.iter().position(|p| p.name == name) {
+        return Some(exact);
     }
-    Ok(pasted)
-}
-
-/// Asks what to call a pasted copy of the profile called `name`, which is taken: `tagged`, a name
-/// the user types (starting from `tagged`), or none, to skip it.
-fn ask_copy_name(
-    grimoire: &mut Grimoire,
-    profiles: &[Profile],
-    name: &str,
-    tagged: &str,
-) -> Result<Option<String>> {
-    let question = format!("'{name}' already exists. Paste it as '{tagged}', or name it?");
-    Ok(
-        match ThreeWayDialog::summon(grimoire, &question, ["Tag", "Name", "Skip"])? {
-            Some(0) => Some(tagged.to_string()),
-            Some(1) => ProfileNamer::summon_suggesting(grimoire, profiles, tagged)?,
-            _ => None,
-        },
-    )
+    let mut alike = profiles
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.name.eq_ignore_ascii_case(name));
+    match (alike.next(), alike.next()) {
+        (Some((index, _)), None) => Some(index),
+        _ => None,
+    }
 }
 
 /// How well the profile matches `query`: by its name, or with a `*` in front by the best of its
@@ -697,80 +1005,9 @@ fn profile_score(profile: &Profile, query: &str) -> Option<search::Score> {
 impl Ritual for Launcher {
     type Return = ();
 
-    /// Shows the "Text too big!" screen first if the terminal starts out too small, then deals with
-    /// files saved by other editions: newer ones end the session untouched, older ones are
-    /// upgraded if the user agrees, and the originals are deleted only if they agree to that too.
+    /// Gets everything ready before the launcher is first drawn (see [`Launcher::prepare`]).
     fn attach(&mut self, grimoire: &mut Grimoire) -> Result<()> {
-        let area = grimoire.consult().area();
-        if layout::is_too_small(area.width, area.height) {
-            resize::summon(grimoire)?;
-        }
-        quips::show(!self.no_quips && !self.global.no_quips);
-        // 🔇 nothing plays at all, not even on the splash
-        if self.no_music || self.global.music == Music::Off {
-            music::mute();
-        }
-        // 🎶 the song from the settings, unless `--music` already chose one; a song that has gone
-        // missing is said, and the built-in track plays instead
-        if !music::has_song()
-            && !self.no_music
-            && self.global.music != Music::Off
-            && let Some(song) = &self.global.song
-            && let Err(problem) = music::use_song(Path::new(song))
-        {
-            Warning::summon(grimoire, &problem)?;
-        }
-        // 🎵 music kept on plays from the start, through the splash and past it
-        if self.keep_music || self.global.music == Music::Kept {
-            music::start(true);
-        }
-        if self.splash && (!self.vault.config.skip_splash || self.quip.is_some()) {
-            // 💬 the command line's quip, or else the one kept in the settings, or else a random one
-            let kept = quips::shown()
-                .then(|| self.global.splash_quip.text())
-                .flatten();
-            let quip = self.quip.clone().or(kept);
-            splash::summon(grimoire, quip.as_deref())?;
-        }
-        if self.vault.is_too_new() {
-            Warning::files_too_new(grimoire)?;
-            return Err(Error::Exit);
-        }
-        // 📜 anything that was fished out of the wreckage on the way in
-        for notice in std::mem::take(&mut self.vault.notices) {
-            Warning::summon(grimoire, &notice)?;
-        }
-        if self.vault.is_outdated() {
-            if !Dialog::should_upgrade(grimoire)? {
-                return Err(Error::Exit);
-            }
-            // ⏳ checking every page takes a moment, so don't leave the old dialog hanging there
-            status::summon(grimoire, "Upgrading", "Upgrading...", Self::BORDER_COLOR)?;
-            let Ok(upgraded) = self.vault.upgrade() else {
-                Warning::upgrade_failed(grimoire)?;
-                return Err(Error::Exit);
-            };
-            if Dialog::should_delete_originals(grimoire)? {
-                upgraded.iter().for_each(|path| scribe::retire(path));
-            }
-        }
-        self.offer_to_keep(grimoire)?;
-        picker::set_wad_folders(&self.vault.wad_folders);
-        if let Some(scroll) = self.passed_scroll.take() {
-            // 📜 the new profile goes last, and the cursor lands on it
-            let before = self.vault.profiles.len();
-            let mut index = before;
-            let current = self.global.shared();
-            if let Some(settings) =
-                share::unseal_file(grimoire, &mut self.vault, &mut index, &scroll, &current)?
-            {
-                self.take_shared(grimoire, settings)?;
-            }
-            if self.vault.profiles.len() > before {
-                self.table_state.select(Some(before));
-            }
-        }
-        Ok(())
+        self.prepare(grimoire)
     }
 
     /// The profile list, each row with its badge, and under it a panel for whatever the cursor is
@@ -981,7 +1218,7 @@ impl Ritual for Launcher {
         // redone, and the selection and the search's matches are let go, since rows could move
         if !matches!(
             key_code,
-            KeyCode::Char('j' | 'k' | '?' | '/' | ';' | ',' | 'V' | 'm' | 'y' | 'Y')
+            KeyCode::Char('j' | 'k' | '?' | '/' | ';' | ',' | 'V' | 'm' | 'x' | 'y' | 'Y')
                 | KeyCode::F(1)
                 | KeyCode::Up
                 | KeyCode::Down
@@ -997,26 +1234,8 @@ impl Ritual for Launcher {
         match key_code {
             KeyCode::Enter => {
                 if *index != self.vault.profiles.len() {
-                    let profile = &self.vault.profiles[*index];
-                    if let Some(uzdoom) = profile.uzdoom(&self.vault.config) {
-                        // 🚧 a profile with a broken part is not fixed for you, but it isn't launched either
-                        if !Warning::faults(grimoire, &profile.faults(&self.vault.config))? {
-                            let details = [format!("profile {}", profile.name)];
-                            let result = uzdoom::launch(
-                                uzdoom,
-                                profile.base_wad(&self.vault.config).map(Wad::deref),
-                                profile,
-                                profile.uzdoom_args(&self.vault.config),
-                                &self.vault.data_dir.join(&profile.name),
-                            )
-                            .and_then(|game| {
-                                running::summon(grimoire, "launching", &details, game)
-                            });
-                            Warning::report_spawn(grimoire, result)?;
-                        }
-                    } else {
-                        Warning::uzdoom_not_selected(grimoire)?;
-                    }
+                    let index = *index;
+                    self.launch_profile(grimoire, index)?;
                     Ok(Phase::Render)
                 } else {
                     if let Some(profile) = Editor::summon_blank(grimoire, &mut self.vault)?
@@ -1029,15 +1248,8 @@ impl Ritual for Launcher {
             }
             KeyCode::Char('h') => {
                 if *index != self.vault.profiles.len() {
-                    let profile = &self.vault.profiles[*index];
-                    if profile.uzdoom(&self.vault.config).is_none() {
-                        Warning::uzdoom_not_selected(grimoire)?;
-                    } else if !Warning::faults(grimoire, &profile.faults(&self.vault.config))?
-                        && let Some(settings) =
-                            HostSettingsForm::summon(grimoire, &mut self.vault, *index)?
-                    {
-                        host_game::summon(grimoire, &mut self.vault, *index, settings)?;
-                    }
+                    let index = *index;
+                    self.host_profile(grimoire, index, None)?;
                     Ok(Phase::Render)
                 } else {
                     Ok(Phase::Prompt)
@@ -1045,7 +1257,7 @@ impl Ritual for Launcher {
             }
             KeyCode::Char('n') => {
                 if let Some(address) = JoinAddressForm::summon(grimoire)? {
-                    join_game::summon(grimoire, &mut self.vault, index, &address)?;
+                    join_game::summon(grimoire, &mut self.vault, index, &address, false)?;
                 }
                 Ok(Phase::Render)
             }
@@ -1110,13 +1322,7 @@ impl Ritual for Launcher {
                 }
                 Ok(Phase::Render)
             }
-            KeyCode::Char('x') => {
-                if *index == self.vault.profiles.len() {
-                    return Ok(Phase::Prompt);
-                }
-                share::seal(grimoire, &self.vault, *index, self.global.shared())?;
-                Ok(Phase::Render)
-            }
+            KeyCode::Char('x') => self.seal_profiles(grimoire),
             KeyCode::Char('i') => {
                 let current = self.global.shared();
                 if let Some(settings) = share::unseal(grimoire, &mut self.vault, index, &current)? {
@@ -1200,7 +1406,7 @@ mod tests {
     use insta::assert_snapshot;
 
     use super::*;
-    use crate::{testing, vault::scribe::tests::Altar};
+    use crate::{testing, vault::InsertedCopies, vault::scribe::tests::Altar};
 
     fn launcher(altar: &Altar, row: usize) -> Launcher {
         let vault = testing::example_vault(altar);
@@ -1304,11 +1510,13 @@ mod tests {
         .into_iter();
         let mut asked = Vec::new();
         let mut at = 1;
-        let pasted = paste_profiles(&mut launcher.vault, &mut at, copies, |_, name, tagged| {
-            asked.push((name.to_string(), tagged.to_string()));
-            Ok(answers.next().unwrap())
-        })
-        .unwrap();
+        let pasted = launcher
+            .vault
+            .insert_copies(&mut at, copies, |_, name, tagged| {
+                asked.push((name.to_string(), tagged.to_string()));
+                Ok(answers.next().unwrap())
+            })
+            .unwrap();
         // every original is still here, so each name was asked about, with its tag
         assert_eq!(
             asked[0],
@@ -1317,8 +1525,9 @@ mod tests {
         assert_eq!(asked.len(), 3);
         assert_eq!(
             pasted,
-            PastedProfiles {
+            InsertedCopies {
                 first: Some(1),
+                count: 2,
                 failed: false
             }
         );
@@ -1355,10 +1564,12 @@ mod tests {
             ..launcher.vault.profiles[0].clone()
         };
         let mut at = count;
-        let pasted = paste_profiles(&mut launcher.vault, &mut at, vec![fresh], |_, _, _| {
-            panic!("a free name isn't asked about")
-        })
-        .unwrap();
+        let pasted = launcher
+            .vault
+            .insert_copies(&mut at, vec![fresh], |_, _, _| {
+                panic!("a free name isn't asked about")
+            })
+            .unwrap();
         assert_eq!(pasted.first, Some(count));
         assert_eq!(launcher.vault.profiles[count].name, "fresh");
         assert_eq!(at, count + 1, "the cursor stays on the new-profile row");
@@ -1370,21 +1581,40 @@ mod tests {
         let mut launcher = launcher(&altar, 0);
         let all = launcher.vault.profiles.clone();
         let mut at = 0;
-        let pasted = paste_profiles(
-            &mut launcher.vault,
-            &mut at,
-            vec![all[0].clone()],
-            |_, _, _| Ok(Some(all[1].name.clone())),
-        )
-        .unwrap();
+        let pasted = launcher
+            .vault
+            .insert_copies(&mut at, vec![all[0].clone()], |_, _, _| {
+                Ok(Some(all[1].name.clone()))
+            })
+            .unwrap();
         assert_eq!(
             pasted,
-            PastedProfiles {
+            InsertedCopies {
                 first: None,
+                count: 0,
                 failed: true
             }
         );
         assert_eq!(launcher.vault.profiles, all);
+    }
+
+    #[test]
+    fn a_profile_is_found_by_its_name_or_the_only_one_that_matches_but_for_case() {
+        let named = |names: &[&str]| -> Vec<Profile> {
+            names
+                .iter()
+                .map(|name| Profile::new(name.to_string(), Vec::new()))
+                .collect()
+        };
+        let profiles = named(&["brutal_doom", "Sigil", "sigil_run"]);
+        assert_eq!(find_profile(&profiles, "brutal_doom"), Some(0));
+        assert_eq!(find_profile(&profiles, "BRUTAL_DOOM"), Some(0));
+        assert_eq!(find_profile(&profiles, "sigil"), Some(1));
+        assert_eq!(find_profile(&profiles, "nope"), None);
+        // two that differ only by case: only the exact one is taken, never a guess
+        let twins = named(&["Doom", "doom"]);
+        assert_eq!(find_profile(&twins, "doom"), Some(1));
+        assert_eq!(find_profile(&twins, "DOOM"), None);
     }
 
     #[test]

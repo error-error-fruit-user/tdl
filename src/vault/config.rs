@@ -42,6 +42,13 @@ pub struct Config {
     /// and join, before the wads. Set in the settings. Missing in older files, which count as none.
     #[serde(default)]
     pub uzdoom_args: String,
+    /// UZDoom from `--uzdoom`, for this session only: it is never saved, and it wins over every
+    /// profile's own and the global one.
+    #[serde(skip)]
+    pub session_uzdoom: Option<OsString>,
+    /// The base wad from `--base-wad`, for this session only, the same way.
+    #[serde(skip)]
+    pub session_base_wad: Option<Wad>,
 }
 
 impl Edition for Config {
@@ -70,6 +77,16 @@ fn v2_to_v3(config: Config) -> Config {
 }
 
 impl Config {
+    /// The UZDoom a profile without its own uses: this session's, else the global one.
+    pub fn uzdoom_in_effect(&self) -> Option<&OsString> {
+        self.session_uzdoom.as_ref().or(self.uzdoom.as_ref())
+    }
+
+    /// The base wad a profile without its own uses: this session's, else the global one.
+    pub fn base_wad_in_effect(&self) -> Option<&Wad> {
+        self.session_base_wad.as_ref().or(self.base_wad.as_ref())
+    }
+
     /// Where the config is kept.
     pub fn path(directory: &Path) -> PathBuf {
         directory.join(FILE)

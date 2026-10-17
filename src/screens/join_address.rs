@@ -66,6 +66,31 @@ impl JoinAddressForm {
         Self::new().invoke(grimoire)
     }
 
+    /// [`JoinAddressForm::summon`], filled in with what `tdl join` was given, with the focus on
+    /// the first field still empty (or the IP, if none is), ready to change or submit.
+    pub fn summon_with(
+        grimoire: &mut Grimoire,
+        host: &str,
+        port: Option<u16>,
+        code: Option<&str>,
+    ) -> Result<Option<Address>> {
+        Self::filled(host, port, code).invoke(grimoire)
+    }
+
+    /// A form filled in with `host`, `port` and `code`.
+    fn filled(host: &str, port: Option<u16>, code: Option<&str>) -> Self {
+        let mut form = Self {
+            ip: host.to_string(),
+            port: port.map(|port| port.to_string()).unwrap_or_default(),
+            code: code.unwrap_or_default().to_string(),
+            ..Self::new()
+        };
+        // 👆 the code is what is most likely missing, so that is where the cursor waits
+        form.focus = if form.code.is_empty() { 2 } else { 0 };
+        form.caret = text::end(form.focused());
+        form
+    }
+
     /// The field in focus, to type into.
     fn focused(&mut self) -> &mut String {
         match self.focus {
@@ -247,6 +272,23 @@ mod tests {
         // letters don't go in the ip
         let _ = form.edit(KeyCode::Down);
         assert!(form.edit(KeyCode::Char('x')) == Phase::Prompt);
+    }
+
+    #[test]
+    fn a_filled_form_waits_on_the_missing_code_and_gives_the_address_as_it_is() {
+        let form = JoinAddressForm::filled("10.0.0.2", Some(9000), None);
+        assert_eq!(form.focus, 2);
+        assert_eq!(form.port, "9000");
+        let full = JoinAddressForm::filled("10.0.0.2", None, Some("abc234"));
+        assert_eq!(full.focus, 0);
+        assert_eq!(
+            full.address(),
+            Ok(Address {
+                host: "10.0.0.2".into(),
+                port: net::DEFAULT_PORT,
+                code: "abc234".into(),
+            })
+        );
     }
 
     #[test]

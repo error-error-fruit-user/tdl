@@ -86,17 +86,16 @@ Edition 3 (profiles and `config.rite`) fills in the `size` of any wad saved with
 
 ## Scrolls
 
-A `.scroll` is a profile sealed up to share (`X` in the launcher), written wherever you choose. Like the other files it is MessagePack in an edition wrapper, holding:
+A `.scroll` is one or more profiles sealed up to share (`X` in the launcher: the profile under the cursor, the ones selected, or the whole vault), written wherever you choose. Like the other files it is MessagePack in an edition wrapper, holding:
 
 | Field | Meaning |
 | --- | --- |
-| `name` | The profile's name, offered (and checked for clashes) when the scroll is imported. |
-| `wads` | The wads in load order, each only its `name`, `size` (0 if unknown), `hash` and `volatile`: no folders, no paths. |
-| `base_wad` | The profile's own base wad, the same way, if it has one. |
-| `host_defaults` | The profile's host defaults, with the join code left out. |
-| `settings` | The maker's `music`, `no_quips` and `splash_quip` from their `global.rite`, if they chose to seal them in. Never their song, vault or wad folders. Missing in older scrolls, which carry none. A splash quip over 120 characters or with control characters gets the scroll refused. |
+| `profiles` | The profiles, in the launcher's order. Each has a `name` (kept on import unless it is taken, or offered to rename for a scroll of one), `wads` (in load order, each only its `name`, `size` (0 if unknown), `hash` and `volatile`: no folders, no paths), `base_wad` (the profile's own, the same way, if it has one) and `host_defaults` (with the join code left out). |
+| `settings` | The maker's `music`, `no_quips` and `splash_quip` from their `global.rite`, if they chose to seal them in. Never their song, vault or wad folders. Missing if they didn't. A splash quip over 120 characters or with control characters gets the scroll refused. |
 
-Importing (`I`) trusts nothing in it: there are at most 4096 wads, every name must be a plain file name (so `../x` can't reach outside a folder) and every hash a real BLAKE3 hash, or the scroll is refused.
+Scrolls of edition 0 (from tdl 0.6.0) held one profile, with its `name`, `wads`, `base_wad` and `host_defaults` at the top level beside `settings`. They still import, as a scroll of that one profile. tdl 0.6.0 can't read the newer edition.
+
+Importing (`I`) trusts nothing in it: there are at most 512 profiles and 4096 wads in all, every profile name must be one tdl could have made (letters, digits and `_`, so it can't name a path), every wad name a plain file name (so `../x` can't reach outside a folder) and every hash a real BLAKE3 hash, or the scroll is refused.
 
 ## How the files are written
 

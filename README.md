@@ -57,17 +57,38 @@ On first run, press `U` to select your UZDoom executable and `W` to select a bas
 ### Command line
 
 ```sh
-tdl [--vault <folder> | --vault-once <folder> | --forget-vault] [--wads <folder>]... [--unseal <scroll>] [--no-splash] [--splash-quip <quip> | --no-quips] [[--music <song>] [--keep-music] | --no-music]
+tdl [--vault <folder> | --vault-once <folder> | --forget-vault] [--wads <folder>]... [--unseal <scroll>] [--no-splash] [--splash-quip <quip> | --no-quips] [[--music <song>] [--keep-music] | --no-music] [--uzdoom <file>] [--base-wad <file>]
+tdl launch|host|join ...                  # see Commands below
+tdl --seal <scroll> [--with-settings] [--delete [--force]]
 tdl --list-quips
 ```
+
+`tdl --help` (or `tdl host --help`, and so on) lists everything, and `tdl --version` says which tdl it is. A mistyped option is answered with the closest real one.
 
 - `--vault <folder>` keeps everything in `<folder>/config` and `<folder>/data` instead of the standard folders. tdl asks whether to open that vault every time it starts.
 - `--vault-once <folder>` opens a vault the same way, just for this run, without asking.
 - `--unseal <scroll>` imports a shared `.scroll` as soon as tdl starts, just like `I` in the launcher, looking for its wads in the wad folders: `tdl --unseal shared.scroll --wads ~/wads`.
 - `--splash-quip <quip>` shows your own quip under the splash logo instead of a random one, just for this run: `tdl --splash-quip "Rip and tear, bestie!"`. Every `#<number>` in it is replaced by that built-in quip, counting from 1 (`tdl --list-quips` prints them all with their numbers): `#12` is quip 12 alone, and `#12, hun!` is quip 12 with `, hun!` right after it, no space added. Write `##` for a plain `#` in front of digits. It plays the splash even if the **splash** setting is off, and can't go with `--no-splash`. The progress windows keep their usual quips. `--no-quips` leaves the quips out of every window for this run, the same as the **quips** setting.
 - `--music <song>` plays your own song (wav, mp3, flac or ogg) instead of "Inevitable Doom". It is checked before tdl starts, so a file it can't play is reported right away. `--keep-music` keeps the music going in the launcher after the splash, as the **music** setting does. To use your song every time, pick it in the **song** setting. `--no-music` plays no music at all for this run, not even on the splash, and can't go with the other two.
+- `--uzdoom <file>` and `--base-wad <file>` play with that UZDoom or base wad for this run only, over every profile's own and the global one, for trying another UZDoom build or IWAD quickly. They are never saved and never asked about; the launcher's panels mark them **session**. A file that isn't there stops tdl before it starts.
+- `--seal <scroll>` seals every profile in the vault into a new `.scroll`, with no windows, and closes: `tdl --seal backup.scroll`. It never writes over a file that is already there. `--with-settings` seals your global settings in too (never your song); whoever unseals it gets them in place of their own. With `--delete` it then deletes the vault: every profile with its saved games and logs. The downloaded wads stay, so nothing has to be downloaded again, and so do your global settings and anything in its folders that tdl didn't make. It asks `[y/N]` first, showing what goes; `--force` skips the question. If it was the vault tdl remembered from `--vault`, tdl forgets it.
+- `--with-pride` plays the pride splash for the run: a fire that burns through every color of the rainbow, under the logo in the trans flag's blue, pink and white.
 - `--forget-vault` opens the standard vault, and asks whether to stop opening the one remembered from `--vault`.
 - `--wads <folder>` (as many times as you like) says where your wads are: file pickers open there instead of the current directory, and joining looks there for wads you already have. tdl asks whether to keep the folders for this **[S]ession** only, **[G]lobal**ly for every vault, or for this **[V]ault**. Kept folders are used whenever tdl starts without `--wads`: the vault's own first, then the global ones.
+
+#### Commands
+
+`launch`, `host` and `join` do one thing straight away, without the launcher, and tdl closes when they are done (the game ends, or something stops it). tdl's own options can go before or after the command, and each command's own flags go after it (`tdl host brutal_doom --coop`). `Ctrl+C` stops the game (and the wad server, when hosting) and closes tdl with exit code 130, as an interrupted program does.
+
+```sh
+tdl launch brutal_doom                                # play a profile
+tdl host brutal_doom --players 4 --coop --map MAP07  # the host form, filled in from these
+tdl join 10.0.0.2 --code abc234 --port 9000           # the join form, filled in from these
+```
+
+- `host` opens the host form for the profile, filled in from its saved host defaults and changed by `--players` (2–8), `--coop` or `--deathmatch`, `--map`, `--port` and `--code`; `Enter` starts the game.
+- `join` opens the join form, filled in with the IP, `--code` and `--port` (8080 if not given), then finds or downloads a profile. With `--always-download` the wads you don't have are downloaded without asking first.
+- `--headless`, with `host` or `join`, shows no forms and no windows at all: just plain lines in the terminal, so `join` needs `--code`. Joining still asks `[Y/N]` before downloading wads that aren't installed (no answer, or no terminal to ask on, is no), unless `--always-download` is given; a profile made for it is named after the host (`joined_10_0_0_2`). Anything that stops the game ends tdl with an error code, and `Ctrl+C` stops a game or a download cleanly, leaving any finished downloads for next time.
 
 | Key | Action |
 | --- | --- |
@@ -85,8 +106,8 @@ tdl --list-quips
 | `A` | Add a profile |
 | `E` | Edit a profile |
 | `D` | Delete a profile |
-| `X` | Export the profile as a `.scroll` to share |
-| `I` | Import a `.scroll` as a new profile |
+| `X` | Export the profile (or the selected ones, or the whole vault) as a `.scroll` to share |
+| `I` | Import a `.scroll`, adding its profiles |
 | `U` | Select the UZDoom executable |
 | `W` | Select the base wad |
 | `O` | Settings: the splash screen, the music, the song, the quips, and extra UZDoom arguments |
@@ -122,9 +143,9 @@ Pasting a wad whose file name the profile already has asks the same three things
 
 ### Sharing profiles
 
-`X` seals the selected profile into a `.scroll` file: each wad's file name, size and hash, the base wad, and the host defaults (without the join code), but no paths, so it means the same thing on any computer. Send it to someone with the same wads and they press `I` to break the seal: tdl looks for each wad by name in their wad folders (from `--wads`, or kept from it; with none, it asks for a folder), takes a file only if its size and then its hash match, and makes a new profile from what it finds. Wads it can't find are left as placeholders in the editor, where `Space` says where they were looked for and `R` picks them.
+`X` seals profiles into a `.scroll` file: it asks whether to seal the profile under the cursor (or the ones selected with `Shift+V`/`M`) or the whole vault. For each profile it keeps each wad's file name, size and hash, the base wad, and the host defaults (without the join code), but no paths, so it means the same thing on any computer. Send it to someone with the same wads and they press `I` to break the seal: tdl looks for each wad by name in their wad folders (from `--wads`, or kept from it; with none, it asks for a folder), takes a file only if its size and then its hash match, and adds the profiles it finds. A scroll of one profile asks for its name; with several, each keeps its name, and one that is taken asks to **[T]ag** it (`brutal_2`), **[N]ame** it, or **[S]kip** it. Wads it can't find are left as placeholders in the editor, where `Space` says where they were looked for and `R` picks them.
 
-Sealing also asks whether to seal in your global settings: the music, whether quips are shown, and the splash quip. Your song never goes in, nor anything about where things are on your computer. When a scroll carries settings that differ from yours, breaking its seal asks whether to use them, once the profile is in.
+Sealing also asks whether to seal in your global settings: the music, whether quips are shown, and the splash quip. Say no and the scroll carries none, so your friends' settings are left alone. Your song never goes in, nor anything about where things are on your computer. When a scroll carries settings, breaking its seal puts them in place of yours, once the profiles are in; a scroll without any leaves yours as they are.
 
 ### Multiplayer
 
@@ -158,10 +179,10 @@ Everything visual lives in a few small files, so it can be changed without touch
 
 | File | What's in it |
 | --- | --- |
-| `src/theme.rs` | The palette (blood, hellfire, bone, nukage…), what each part of the interface is drawn with, border styles, and the status glyphs |
+| `src/theme.rs` | The palette (blood, hellfire, bone, nukage…), what each part of the interface is drawn with, border styles, the status glyphs, and the trans flag's colors for the pride splash |
 | `src/layout.rs` | The smallest terminal size, margins, padding, how far the launcher and editor grow into free space (`GROW_PERCENT`, `MAX_GROWN_WIDTH`), and how windows are centered and stacked |
-| `src/screens/splash.rs` | The startup logo, tagline, the "press any key" hint and how fast it pulses |
-| `src/widgets/fire.rs` | The fire itself: its palette and how high the flames reach |
+| `src/screens/splash.rs` | The startup logo (and its trans flag stripes), tagline, the "press any key" hint and how fast it pulses, and how fast the pride fire goes round the rainbow |
+| `src/widgets/fire.rs` | The fire itself: its palette, its rainbow, and how high the flames reach |
 | `src/popups.rs` | How wide popup text gets before it wraps |
 
 Setting `BACKGROUND` in `theme.rs` to `Color::Reset` keeps your terminal's own background.

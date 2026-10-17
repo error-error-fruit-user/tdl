@@ -50,7 +50,7 @@ pub fn summon(
     let wads = match hashing::refresh(grimoire, &profile.wads) {
         Ok(Some(wads)) => wads,
         Ok(None) => return Ok(()),
-        Err(Error::Exit) => return Err(Error::Exit),
+        Err(Error::Interrupted) => return Err(Error::Interrupted),
         Err(_) => return Warning::wad_unreadable(grimoire),
     };
     let Ok(manifest) =
@@ -67,19 +67,9 @@ pub fn summon(
         return Warning::host_failed(grimoire);
     };
 
-    // 🔌 the port the server really bound, which is the one joiners need
+    // 🔌 the port the server really bound, which is the one joiners need; the window kept up while
+    // the game runs shows it with the code, for the host to pass on
     let port = server.port;
-    // 🔑 the host has to pass these on, so they're shown before the game window covers everything
-    Warning::announce(
-        grimoire,
-        "hosting",
-        &[
-            "Players join with".to_string(),
-            format!("port {port}, code {code}"),
-            String::new(),
-            "Press any key to start".to_string(),
-        ],
-    )?;
     let details = [format!("Players join with port {port}, code {code}")];
     let result = uzdoom::host(
         uzdoom,

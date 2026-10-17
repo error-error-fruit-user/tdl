@@ -7,7 +7,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::{
@@ -16,6 +16,9 @@ use crate::{
     vault::profile::Profile,
     vault::wad::Wad,
 };
+
+/// How long a stopped UZDoom gets to go quietly before it is killed outright.
+const GRACE: Duration = Duration::from_secs(2);
 
 /// UZDoom while it runs. Its output is copied to `session.log` on a thread of its own, so whoever
 /// started it is free to keep the screen moving, and the latest line is kept to show how far its
@@ -40,6 +43,33 @@ impl Game {
         Ok(self.child.try_wait()?.is_some())
     }
 
+    /// Stops UZDoom now, for Ctrl+C. What tdl started may be a wrapper script (or flatpak) that
+    /// runs the real game as a child of its own, so everything in the process group it was started
+    /// in is asked to stop, and killed if it is still going after [`GRACE`]. Its log is finished
+    /// once all of it is gone; tdl doesn't wait forever on anything that escaped the group.
+    pub fn stop(mut self) -> Result<()> {
+        let logger = self.logger.take();
+        let gone = |game: &mut Self| -> Result<bool> {
+            Ok(game.has_quit()? && logger.as_ref().is_none_or(JoinHandle::is_finished))
+        };
+        signal_group(&mut self.child, false);
+        let deadline = Instant::now() + GRACE;
+        while !gone(&mut self)? && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        if !gone(&mut self)? {
+            signal_group(&mut self.child, true);
+        }
+        self.child.wait()?;
+        // 📜 only joined if the output really closed: a straggler holding it would block tdl
+        if let Some(logger) = logger
+            && logger.is_finished()
+        {
+            let _ = logger.join();
+        }
+        Ok(())
+    }
+
     /// Waits for UZDoom to quit and for the last of its output to reach the log.
     ///
     /// Keys pressed during the game would otherwise all land at once afterwards, so they are
@@ -55,6 +85,26 @@ impl Game {
         }
         Ok(())
     }
+}
+
+/// Asks UZDoom's whole process group to stop, or with `kill` kills it outright. It may have quit
+/// already, which is just as good.
+#[cfg(unix)]
+fn signal_group(child: &mut Child, kill: bool) {
+    let signal = if kill { "KILL" } else { "TERM" };
+    // 👥 the group stays while any of it is left, even once the one tdl started has gone
+    let _ = Command::new("kill")
+        .args(["-s", signal, "--", &format!("-{}", child.id())])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+/// Stops UZDoom. Windows has no process groups to ask, and UZDoom there is the program itself.
+#[cfg(not(unix))]
+fn signal_group(child: &mut Child, _kill: bool) {
+    let _ = child.kill();
 }
 
 /// The player's own extra arguments, from the settings: split at whitespace, with no quoting.
@@ -78,6 +128,9 @@ fn execute(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
+    // 👥 a group of its own, so Ctrl+C can stop whatever it starts too (see [`Game::stop`])
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
     let mut child = if !profile.wads.is_empty() {
         command
             .arg("-file")

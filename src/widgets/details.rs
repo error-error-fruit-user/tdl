@@ -120,6 +120,22 @@ fn file_line(
     }
 }
 
+/// `line`, unless this session uses a file of its own from the command line (`--uzdoom`,
+/// `--base-wad`): then the line is for that file, said to be the session's. `fault` is the one
+/// for the file in effect.
+fn or_session(line: Detail, session: Option<&OsStr>, fault: Option<&Fault>) -> Detail {
+    let Some(path) = session else {
+        return line;
+    };
+    let mut line = file_line(line.label, Some(path), None, fault, "");
+    for (note, _) in &mut line.note {
+        if note == "own" {
+            *note = "session".to_string();
+        }
+    }
+    line
+}
+
 /// The line for UZDoom's extra arguments: the profile's `own`, else the `global` ones, else
 /// `unset`, each said where it comes from, the way [`file_line`] does for files. Empty arguments
 /// count as none.
@@ -193,12 +209,16 @@ impl Details {
     /// What launching `profile` would use, with `faults` from [`Profile::faults`].
     pub fn launch(profile: &Profile, config: &Config, faults: &[(Part, Fault)]) -> Self {
         let fault = |part| faults.iter().find(|(p, _)| *p == part).map(|(_, f)| f);
-        let mut uzdoom = file_line(
-            "uzdoom",
-            profile.uzdoom.as_deref(),
-            config.uzdoom.as_deref(),
+        let mut uzdoom = or_session(
+            file_line(
+                "uzdoom",
+                profile.uzdoom.as_deref(),
+                config.uzdoom.as_deref(),
+                fault(Part::Uzdoom),
+                "not set",
+            ),
+            config.session_uzdoom.as_deref(),
             fault(Part::Uzdoom),
-            "not set",
         );
         if uzdoom.state == State::Unset {
             // 🚫 without UZDoom there is no game, so this one is not optional
@@ -206,12 +226,16 @@ impl Details {
         }
         let lines = vec![
             uzdoom,
-            file_line(
-                "base wad",
-                profile.base_wad.as_deref(),
-                config.base_wad.as_deref(),
+            or_session(
+                file_line(
+                    "base wad",
+                    profile.base_wad.as_deref(),
+                    config.base_wad.as_deref(),
+                    fault(Part::BaseWad),
+                    "auto",
+                ),
+                config.session_base_wad.as_deref(),
                 fault(Part::BaseWad),
-                "auto",
             ),
             file_line(
                 "ini",
@@ -238,29 +262,37 @@ impl Details {
 
     /// The global settings, which every profile without its own falls back on.
     pub fn global(config: &Config) -> Self {
+        // 🧪 what is in effect: this session's from the command line, else the saved ones
         let uzdoom_fault = config
-            .uzdoom
-            .as_ref()
+            .uzdoom_in_effect()
             .and_then(|p| Fault::of(Path::new(p), 0));
-        let base_fault = config.base_wad.as_ref().and_then(Wad::check);
-        let mut uzdoom = file_line(
-            "uzdoom",
-            None,
-            config.uzdoom.as_deref(),
+        let base_fault = config.base_wad_in_effect().and_then(Wad::check);
+        let mut uzdoom = or_session(
+            file_line(
+                "uzdoom",
+                None,
+                config.uzdoom.as_deref(),
+                uzdoom_fault.as_ref(),
+                "not set",
+            ),
+            config.session_uzdoom.as_deref(),
             uzdoom_fault.as_ref(),
-            "not set",
         );
         if uzdoom.state == State::Unset {
             uzdoom.state = State::Bad;
         }
         let lines = vec![
             uzdoom,
-            file_line(
-                "base wad",
-                None,
-                config.base_wad.as_deref(),
+            or_session(
+                file_line(
+                    "base wad",
+                    None,
+                    config.base_wad.as_deref(),
+                    base_fault.as_ref(),
+                    "auto",
+                ),
+                config.session_base_wad.as_deref(),
                 base_fault.as_ref(),
-                "auto",
             ),
             args_line(None, Some(&config.uzdoom_args), "none"),
         ];
@@ -525,6 +557,35 @@ mod tests {
             line(Some(""), Some("")),
             ("none".into(), "".into(), State::Unset)
         );
+    }
+
+    #[test]
+    fn a_uzdoom_and_base_wad_from_the_command_line_are_said_to_be_the_sessions() {
+        let altar = crate::vault::scribe::tests::Altar::new("details-session");
+        fs::write(altar.file("uzdoom-dev"), b"").unwrap();
+        fs::write(altar.file("freedoom2.wad"), b"iwad").unwrap();
+        let config = Config {
+            uzdoom: Some("/global/uzdoom".into()),
+            session_uzdoom: Some(altar.file("uzdoom-dev").into()),
+            session_base_wad: Some(Wad::from_path(&altar.file("freedoom2.wad")).unwrap()),
+            ..Config::default()
+        };
+        let profile = Profile {
+            uzdoom: Some("/own/uzdoom".into()),
+            ..Profile::default()
+        };
+        for details in [
+            Details::launch(&profile, &config, &profile.faults(&config)),
+            Details::global(&config),
+        ] {
+            let uzdoom = details.line("uzdoom");
+            assert_eq!(uzdoom.value, "uzdoom-dev");
+            assert_eq!(uzdoom.note_text(), "session");
+            assert_eq!(uzdoom.state, State::Good);
+            let base = details.line("base wad");
+            assert_eq!(base.value, "freedoom2.wad");
+            assert_eq!(base.note_text(), "session");
+        }
     }
 
     #[test]
