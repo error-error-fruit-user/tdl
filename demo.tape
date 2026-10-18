@@ -1,5 +1,5 @@
 # The demo: ten seconds of the splash screen.
-# Run from the project root:  vhs demo.tape  (or ./demo-screenshots.sh, which also takes the
+# Run from the project root:  vhs demo.tape  (or ./demo_screenshot.sh, which also takes the
 # README's screenshots)
 # Needs: vhs, ttyd, ffmpeg on PATH, and `cargo build --release` done first.
 #

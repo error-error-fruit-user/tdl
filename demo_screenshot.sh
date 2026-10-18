@@ -11,7 +11,7 @@ cd "$(dirname "$0")"
 
 for tool in vhs ttyd ffmpeg; do
     if ! command -v "$tool" >/dev/null; then
-        echo "demo-screenshots.sh needs $tool on PATH" >&2
+        echo "demo_screenshot.sh needs $tool on PATH" >&2
         exit 1
     fi
 done

@@ -232,7 +232,7 @@ Setting `BACKGROUND` in `theme.rs` to `Color::Reset` keeps your terminal's own b
 ## Recording the demo and the screenshots
 
 ```sh
-./demo-screenshots.sh
+./demo_screenshot.sh
 ```
 
 It builds the release binary, records ten seconds of the splash screen into `demo.gif` (`demo.tape`, always with quip 17, so the demo is the same every time), then lays out the same example profiles the tests use and saves each screen the README shows to `docs/screenshots/` (`screenshots.tape`). It needs `vhs`, `ttyd` and `ffmpeg`. Both tapes run tdl on a throwaway vault with its home in `/tmp`, so your profiles and settings are never read or written, and those dirs are removed afterwards.
