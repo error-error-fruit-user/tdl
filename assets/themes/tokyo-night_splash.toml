@@ -1,0 +1,44 @@
+# tokyo-night: the splash in Tokyo Night's colors: downtown Tokyo at night: deep navy with neon
+# blue, purple, cyan and orange. Comes with tdl: play it with `tdl --splash tokyo-night`; it goes
+# with `--theme tokyo-night`. The colors are Tokyo Night by enkia, MIT. Every field is explained in
+# SPLASH.md.
+
+edition = 1
+
+[logo]
+art = [
+    "████████╗██████╗ ██╗     ",
+    "╚══██╔══╝██╔══██╗██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██████╔╝███████╗",
+    "   ╚═╝   ╚═════╝ ╚══════╝",
+]
+colors = ["#7DCFFF", "#7AA2F7", "#BB9AF7", "#F7768E", "#FF9E64"]
+shadow = "#292E42"
+
+[tagline]
+text = "t e r m i n a l   d o o m   l a u n c h e r"
+narrow = "terminal doom launcher"
+color = "#C0CAF5"
+bold = true
+
+[hint]
+text = "press any key"
+colors = ["#565F89", "#E1E6FF"]
+period = 1.6
+
+[quip]
+colors = ["#BB9AF7", "#7DCFFF"]
+period = 0.7
+bold = true
+
+[fire]
+# Each flame rises out of the background through the scheme's colors to white hot, taking turns.
+flames = [
+    ["#1A1B26", "#455884", "#7AA2F7", "#7DCFFF", "#E1E6FF"],
+    ["#1A1B26", "#625484", "#BB9AF7", "#F7768E", "#E1E6FF"],
+]
+speed = 0.3
+reach = 80
+top = 45

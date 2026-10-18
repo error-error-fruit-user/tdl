@@ -1,0 +1,52 @@
+# rose-pine: all natural pine, faux fur and a bit of soho vibes: Rosé Pine's iris, rose, gold and
+# foam. Comes with tdl: wear it with `tdl --theme rose-pine`; it goes with `--splash rose-pine`. The
+# colors are Rosé Pine by the Rosé Pine org, MIT. Every field is explained in THEME.md.
+
+edition = 2
+
+[colors]
+background = "#191724"
+text = "#E0DEF4"
+muted = "#6E6A86"
+title = "#E0DEF4"
+key = "#F6C177"
+screen = "#C4A7E7"
+multiplayer = "#9CCFD8"
+netplay = "#31748F"
+dialog = "#E0DEF4"
+warning = "#EB6F92"
+legend = "#6E6A86"
+panel = "#26233A"
+busy = "#C4A7E7"
+hashing = "#9CCFD8"
+unsealing = "#31748F"
+quip = "#F6C177"
+good = "#9CCFD8"
+bad = "#EB6F92"
+changed = "#F6C177"
+volatile = "#31748F"
+divider = "#26233A"
+gauge = "#1F1D2E"
+gauge_label = "#E0DEF4"
+
+[styles]
+cursor = { fg = "#191724", bg = "#C4A7E7", bold = true }
+broken_cursor = { fg = "#191724", bg = "#EB6F92", bold = true }
+selected = { fg = "#E0DEF4", bg = "#26233A" }
+broken_row = { fg = "#E0DEF4", bg = "#543043" }
+header = { fg = "#6E6A86", bold = true }
+broken_badge = { fg = "#191724", bg = "#EB6F92", bold = true }
+changed_badge = { fg = "#191724", bg = "#F6C177", bold = true }
+volatile_badge = { fg = "#191724", bg = "#31748F", bold = true }
+
+[borders]
+window = "rounded"
+popup = "plain"
+
+[help]
+heading = "#C4A7E7"
+literal = "#F6C177"
+placeholder = "#E0DEF4"
+error = "#EB6F92"
+valid = "#9CCFD8"
+invalid = "#F6C177"

@@ -1,0 +1,43 @@
+# noctis: the splash in Noctis's colors: the deep sea green of Noctis, with its cyan, teal, amber
+# and coral. Comes with tdl: play it with `tdl --splash noctis`; it goes with `--theme noctis`. The
+# colors are Noctis by Liviu Schera, MIT. Every field is explained in SPLASH.md.
+
+edition = 1
+
+[logo]
+art = [
+    "████████╗██████╗ ██╗     ",
+    "╚══██╔══╝██╔══██╗██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██████╔╝███████╗",
+    "   ╚═╝   ╚═════╝ ╚══════╝",
+]
+colors = ["#49D6E9", "#16A3B6", "#49E9A6", "#E4B781", "#DF769B"]
+shadow = "#073940"
+
+[tagline]
+text = "t e r m i n a l   d o o m   l a u n c h e r"
+narrow = "terminal doom launcher"
+color = "#B2CACD"
+bold = true
+
+[hint]
+text = "press any key"
+colors = ["#5B858B", "#E5F4F5"]
+period = 1.6
+
+[quip]
+colors = ["#49D6E9", "#E4B781"]
+period = 0.7
+bold = true
+
+[fire]
+# Each flame rises out of the background through the scheme's colors to white hot, taking turns.
+flames = [
+    ["#052529", "#0D5E68", "#16A3B6", "#49D6E9", "#E5F4F5"],
+    ["#052529", "#247D61", "#49E9A6", "#E4B781", "#E5F4F5"],
+]
+speed = 0.25
+reach = 80
+top = 45

@@ -1,0 +1,52 @@
+# everforest: a green forest at dusk: Everforest's soft greens, aqua, yellow and red. Comes with
+# tdl: wear it with `tdl --theme everforest`; it goes with `--splash everforest`. The colors are
+# Everforest (dark) by sainnhe, MIT. Every field is explained in THEME.md.
+
+edition = 2
+
+[colors]
+background = "#2D353B"
+text = "#D3C6AA"
+muted = "#859289"
+title = "#FDF6E3"
+key = "#DBBC7F"
+screen = "#A7C080"
+multiplayer = "#83C092"
+netplay = "#7FBBB3"
+dialog = "#D3C6AA"
+warning = "#E67E80"
+legend = "#859289"
+panel = "#475258"
+busy = "#A7C080"
+hashing = "#A7C080"
+unsealing = "#7FBBB3"
+quip = "#DBBC7F"
+good = "#A7C080"
+bad = "#E67E80"
+changed = "#E69875"
+volatile = "#7FBBB3"
+divider = "#475258"
+gauge = "#343F44"
+gauge_label = "#D3C6AA"
+
+[styles]
+cursor = { fg = "#2D353B", bg = "#A7C080", bold = true }
+broken_cursor = { fg = "#2D353B", bg = "#E67E80", bold = true }
+selected = { fg = "#D3C6AA", bg = "#475258" }
+broken_row = { fg = "#D3C6AA", bg = "#61494E" }
+header = { fg = "#859289", bold = true }
+broken_badge = { fg = "#2D353B", bg = "#E67E80", bold = true }
+changed_badge = { fg = "#2D353B", bg = "#E69875", bold = true }
+volatile_badge = { fg = "#2D353B", bg = "#7FBBB3", bold = true }
+
+[borders]
+window = "rounded"
+popup = "plain"
+
+[help]
+heading = "#A7C080"
+literal = "#DBBC7F"
+placeholder = "#D3C6AA"
+error = "#E67E80"
+valid = "#A7C080"
+invalid = "#E69875"

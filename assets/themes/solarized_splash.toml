@@ -1,0 +1,44 @@
+# solarized: the splash in Solarized's colors: Solarized dark: precise teal-blue base tones with its
+# yellow, orange, magenta and cyan. Comes with tdl: play it with `tdl --splash solarized`; it goes
+# with `--theme solarized`. The colors are Solarized (dark) by Ethan Schoonover, MIT. Every field is
+# explained in SPLASH.md.
+
+edition = 1
+
+[logo]
+art = [
+    "████████╗██████╗ ██╗     ",
+    "╚══██╔══╝██╔══██╗██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██████╔╝███████╗",
+    "   ╚═╝   ╚═════╝ ╚══════╝",
+]
+colors = ["#B58900", "#CB4B16", "#DC322F", "#D33682", "#6C71C4"]
+shadow = "#073642"
+
+[tagline]
+text = "t e r m i n a l   d o o m   l a u n c h e r"
+narrow = "terminal doom launcher"
+color = "#839496"
+bold = true
+
+[hint]
+text = "press any key"
+colors = ["#586E75", "#FDF6E3"]
+period = 1.6
+
+[quip]
+colors = ["#B58900", "#CB4B16"]
+period = 0.7
+bold = true
+
+[fire]
+# Each flame rises out of the background through the scheme's colors to white hot, taking turns.
+flames = [
+    ["#002B36", "#5B3928", "#CB4B16", "#B58900", "#FDF6E3"],
+    ["#002B36", "#11567C", "#268BD2", "#2AA198", "#FDF6E3"],
+]
+speed = 0.25
+reach = 80
+top = 45

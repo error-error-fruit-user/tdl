@@ -1,0 +1,43 @@
+# nord: the splash in Nord's colors: arctic: Nord's polar night blues with its frost and aurora.
+# Comes with tdl: play it with `tdl --splash nord`; it goes with `--theme nord`. The colors are Nord
+# by Arctic Ice Studio, MIT. Every field is explained in SPLASH.md.
+
+edition = 1
+
+[logo]
+art = [
+    "████████╗██████╗ ██╗     ",
+    "╚══██╔══╝██╔══██╗██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██████╔╝███████╗",
+    "   ╚═╝   ╚═════╝ ╚══════╝",
+]
+colors = ["#8FBCBB", "#88C0D0", "#81A1C1", "#5E81AC", "#B48EAD"]
+shadow = "#3B4252"
+
+[tagline]
+text = "t e r m i n a l   d o o m   l a u n c h e r"
+narrow = "terminal doom launcher"
+color = "#D8DEE9"
+bold = true
+
+[hint]
+text = "press any key"
+colors = ["#4C566A", "#ECEFF4"]
+period = 1.6
+
+[quip]
+colors = ["#88C0D0", "#EBCB8B"]
+period = 0.7
+bold = true
+
+[fire]
+# Each flame rises out of the background through the scheme's colors to white hot, taking turns.
+flames = [
+    ["#2E3440", "#445771", "#5E81AC", "#88C0D0", "#ECEFF4"],
+    ["#2E3440", "#6A5C71", "#B48EAD", "#A3BE8C", "#ECEFF4"],
+]
+speed = 0.2
+reach = 80
+top = 45

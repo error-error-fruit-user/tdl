@@ -1,0 +1,44 @@
+# rose-pine: the splash in Rosé Pine's colors: all natural pine, faux fur and a bit of soho vibes:
+# Rosé Pine's iris, rose, gold and foam. Comes with tdl: play it with `tdl --splash rose-pine`; it
+# goes with `--theme rose-pine`. The colors are Rosé Pine by the Rosé Pine org, MIT. Every field is
+# explained in SPLASH.md.
+
+edition = 1
+
+[logo]
+art = [
+    "████████╗██████╗ ██╗     ",
+    "╚══██╔══╝██╔══██╗██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██████╔╝███████╗",
+    "   ╚═╝   ╚═════╝ ╚══════╝",
+]
+colors = ["#EBBCBA", "#EB6F92", "#C4A7E7", "#9CCFD8", "#31748F"]
+shadow = "#1F1D2E"
+
+[tagline]
+text = "t e r m i n a l   d o o m   l a u n c h e r"
+narrow = "terminal doom launcher"
+color = "#E0DEF4"
+bold = true
+
+[hint]
+text = "press any key"
+colors = ["#6E6A86", "#E0DEF4"]
+period = 1.6
+
+[quip]
+colors = ["#EBBCBA", "#F6C177"]
+period = 0.7
+bold = true
+
+[fire]
+# Each flame rises out of the background through the scheme's colors to white hot, taking turns.
+flames = [
+    ["#191724", "#783F56", "#EB6F92", "#EBBCBA", "#E0DEF4"],
+    ["#191724", "#244154", "#31748F", "#9CCFD8", "#E0DEF4"],
+]
+speed = 0.25
+reach = 80
+top = 45

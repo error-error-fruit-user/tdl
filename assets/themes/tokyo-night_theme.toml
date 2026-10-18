@@ -1,0 +1,52 @@
+# tokyo-night: downtown Tokyo at night: deep navy with neon blue, purple, cyan and orange. Comes
+# with tdl: wear it with `tdl --theme tokyo-night`; it goes with `--splash tokyo-night`. The colors
+# are Tokyo Night by enkia, MIT. Every field is explained in THEME.md.
+
+edition = 2
+
+[colors]
+background = "#1A1B26"
+text = "#C0CAF5"
+muted = "#565F89"
+title = "#E1E6FF"
+key = "#E0AF68"
+screen = "#7AA2F7"
+multiplayer = "#BB9AF7"
+netplay = "#7DCFFF"
+dialog = "#C0CAF5"
+warning = "#F7768E"
+legend = "#565F89"
+panel = "#33467C"
+busy = "#7AA2F7"
+hashing = "#9ECE6A"
+unsealing = "#7DCFFF"
+quip = "#7DCFFF"
+good = "#9ECE6A"
+bad = "#F7768E"
+changed = "#FF9E64"
+volatile = "#7DCFFF"
+divider = "#33467C"
+gauge = "#292E42"
+gauge_label = "#C0CAF5"
+
+[styles]
+cursor = { fg = "#1A1B26", bg = "#7AA2F7", bold = true }
+broken_cursor = { fg = "#1A1B26", bg = "#F7768E", bold = true }
+selected = { fg = "#C0CAF5", bg = "#33467C" }
+broken_row = { fg = "#C0CAF5", bg = "#583443" }
+header = { fg = "#565F89", bold = true }
+broken_badge = { fg = "#1A1B26", bg = "#F7768E", bold = true }
+changed_badge = { fg = "#1A1B26", bg = "#FF9E64", bold = true }
+volatile_badge = { fg = "#1A1B26", bg = "#7DCFFF", bold = true }
+
+[borders]
+window = "rounded"
+popup = "plain"
+
+[help]
+heading = "#7AA2F7"
+literal = "#E0AF68"
+placeholder = "#C0CAF5"
+error = "#F7768E"
+valid = "#9ECE6A"
+invalid = "#FF9E64"

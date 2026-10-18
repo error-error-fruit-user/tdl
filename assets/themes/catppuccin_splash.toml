@@ -1,0 +1,45 @@
+# catppuccin: the splash in Catppuccin's colors: soothing pastels on Catppuccin Mocha: mauve, pink,
+# peach, sky and green. Comes with tdl: play it with `tdl --splash catppuccin`; it goes with
+# `--theme catppuccin`. The colors are Catppuccin (Mocha) by the Catppuccin org, MIT. Every field is
+# explained in SPLASH.md.
+
+edition = 1
+
+[logo]
+art = [
+    "████████╗██████╗ ██╗     ",
+    "╚══██╔══╝██╔══██╗██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██████╔╝███████╗",
+    "   ╚═╝   ╚═════╝ ╚══════╝",
+]
+colors = ["#F5C2E7", "#CBA6F7", "#B4BEFE", "#89B4FA", "#94E2D5"]
+shadow = "#313244"
+
+[tagline]
+text = "t e r m i n a l   d o o m   l a u n c h e r"
+narrow = "terminal doom launcher"
+color = "#CDD6F4"
+bold = true
+
+[hint]
+text = "press any key"
+colors = ["#6C7086", "#F5E0DC"]
+period = 1.6
+
+[quip]
+colors = ["#F5C2E7", "#F9E2AF"]
+period = 0.7
+bold = true
+
+[fire]
+# Each flame rises out of the background through the scheme's colors to white hot, taking turns.
+flames = [
+    ["#1E1E2E", "#6C5B88", "#CBA6F7", "#F5C2E7", "#F5E0DC"],
+    ["#1E1E2E", "#816156", "#FAB387", "#F9E2AF", "#F5E0DC"],
+    ["#1E1E2E", "#4E7483", "#89DCEB", "#94E2D5", "#F5E0DC"],
+]
+speed = 0.3
+reach = 80
+top = 45

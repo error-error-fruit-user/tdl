@@ -1,0 +1,52 @@
+# solarized: Solarized dark: precise teal-blue base tones with its yellow, orange, magenta and cyan.
+# Comes with tdl: wear it with `tdl --theme solarized`; it goes with `--splash solarized`. The
+# colors are Solarized (dark) by Ethan Schoonover, MIT. Every field is explained in THEME.md.
+
+edition = 2
+
+[colors]
+background = "#002B36"
+text = "#839496"
+muted = "#586E75"
+title = "#FDF6E3"
+key = "#B58900"
+screen = "#268BD2"
+multiplayer = "#2AA198"
+netplay = "#6C71C4"
+dialog = "#839496"
+warning = "#DC322F"
+legend = "#586E75"
+panel = "#073642"
+busy = "#268BD2"
+hashing = "#859900"
+unsealing = "#6C71C4"
+quip = "#CB4B16"
+good = "#859900"
+bad = "#DC322F"
+changed = "#CB4B16"
+volatile = "#6C71C4"
+divider = "#073642"
+gauge = "#073642"
+gauge_label = "#839496"
+
+[styles]
+cursor = { fg = "#002B36", bg = "#268BD2", bold = true }
+broken_cursor = { fg = "#002B36", bg = "#DC322F", bold = true }
+selected = { fg = "#839496", bg = "#073642" }
+broken_row = { fg = "#839496", bg = "#3E2D34" }
+header = { fg = "#586E75", bold = true }
+broken_badge = { fg = "#002B36", bg = "#DC322F", bold = true }
+changed_badge = { fg = "#002B36", bg = "#CB4B16", bold = true }
+volatile_badge = { fg = "#002B36", bg = "#6C71C4", bold = true }
+
+[borders]
+window = "plain"
+popup = "plain"
+
+[help]
+heading = "#268BD2"
+literal = "#B58900"
+placeholder = "#839496"
+error = "#DC322F"
+valid = "#859900"
+invalid = "#CB4B16"

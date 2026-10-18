@@ -542,8 +542,7 @@ impl SettingsForm {
 fn names<T: Dressing>(config_dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = T::BUNDLED
         .iter()
-        .filter(|&&name| name != "hellfire")
-        .map(|name| name.to_string())
+        .map(|(name, _)| name.to_string())
         .collect();
     let mut own: Vec<String> = std::fs::read_dir(config_dir)
         .into_iter()
@@ -730,17 +729,22 @@ mod tests {
         std::fs::write(altar.file("night_theme.toml"), "[colors]\ntext = \"white\"").unwrap();
         std::fs::write(altar.file("broken_theme.toml"), "[colors]\nnope = 1").unwrap();
         std::fs::write(altar.file("void_theme.toml"), "").unwrap();
-        assert_eq!(names::<Theme>(&altar.0), ["void", "night"]);
+        let themes = names::<Theme>(&altar.0);
+        assert_eq!(themes.first().map(String::as_str), Some("void"));
+        assert_eq!(themes.last().map(String::as_str), Some("night"));
+        assert_eq!(themes.len(), crate::theme::bundled::THEMES.len() + 1);
         assert!(names::<Pride>(&altar.0).is_empty());
 
         let mut form = SettingsForm::new(Settings::of(&Uac::default()), altar.0.clone());
         form.focus = SettingsForm::THEME;
         let mut seen = Vec::new();
-        for _ in 0..3 {
+        for _ in 0..=themes.len() {
             assert!(form.edit(KeyCode::Right) == Phase::Render);
             seen.push(form.settings.theme.clone());
         }
-        assert_eq!(seen, [Some("void".into()), Some("night".into()), None]);
+        assert_eq!(seen[0], Some("void".into()));
+        assert_eq!(seen[themes.len() - 1], Some("night".into()));
+        assert_eq!(seen[themes.len()], None, "round to the built-in one");
         assert!(form.edit(KeyCode::Char('k')) == Phase::Render);
         assert_eq!(form.settings.theme, Some("night".into()));
         // a file of the user's own anywhere else goes on to the built-in one

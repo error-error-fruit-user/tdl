@@ -34,8 +34,9 @@ pub trait Dressing: Serialize + DeserializeOwned + Default + PartialEq + Sized +
     /// What the file of one given by name ends in, in the standard config dir: `void` is
     /// `void` followed by this.
     const SUFFIX: &str;
-    /// The names of the ones that come with tdl, for [`Dressing::bundled`].
-    const BUNDLED: &[&str] = &[];
+    /// The ones that come with tdl but the built-in one, by name, with their text (see
+    /// [`crate::theme::bundled`]). With any, the built-in one is `hellfire`.
+    const BUNDLED: &[(&str, &str)] = &[];
     /// One function per breaking change. Entry `n` turns edition `n + 1` into edition `n + 2`. A
     /// file with no edition is edition 1.
     const UPGRADES: &[fn(&mut toml::Table)];
@@ -53,9 +54,25 @@ pub trait Dressing: Serialize + DeserializeOwned + Default + PartialEq + Sized +
     /// The file a new one starts as: its built-in values, explained.
     fn template() -> String;
 
+    /// The names of the ones that come with tdl: `hellfire` (the built-in one) and the rest.
+    fn bundled_names() -> Vec<&'static str> {
+        if Self::BUNDLED.is_empty() {
+            return Vec::new();
+        }
+        std::iter::once("hellfire")
+            .chain(Self::BUNDLED.iter().map(|(name, _)| *name))
+            .collect()
+    }
+
     /// The text of the one called `name` that comes with tdl, if there is one.
-    fn bundled(_name: &str) -> Option<String> {
-        None
+    fn bundled(name: &str) -> Option<String> {
+        if name == "hellfire" && !Self::BUNDLED.is_empty() {
+            return Some(Self::template());
+        }
+        Self::BUNDLED
+            .iter()
+            .find(|(bundled, _)| *bundled == name)
+            .map(|(_, text)| text.to_string())
     }
 
     /// It as written in `text`. `Err` says why it can't be worn, for the user.
@@ -118,7 +135,7 @@ pub trait Dressing: Serialize + DeserializeOwned + Default + PartialEq + Sized +
                  are {}",
                 Self::WHAT,
                 file.display(),
-                Self::BUNDLED.join(", ")
+                Self::bundled_names().join(", ")
             )),
         }
     }

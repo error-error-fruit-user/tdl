@@ -17,10 +17,20 @@ Change the file, and tdl wears the change from the next start (or pick it again 
 | --- | --- |
 | `hellfire` | The built-in theme: hot metal, old blood and toxic waste. |
 | `void` | The dark between the stars: violet and teal over near black, white titles, pink for what's broken, rounded borders and diamond marks. Goes with `--splash void`. |
+| `monokai` | Monokai: warm charcoal with Monokai's pink, green, orange, yellow, cyan and purple. |
+| `gruvbox` | Gruvbox (dark): retro groove: warm browns with yellow, orange, aqua and red. |
+| `noctis` | Noctis: deep sea green with cyan, teal, amber and coral. |
+| `dracula` | Dracula: night purple with pink, purple, cyan and green. |
+| `nord` | Nord: arctic polar night blues with frost and aurora. |
+| `catppuccin` | Catppuccin (Mocha): soothing pastels: mauve, pink, peach, sky and green. |
+| `tokyo-night` | Tokyo Night: deep navy with neon blue, purple, cyan and orange. |
+| `solarized` | Solarized (dark): teal-blue base tones with yellow, orange, magenta and cyan. |
+| `rose-pine` | Rosé Pine: pine, faux fur and soho vibes: iris, rose, gold and foam. |
+| `everforest` | Everforest (dark): a green forest at dusk: soft greens, aqua, yellow and red. |
 
 A kept name is kept as the name, so `--keep-theme void` wears void every time. A name tdl can't find stops it before it starts, and says which names it has.
 
-`void` is written out in [assets/void_theme.toml](assets/void_theme.toml), every field set: a good place to start a theme of your own.
+Every one has a splash of the same name to go with it (see [SPLASH.md](SPLASH.md)), and is written out in [assets/themes/](assets/themes/) as `<name>_theme.toml`, every field set: a good place to start a theme of your own. In the settings, `←`/`→` on the **theme** row go round them all. The color schemes are their authors' (see the README's [Credits](README.md#credits)).
 
 ## Writing one
 

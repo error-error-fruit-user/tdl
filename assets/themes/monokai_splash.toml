@@ -1,0 +1,44 @@
+# monokai: the splash in Monokai's colors: warm charcoal with Monokai's pink, green, orange, yellow,
+# cyan and purple. Comes with tdl: play it with `tdl --splash monokai`; it goes with `--theme
+# monokai`. The colors are the Monokai colors by Wimer Hazenberg. Every field is explained in
+# SPLASH.md.
+
+edition = 1
+
+[logo]
+art = [
+    "████████╗██████╗ ██╗     ",
+    "╚══██╔══╝██╔══██╗██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██████╔╝███████╗",
+    "   ╚═╝   ╚═════╝ ╚══════╝",
+]
+colors = ["#E6DB74", "#FD971F", "#F92672", "#AE81FF", "#66D9EF"]
+shadow = "#3E3D32"
+
+[tagline]
+text = "t e r m i n a l   d o o m   l a u n c h e r"
+narrow = "terminal doom launcher"
+color = "#F8F8F2"
+bold = true
+
+[hint]
+text = "press any key"
+colors = ["#75715E", "#F8F8F2"]
+period = 1.6
+
+[quip]
+colors = ["#A6E22E", "#E6DB74"]
+period = 0.7
+bold = true
+
+[fire]
+# Each flame rises out of the background through the scheme's colors to white hot, taking turns.
+flames = [
+    ["#272822", "#875A21", "#FD971F", "#E6DB74", "#F8F8F2"],
+    ["#272822", "#862746", "#F92672", "#AE81FF", "#F8F8F2"],
+]
+speed = 0.3
+reach = 80
+top = 45

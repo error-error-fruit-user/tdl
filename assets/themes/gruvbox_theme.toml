@@ -1,0 +1,52 @@
+# gruvbox: retro groove: warm browns with Gruvbox's yellow, orange, aqua and red. Comes with tdl:
+# wear it with `tdl --theme gruvbox`; it goes with `--splash gruvbox`. The colors are Gruvbox (dark)
+# by Pavel Pertsev, MIT. Every field is explained in THEME.md.
+
+edition = 2
+
+[colors]
+background = "#282828"
+text = "#EBDBB2"
+muted = "#928374"
+title = "#FBF1C7"
+key = "#FABD2F"
+screen = "#FE8019"
+multiplayer = "#8EC07C"
+netplay = "#83A598"
+dialog = "#EBDBB2"
+warning = "#FB4934"
+legend = "#928374"
+panel = "#504945"
+busy = "#FE8019"
+hashing = "#B8BB26"
+unsealing = "#83A598"
+quip = "#FABD2F"
+good = "#B8BB26"
+bad = "#FB4934"
+changed = "#FE8019"
+volatile = "#83A598"
+divider = "#504945"
+gauge = "#3C3836"
+gauge_label = "#EBDBB2"
+
+[styles]
+cursor = { fg = "#282828", bg = "#FE8019", bold = true }
+broken_cursor = { fg = "#282828", bg = "#FB4934", bold = true }
+selected = { fg = "#EBDBB2", bg = "#504945" }
+broken_row = { fg = "#EBDBB2", bg = "#63312B" }
+header = { fg = "#928374", bold = true }
+broken_badge = { fg = "#282828", bg = "#FB4934", bold = true }
+changed_badge = { fg = "#282828", bg = "#FE8019", bold = true }
+volatile_badge = { fg = "#282828", bg = "#83A598", bold = true }
+
+[borders]
+window = "thick"
+popup = "plain"
+
+[help]
+heading = "#FE8019"
+literal = "#FABD2F"
+placeholder = "#EBDBB2"
+error = "#FB4934"
+valid = "#B8BB26"
+invalid = "#FE8019"

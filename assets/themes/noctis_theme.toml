@@ -1,0 +1,52 @@
+# noctis: the deep sea green of Noctis, with its cyan, teal, amber and coral. Comes with tdl: wear
+# it with `tdl --theme noctis`; it goes with `--splash noctis`. The colors are Noctis by Liviu
+# Schera, MIT. Every field is explained in THEME.md.
+
+edition = 2
+
+[colors]
+background = "#052529"
+text = "#B2CACD"
+muted = "#5B858B"
+title = "#E5F4F5"
+key = "#E4B781"
+screen = "#16A3B6"
+multiplayer = "#49E9A6"
+netplay = "#49ACE9"
+dialog = "#B2CACD"
+warning = "#E66533"
+legend = "#5B858B"
+panel = "#0E4F57"
+busy = "#16A3B6"
+hashing = "#49E9A6"
+unsealing = "#49ACE9"
+quip = "#E4B781"
+good = "#49E9A6"
+bad = "#E66533"
+changed = "#E4B781"
+volatile = "#49ACE9"
+divider = "#0E4F57"
+gauge = "#073940"
+gauge_label = "#B2CACD"
+
+[styles]
+cursor = { fg = "#052529", bg = "#16A3B6", bold = true }
+broken_cursor = { fg = "#052529", bg = "#E66533", bold = true }
+selected = { fg = "#B2CACD", bg = "#0E4F57" }
+broken_row = { fg = "#B2CACD", bg = "#44372C" }
+header = { fg = "#5B858B", bold = true }
+broken_badge = { fg = "#052529", bg = "#E66533", bold = true }
+changed_badge = { fg = "#052529", bg = "#E4B781", bold = true }
+volatile_badge = { fg = "#052529", bg = "#49ACE9", bold = true }
+
+[borders]
+window = "rounded"
+popup = "plain"
+
+[help]
+heading = "#16A3B6"
+literal = "#E4B781"
+placeholder = "#B2CACD"
+error = "#E66533"
+valid = "#49E9A6"
+invalid = "#E4B781"

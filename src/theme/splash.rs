@@ -15,8 +15,6 @@ use super::{
 
 /// What a new `splash.toml` starts as: the built-in splash, explained.
 pub const TEMPLATE: &str = include_str!("../../assets/splash.toml");
-/// The `void` splash that comes with tdl.
-const VOID: &str = include_str!("../../assets/void_splash.toml");
 
 /// The fire of the PlayStation port of Doom, from cold to white hot.
 const PLAYSTATION: [(u8, u8, u8); 37] = [
@@ -251,20 +249,11 @@ impl Dressing for Splash {
     const WHAT: &str = "splash";
     const FILE: &str = "splash.toml";
     const SUFFIX: &str = "_splash.toml";
-    const BUNDLED: &[&str] = &["hellfire", "void"];
+    const BUNDLED: &[(&str, &str)] = super::bundled::SPLASHES;
     const UPGRADES: &[fn(&mut toml::Table)] = &[];
 
     fn template() -> String {
         TEMPLATE.to_string()
-    }
-
-    /// `hellfire` is the built-in splash, and `void` a white fire with violet and teal embers.
-    fn bundled(name: &str) -> Option<String> {
-        match name {
-            "hellfire" => Some(TEMPLATE.to_string()),
-            "void" => Some(VOID.to_string()),
-            _ => None,
-        }
     }
 
     fn check(&self) -> Result<(), String> {

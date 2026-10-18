@@ -85,7 +85,7 @@ With `--headless` and `--seal` there are no windows to ask in, so the plain flag
 - `--wads <dir>` (as many times as you like) says where your wads are: file pickers open there instead of the current directory, and joining looks there for wads you already have. tdl asks whether to keep the dirs for this **[S]ession** only, **[G]lobal**ly for every loadout, or for this **[L]oadout**. Kept dirs are used whenever tdl starts without `--wads`: the loadout's own first, then the global ones. `--keep-wads <dir>` keeps them for every loadout without asking, and `--keep-loadout-wads <dir>` for this loadout.
 - `--forget-wads` looks for wads only in the downloads this run, and asks whether to forget the wad dirs kept **[G]lobal**ly, for this **[L]oadout**, or **[B]oth**. `--keep-forget-wads` forgets them all without asking.
 - `--uzdoom <file>`, `--base-wad <file>` and `--ini <file>` play with that UZDoom, base wad or UZDoom ini for the run, over every profile's own and the global one (the launcher's panels mark them **session**), for trying another UZDoom build, IWAD or config quickly. tdl then asks whether to keep each as the global one, used by every profile without its own. `--keep-uzdoom`, `--keep-base-wad` and `--keep-ini` keep it without asking. A file that isn't there stops tdl before it starts.
-- `--theme <file>` wears the theme in that `theme.toml` (see [THEME.md](THEME.md)), from the first window on, or the one of that name (`--theme void`: your own `void_theme.toml` in the config dir, or one that comes with tdl: `hellfire`, the built-in one, and `void`, violet and teal over near black), and asks whether to keep wearing it; `--keep-theme <file>` keeps it without asking. A theme tdl can't wear stops it before it starts, and says what is wrong with it.
+- `--theme <file>` wears the theme in that `theme.toml` (see [THEME.md](THEME.md)), from the first window on, or the one of that name (`--theme void`: your own `void_theme.toml` in the config dir, or one that comes with tdl: `hellfire`, the built-in one; `void`, violet and teal over near black; and `monokai`, `gruvbox`, `noctis`, `dracula`, `nord`, `catppuccin`, `tokyo-night`, `solarized`, `rose-pine`, `everforest`), and asks whether to keep wearing it; `--keep-theme <file>` keeps it without asking. A theme tdl can't wear stops it before it starts, and says what is wrong with it.
 - `--splash <file>` plays the splash screen in the look of that `splash.toml` (see [SPLASH.md](SPLASH.md)), or of the one of that name (`--splash void`: a white fire with violet and teal embers), even if the **splash** setting skips it (`--no-splash` still wins), and asks whether to keep it; `--keep-splash <file>` keeps it without asking. One tdl can't wear stops it before it starts, and says what is wrong with it.
 - `--unseal <scroll>` imports a shared `.scroll` as soon as tdl starts, just like `I` in the launcher, looking for its wads in the wad dirs: `tdl --unseal shared.scroll --wads ~/wads`.
 - `--unseal-delete <scroll>` unseals a scroll in place of the loadout's profiles: every profile is deleted first, with its saved games and logs, and the scroll's go in. The downloaded wads stay, so nothing has to be downloaded again, and so do your global settings. It asks first; `--unseal-delete-force <scroll>` doesn't. Restoring a backup made with `--seal` is `tdl --unseal-delete-force backup.scroll`.
@@ -252,7 +252,7 @@ Every color, border and glyph tdl draws comes from its theme: the built-in one (
 - [THEME.md](THEME.md) explains every field of `theme.toml`.
 - [SPLASH.md](SPLASH.md) explains every field of `splash.toml` and `pride.toml`, and how the fire's flames work.
 
-Give either by name instead of a path: `tdl --keep-theme void --keep-splash void` wears the **void** theme and splash (white fire, violet and teal) that come with tdl from then on, and `hellfire` goes back to the built-in ones. A file of your own in the config dir named `<name>_theme.toml` or `<name>_splash.toml` gets a name too.
+Give either by name instead of a path: `tdl --keep-theme void --keep-splash void` wears the **void** theme and splash (white fire, violet and teal) that come with tdl from then on. tdl also comes with **monokai**, **gruvbox**, **noctis**, **dracula**, **nord**, **catppuccin**, **tokyo-night**, **solarized**, **rose-pine** and **everforest**, each a theme and a splash in that color scheme, and `hellfire` goes back to the built-in ones. A file of your own in the config dir named `<name>_theme.toml` or `<name>_splash.toml` gets a name too.
 
 ### Tuning the rest
 
@@ -261,7 +261,7 @@ The rest of the look lives in a few small files, so it can be changed without to
 | File | What's in it |
 | --- | --- |
 | `src/theme.rs` | The built-in theme: the palette (blood, hellfire, bone, nukage…), what each part of the interface is drawn with, border styles and the status glyphs |
-| `assets/void_theme.toml`, `assets/void_splash.toml` | The **void** theme and splash that come with tdl |
+| `assets/themes/` | The themes and splashes that come with tdl, by name (`<name>_theme.toml`, `<name>_splash.toml`) |
 | `assets/splash.toml`, `assets/pride.toml` | The built-in splash and pride, which **New** writes out (`src/theme/splash.rs` and `src/theme/pride.rs` hold the same values, and a test keeps them in step) |
 | `src/layout.rs` | The smallest terminal size, margins, padding, how far the launcher and editor grow into free space (`GROW_PERCENT`, `MAX_GROWN_WIDTH`), and how windows are centered and stacked |
 | `src/screens/splash.rs` | How the splash is laid out and animated |
@@ -277,6 +277,8 @@ The rest of the look lives in a few small files, so it can be changed without to
 It builds the release binary, records ten seconds of the splash screen into `demo.gif` (`demo.tape`, always with quip 17, so the demo is the same every time), then lays out the same example profiles the tests use and saves each screen the README shows to `docs/screenshots/` (`screenshots.tape`). It needs `vhs`, `ttyd` and `ffmpeg`. Both tapes run tdl on a throwaway loadout with its home in `/tmp`, so your profiles and settings are never read or written, and those dirs are removed afterwards.
 
 ## Credits
+
+- Color schemes of the themes and splashes that come with tdl: **monokai** from Monokai by Wimer Hazenberg; **gruvbox** from Gruvbox (dark) by Pavel Pertsev, MIT; **noctis** from Noctis by Liviu Schera, MIT; **dracula** from Dracula by Zeno Rocha, MIT; **nord** from Nord by Arctic Ice Studio, MIT; **catppuccin** from Catppuccin (Mocha) by the Catppuccin org, MIT; **tokyo-night** from Tokyo Night by enkia, MIT; **solarized** from Solarized (dark) by Ethan Schoonover, MIT; **rose-pine** from Rosé Pine by the Rosé Pine org, MIT; **everforest** from Everforest (dark) by sainnhe, MIT
 
 - Music: "Inevitable Doom" by celestialghost8 (CC0), played on the splash screen (and in the launcher with `--keep-music` or the **music** setting)
 

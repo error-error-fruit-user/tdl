@@ -1,0 +1,43 @@
+# dracula: the splash in Dracula's colors: Dracula's night purple, with its pink, purple, cyan and
+# green. Comes with tdl: play it with `tdl --splash dracula`; it goes with `--theme dracula`. The
+# colors are Dracula by Zeno Rocha, MIT. Every field is explained in SPLASH.md.
+
+edition = 1
+
+[logo]
+art = [
+    "████████╗██████╗ ██╗     ",
+    "╚══██╔══╝██╔══██╗██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██████╔╝███████╗",
+    "   ╚═╝   ╚═════╝ ╚══════╝",
+]
+colors = ["#FF79C6", "#BD93F9", "#8BE9FD", "#50FA7B", "#F1FA8C"]
+shadow = "#44475A"
+
+[tagline]
+text = "t e r m i n a l   d o o m   l a u n c h e r"
+narrow = "terminal doom launcher"
+color = "#F8F8F2"
+bold = true
+
+[hint]
+text = "press any key"
+colors = ["#6272A4", "#FFFFFF"]
+period = 1.6
+
+[quip]
+colors = ["#FF79C6", "#F1FA8C"]
+period = 0.7
+bold = true
+
+[fire]
+# Each flame rises out of the background through the scheme's colors to white hot, taking turns.
+flames = [
+    ["#282A36", "#6B598E", "#BD93F9", "#FF79C6", "#FFFFFF"],
+    ["#282A36", "#558090", "#8BE9FD", "#50FA7B", "#FFFFFF"],
+]
+speed = 0.3
+reach = 80
+top = 45

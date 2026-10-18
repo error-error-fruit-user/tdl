@@ -1,0 +1,43 @@
+# gruvbox: the splash in Gruvbox's colors: retro groove: warm browns with Gruvbox's yellow, orange,
+# aqua and red. Comes with tdl: play it with `tdl --splash gruvbox`; it goes with `--theme gruvbox`.
+# The colors are Gruvbox (dark) by Pavel Pertsev, MIT. Every field is explained in SPLASH.md.
+
+edition = 1
+
+[logo]
+art = [
+    "████████╗██████╗ ██╗     ",
+    "╚══██╔══╝██╔══██╗██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██████╔╝███████╗",
+    "   ╚═╝   ╚═════╝ ╚══════╝",
+]
+colors = ["#FABD2F", "#FE8019", "#FB4934", "#D3869B", "#83A598"]
+shadow = "#3C3836"
+
+[tagline]
+text = "t e r m i n a l   d o o m   l a u n c h e r"
+narrow = "terminal doom launcher"
+color = "#EBDBB2"
+bold = true
+
+[hint]
+text = "press any key"
+colors = ["#928374", "#FBF1C7"]
+period = 1.6
+
+[quip]
+colors = ["#FE8019", "#FABD2F"]
+period = 0.7
+bold = true
+
+[fire]
+# Each flame rises out of the background through the scheme's colors to white hot, taking turns.
+flames = [
+    ["#282828", "#87372D", "#FB4934", "#FE8019", "#FABD2F", "#FBF1C7"],
+    ["#282828", "#566C4E", "#8EC07C", "#B8BB26", "#FBF1C7"],
+]
+speed = 0.25
+reach = 80
+top = 45

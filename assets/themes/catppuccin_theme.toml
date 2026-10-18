@@ -1,0 +1,52 @@
+# catppuccin: soothing pastels on Catppuccin Mocha: mauve, pink, peach, sky and green. Comes with
+# tdl: wear it with `tdl --theme catppuccin`; it goes with `--splash catppuccin`. The colors are
+# Catppuccin (Mocha) by the Catppuccin org, MIT. Every field is explained in THEME.md.
+
+edition = 2
+
+[colors]
+background = "#1E1E2E"
+text = "#CDD6F4"
+muted = "#6C7086"
+title = "#F5E0DC"
+key = "#F9E2AF"
+screen = "#CBA6F7"
+multiplayer = "#89DCEB"
+netplay = "#89B4FA"
+dialog = "#CDD6F4"
+warning = "#F38BA8"
+legend = "#6C7086"
+panel = "#45475A"
+busy = "#CBA6F7"
+hashing = "#A6E3A1"
+unsealing = "#89B4FA"
+quip = "#F9E2AF"
+good = "#A6E3A1"
+bad = "#F38BA8"
+changed = "#FAB387"
+volatile = "#89B4FA"
+divider = "#45475A"
+gauge = "#313244"
+gauge_label = "#CDD6F4"
+
+[styles]
+cursor = { fg = "#1E1E2E", bg = "#CBA6F7", bold = true }
+broken_cursor = { fg = "#1E1E2E", bg = "#F38BA8", bold = true }
+selected = { fg = "#CDD6F4", bg = "#45475A" }
+broken_row = { fg = "#CDD6F4", bg = "#5A3D50" }
+header = { fg = "#6C7086", bold = true }
+broken_badge = { fg = "#1E1E2E", bg = "#F38BA8", bold = true }
+changed_badge = { fg = "#1E1E2E", bg = "#FAB387", bold = true }
+volatile_badge = { fg = "#1E1E2E", bg = "#89B4FA", bold = true }
+
+[borders]
+window = "rounded"
+popup = "plain"
+
+[help]
+heading = "#CBA6F7"
+literal = "#F9E2AF"
+placeholder = "#CDD6F4"
+error = "#F38BA8"
+valid = "#A6E3A1"
+invalid = "#FAB387"

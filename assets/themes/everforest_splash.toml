@@ -1,0 +1,44 @@
+# everforest: the splash in Everforest's colors: a green forest at dusk: Everforest's soft greens,
+# aqua, yellow and red. Comes with tdl: play it with `tdl --splash everforest`; it goes with
+# `--theme everforest`. The colors are Everforest (dark) by sainnhe, MIT. Every field is explained
+# in SPLASH.md.
+
+edition = 1
+
+[logo]
+art = [
+    "████████╗██████╗ ██╗     ",
+    "╚══██╔══╝██╔══██╗██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██████╔╝███████╗",
+    "   ╚═╝   ╚═════╝ ╚══════╝",
+]
+colors = ["#DBBC7F", "#A7C080", "#83C092", "#7FBBB3", "#D699B6"]
+shadow = "#343F44"
+
+[tagline]
+text = "t e r m i n a l   d o o m   l a u n c h e r"
+narrow = "terminal doom launcher"
+color = "#D3C6AA"
+bold = true
+
+[hint]
+text = "press any key"
+colors = ["#859289", "#FDF6E3"]
+period = 1.6
+
+[quip]
+colors = ["#A7C080", "#DBBC7F"]
+period = 0.7
+bold = true
+
+[fire]
+# Each flame rises out of the background through the scheme's colors to white hot, taking turns.
+flames = [
+    ["#2D353B", "#64745A", "#A7C080", "#DBBC7F", "#FDF6E3"],
+    ["#2D353B", "#806255", "#E69875", "#E67E80", "#FDF6E3"],
+]
+speed = 0.2
+reach = 80
+top = 45

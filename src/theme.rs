@@ -6,6 +6,7 @@
 //! splash screen dresses up apart, in [`splash`] (`splash.toml`) and [`pride`] (`pride.toml`).
 //! Every field of all three is explained in `THEME.md` and `SPLASH.md`.
 
+pub mod bundled;
 pub mod dressing;
 pub mod pride;
 pub mod splash;
@@ -43,9 +44,6 @@ pub const IRON: Color = Color::Rgb(70, 60, 58);
 pub const NUKAGE: Color = Color::Rgb(124, 200, 46);
 /// The blue of a soul sphere.
 pub const SOUL: Color = Color::Rgb(96, 156, 255);
-/// The `void` theme that comes with tdl.
-const VOID_THEME: &str = include_str!("../assets/void_theme.toml");
-
 /// The file a new theme is written to, in the standard config dir, from the settings.
 pub const FILE: &str = "theme.toml";
 
@@ -263,22 +261,13 @@ impl Dressing for Theme {
     const WHAT: &str = "theme";
     const FILE: &str = FILE;
     const SUFFIX: &str = "_theme.toml";
-    const BUNDLED: &[&str] = &["hellfire", "void"];
+    const BUNDLED: &[(&str, &str)] = bundled::THEMES;
     /// Edition 1 is the theme of tdl 1.0.0, which also dressed up the splash screen.
     const UPGRADES: &[fn(&mut toml::Table)] = &[v1_to_v2];
 
     fn template() -> String {
         let body = toml::to_string(&Self::default()).expect("a theme is always plain TOML");
         format!("{HEADER}{}\n{body}", dressing::edition_line::<Self>())
-    }
-
-    /// `hellfire` is the built-in theme, and `void` violet and teal over near black.
-    fn bundled(name: &str) -> Option<String> {
-        match name {
-            "hellfire" => Some(Self::template()),
-            "void" => Some(VOID_THEME.to_string()),
-            _ => None,
-        }
     }
 }
 
@@ -466,7 +455,7 @@ mod tests {
         fs::write(altar.file("mine_theme.toml"), "").unwrap();
         assert_eq!(Theme::load("mine".as_ref(), &altar.0), Ok(Theme::default()));
         let missing = Theme::load("nope".as_ref(), &altar.0).unwrap_err();
-        assert!(missing.contains("hellfire, void"), "{missing}");
+        assert!(missing.contains("hellfire, void, monokai"), "{missing}");
         // and a path is a path
         let path = altar.file("mine_theme.toml");
         assert_eq!(

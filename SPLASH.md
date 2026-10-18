@@ -17,8 +17,18 @@ Change the file, and the change shows from the next start. A file tdl can't wear
 | --- | --- |
 | `hellfire` | The built-in splash: the TDL logo cooling from flame to blood over the fire of the PlayStation port of Doom. |
 | `void` | A white fire burning in the dark, its embers turning slowly from violet to teal and back, under the logo going from white through violet to teal. Goes with `--theme void`. |
+| `monokai` | Monokai's colors: a fire whose flames take turns in its signature colors, rising to white hot, under the logo in its stripes. |
+| `gruvbox` | Gruvbox (dark)'s colors: a fire whose flames take turns in its signature colors, rising to white hot, under the logo in its stripes. |
+| `noctis` | Noctis's colors: a fire whose flames take turns in its signature colors, rising to white hot, under the logo in its stripes. |
+| `dracula` | Dracula's colors: a fire whose flames take turns in its signature colors, rising to white hot, under the logo in its stripes. |
+| `nord` | Nord's colors: a fire whose flames take turns in its signature colors, rising to white hot, under the logo in its stripes. |
+| `catppuccin` | Catppuccin (Mocha)'s colors: a fire whose flames take turns in its signature colors, rising to white hot, under the logo in its stripes. |
+| `tokyo-night` | Tokyo Night's colors: a fire whose flames take turns in its signature colors, rising to white hot, under the logo in its stripes. |
+| `solarized` | Solarized (dark)'s colors: a fire whose flames take turns in its signature colors, rising to white hot, under the logo in its stripes. |
+| `rose-pine` | Rosé Pine's colors: a fire whose flames take turns in its signature colors, rising to white hot, under the logo in its stripes. |
+| `everforest` | Everforest (dark)'s colors: a fire whose flames take turns in its signature colors, rising to white hot, under the logo in its stripes. |
 
-A kept name is kept as the name. A name tdl can't find stops it before it starts, and says which names it has. `void` is written out in [assets/void_splash.toml](assets/void_splash.toml), every field set.
+A kept name is kept as the name. A name tdl can't find stops it before it starts, and says which names it has. Each goes with the theme of the same name, and is written out in [assets/themes/](assets/themes/) as `<name>_splash.toml`, every field set. In the settings, `←`/`→` on the **splash look** row go round them all.
 
 Both files only need what they change: anything left out is the built-in one's, and an empty file is the built-in one. A color is written as in a theme: `"#rrggbb"`, a terminal color's name (`"red"`, `"lightmagenta"`, `"darkgray"`…), a palette number (`"0"` to `"255"`), or `"reset"` for the terminal's own.
 

@@ -1,0 +1,52 @@
+# monokai: warm charcoal with Monokai's pink, green, orange, yellow, cyan and purple. Comes with
+# tdl: wear it with `tdl --theme monokai`; it goes with `--splash monokai`. The colors are the
+# Monokai colors by Wimer Hazenberg. Every field is explained in THEME.md.
+
+edition = 2
+
+[colors]
+background = "#272822"
+text = "#F8F8F2"
+muted = "#75715E"
+title = "#F8F8F2"
+key = "#E6DB74"
+screen = "#F92672"
+multiplayer = "#66D9EF"
+netplay = "#AE81FF"
+dialog = "#F8F8F2"
+warning = "#F92672"
+legend = "#75715E"
+panel = "#49483E"
+busy = "#F92672"
+hashing = "#A6E22E"
+unsealing = "#AE81FF"
+quip = "#E6DB74"
+good = "#A6E22E"
+bad = "#F92672"
+changed = "#FD971F"
+volatile = "#AE81FF"
+divider = "#49483E"
+gauge = "#3E3D32"
+gauge_label = "#F8F8F2"
+
+[styles]
+cursor = { fg = "#272822", bg = "#F92672", bold = true }
+broken_cursor = { fg = "#272822", bg = "#F92672", bold = true }
+selected = { fg = "#F8F8F2", bg = "#49483E" }
+broken_row = { fg = "#F8F8F2", bg = "#622738" }
+header = { fg = "#75715E", bold = true }
+broken_badge = { fg = "#272822", bg = "#F92672", bold = true }
+changed_badge = { fg = "#272822", bg = "#FD971F", bold = true }
+volatile_badge = { fg = "#272822", bg = "#AE81FF", bold = true }
+
+[borders]
+window = "thick"
+popup = "plain"
+
+[help]
+heading = "#F92672"
+literal = "#E6DB74"
+placeholder = "#F8F8F2"
+error = "#F92672"
+valid = "#A6E22E"
+invalid = "#FD971F"

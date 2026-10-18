@@ -1,0 +1,52 @@
+# dracula: Dracula's night purple, with its pink, purple, cyan and green. Comes with tdl: wear it
+# with `tdl --theme dracula`; it goes with `--splash dracula`. The colors are Dracula by Zeno Rocha,
+# MIT. Every field is explained in THEME.md.
+
+edition = 2
+
+[colors]
+background = "#282A36"
+text = "#F8F8F2"
+muted = "#6272A4"
+title = "#FFFFFF"
+key = "#FF79C6"
+screen = "#BD93F9"
+multiplayer = "#8BE9FD"
+netplay = "#8BE9FD"
+dialog = "#F8F8F2"
+warning = "#FF5555"
+legend = "#6272A4"
+panel = "#44475A"
+busy = "#BD93F9"
+hashing = "#50FA7B"
+unsealing = "#8BE9FD"
+quip = "#F1FA8C"
+good = "#50FA7B"
+bad = "#FF5555"
+changed = "#FFB86C"
+volatile = "#8BE9FD"
+divider = "#44475A"
+gauge = "#44475A"
+gauge_label = "#F8F8F2"
+
+[styles]
+cursor = { fg = "#282A36", bg = "#BD93F9", bold = true }
+broken_cursor = { fg = "#282A36", bg = "#FF5555", bold = true }
+selected = { fg = "#F8F8F2", bg = "#44475A" }
+broken_row = { fg = "#F8F8F2", bg = "#64363F" }
+header = { fg = "#6272A4", bold = true }
+broken_badge = { fg = "#282A36", bg = "#FF5555", bold = true }
+changed_badge = { fg = "#282A36", bg = "#FFB86C", bold = true }
+volatile_badge = { fg = "#282A36", bg = "#8BE9FD", bold = true }
+
+[borders]
+window = "rounded"
+popup = "plain"
+
+[help]
+heading = "#BD93F9"
+literal = "#FF79C6"
+placeholder = "#F8F8F2"
+error = "#FF5555"
+valid = "#50FA7B"
+invalid = "#FFB86C"
