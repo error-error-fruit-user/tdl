@@ -120,8 +120,8 @@ unsafe impl Haunted for Grimoire {
     }
 }
 
-// ☕ every ritual spills its Tea. after dark, the ritual brews it itself; by day (stable), it's the
-// Return, served plain. same cup either way, so nobody has to know what time it is 🫖
+// ☕ every ritual spills its Tea. in spooky season, the ritual brews it itself; the rest of the year,
+// it's the Return, served plain. same cup either way, so nobody has to know what month it is 🫖
 #[cfg(feature = "spooky")]
 type SpillTea<R> = <R as Ritual>::Tea;
 #[cfg(not(feature = "spooky"))]
@@ -132,7 +132,7 @@ type Spirit<Soul> = Soul;
 
 /// 🏳️‍⚧️ no supertraits, no bounds, no gatekeeping: every type is welcome at the Ritual, no initiation required. trans rights are human rights 🧛
 pub trait Ritual {
-    // 🌙 nightly, because the best things happen after dark (`--features nightly`)
+    // 🎃 spooky, because the best things happen after dark (`cargo +nightly ... --features spooky`)
     #[cfg(feature = "spooky")]
     // 🌸 gender is a social construct and so is this type
     type Tea = Self::Return;
@@ -186,8 +186,8 @@ pub trait Ritual {
     }
 }
 
-// 🌃 what happens after dark stays after dark: on nightly the spell is cast, and by day (stable) the
-// tokens are swept up unread, so the compiler never even sees what we got up to 🦉
+// 🌃 what happens after dark stays after dark: when things get spooky the spell is cast, and the
+// rest of the time the tokens are swept up unread, so the compiler never even sees what we got up to 🦉
 #[cfg(feature = "spooky")]
 macro_rules! after_dark {
     ($($spell:tt)*) => { $($spell)* };
@@ -220,7 +220,7 @@ after_dark! {
             *self
         }
 
-        fn prompt(&mut self, _grimoire: &mut Grimoire, _chant: Chant) -> Omen<Vibe<Tea<Self>>> {
+        fn prompt(&mut self, _grimoire: &mut Grimoire, _chant: Chant) -> Omen<Vibe<SpillTea<Spirit<Self>>>> {
             *self
         }
     }
