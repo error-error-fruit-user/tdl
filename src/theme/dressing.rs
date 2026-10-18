@@ -4,8 +4,8 @@
 //! instead of misreading it. Each is worn for the whole run, swapped only by hand (see
 //! [`Wardrobe`]).
 //!
-//! One can be given by path, or by name (see [`Dressing::load`]): `void` is the user's own
-//! `void_theme.toml` in the standard config dir if there is one, else the one that comes with tdl.
+//! One can be given by path, or by name (see [`Dressing::load`]): `voidless` is the user's own
+//! `voidless_theme.toml` in the standard config dir if there is one, else the one that comes with tdl.
 //!
 //! # Making a breaking change
 //! Adding a field with a default is not breaking. Renaming, retyping or removing one is: write a
@@ -31,8 +31,8 @@ pub trait Dressing: Serialize + DeserializeOwned + Default + PartialEq + Sized +
     const WHAT: &str;
     /// The file a new one is written to, in the standard config dir.
     const FILE: &str;
-    /// What the file of one given by name ends in, in the standard config dir: `void` is
-    /// `void` followed by this.
+    /// What the file of one given by name ends in, in the standard config dir: `voidless` is
+    /// `voidless` followed by this.
     const SUFFIX: &str;
     /// The ones that come with tdl but the built-in one, by name, with their text (see
     /// [`crate::theme::bundled`]). With any, the built-in one is `hellfire`.
@@ -154,7 +154,7 @@ pub trait Dressing: Serialize + DeserializeOwned + Default + PartialEq + Sized +
 }
 
 /// Whether `given` is a name rather than a path: letters, digits, `-` and `_`, up to 64 of them. A
-/// file in the working dir whose name looks like one is given as `./void`.
+/// file in the working dir whose name looks like one is given as `./voidless`.
 pub fn is_name(given: &str) -> bool {
     !given.is_empty()
         && given.len() <= 64
@@ -299,14 +299,14 @@ mod tests {
 
     #[test]
     fn a_name_is_letters_digits_dashes_and_underscores() {
-        for name in ["void", "my-theme", "Night_2"] {
+        for name in ["voidless", "my-theme", "Night_2"] {
             assert!(is_name(name), "{name}");
         }
         for path in [
             "",
-            "void.toml",
-            "./void",
-            "/themes/void",
+            "voidless.toml",
+            "./voidless",
+            "/themes/voidless",
             "a b",
             &"x".repeat(65),
         ] {

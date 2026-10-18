@@ -1,6 +1,6 @@
-# void: tdl's theme of the dark between the stars, in violet and teal over near black, with
-# white for what matters. Comes with tdl: wear it with `tdl --theme void`. Every field is
-# explained in THEME.md; it goes with `--splash void`.
+# voidless: tdl's theme of the dark between the stars, in violet and teal over near black, with
+# white for what matters. Comes with tdl: wear it with `tdl --theme voidless`. Every field is
+# explained in THEME.md; it goes with `--splash voidless`.
 
 edition = 2
 

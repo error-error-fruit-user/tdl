@@ -728,9 +728,9 @@ mod tests {
         let altar = crate::loadout::scribe::tests::Altar::new("settings-names");
         std::fs::write(altar.file("night_theme.toml"), "[colors]\ntext = \"white\"").unwrap();
         std::fs::write(altar.file("broken_theme.toml"), "[colors]\nnope = 1").unwrap();
-        std::fs::write(altar.file("void_theme.toml"), "").unwrap();
+        std::fs::write(altar.file("voidless_theme.toml"), "").unwrap();
         let themes = names::<Theme>(&altar.0);
-        assert_eq!(themes.first().map(String::as_str), Some("void"));
+        assert_eq!(themes.first().map(String::as_str), Some("voidless"));
         assert_eq!(themes.last().map(String::as_str), Some("night"));
         assert_eq!(themes.len(), crate::theme::bundled::THEMES.len() + 1);
         assert!(names::<Pride>(&altar.0).is_empty());
@@ -742,7 +742,7 @@ mod tests {
             assert!(form.edit(KeyCode::Right) == Phase::Render);
             seen.push(form.settings.theme.clone());
         }
-        assert_eq!(seen[0], Some("void".into()));
+        assert_eq!(seen[0], Some("voidless".into()));
         assert_eq!(seen[themes.len() - 1], Some("night".into()));
         assert_eq!(seen[themes.len()], None, "round to the built-in one");
         assert!(form.edit(KeyCode::Char('k')) == Phase::Render);
@@ -754,7 +754,7 @@ mod tests {
         // the splash goes round its own, and pride has none to go round
         form.focus = SettingsForm::SPLASH_LOOK;
         assert!(form.edit(KeyCode::Char('j')) == Phase::Render);
-        assert_eq!(form.settings.splash_look, Some("void".into()));
+        assert_eq!(form.settings.splash_look, Some("voidless".into()));
         form.focus = SettingsForm::PRIDE_FLAGS;
         assert!(form.edit(KeyCode::Right) == Phase::Prompt);
         assert_eq!(form.settings.pride_flags, None);

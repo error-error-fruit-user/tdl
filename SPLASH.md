@@ -4,19 +4,19 @@ The splash screen (the logo over the Doom fire, with a quip, a tagline and "pres
 
 ## Wearing one
 
-- **In the settings** (`O` in the launcher): the **splash look** row for `splash.toml`, and **pride flags** for `pride.toml`. `J`/`K` or `←`/`→` go round the built-in one and every one with a [name](#by-name): the ones that come with tdl (the `void` splash) and your own `<name>_splash.toml` or `<name>_pride.toml` files in the standard config dir that can be worn. `Enter` asks for **[B]uilt-in**, **[N]ew** or **[S]elect**. **New** writes the built-in one out to `splash.toml` or `pride.toml` in the standard config dir (`~/.config/tdl/` on Linux), every field explained in comments, for you to change; a file already there is kept as it is. **Select** picks any `.toml` file. `Backspace` goes back to the built-in one. The path is kept in `uac.rite`, and the change shows the next time the splash plays.
+- **In the settings** (`O` in the launcher): the **splash look** row for `splash.toml`, and **pride flags** for `pride.toml`. `J`/`K` or `←`/`→` go round the built-in one and every one with a [name](#by-name): the ones that come with tdl (the `voidless` splash) and your own `<name>_splash.toml` or `<name>_pride.toml` files in the standard config dir that can be worn. `Enter` asks for **[B]uilt-in**, **[N]ew** or **[S]elect**. **New** writes the built-in one out to `splash.toml` or `pride.toml` in the standard config dir (`~/.config/tdl/` on Linux), every field explained in comments, for you to change; a file already there is kept as it is. **Select** picks any `.toml` file. `Backspace` goes back to the built-in one. The path is kept in `uac.rite`, and the change shows the next time the splash plays.
 - **For one run**: `tdl --splash my.toml` (or a name, below) plays the splash in that look (even if the **splash** setting skips it; `--no-splash` still wins) and asks whether to keep it; `--keep-splash my.toml` keeps it without asking, and with `--session` nothing is asked or kept (see the README's [Keeping what you pass](README.md#keeping-what-you-pass)).
 
 Change the file, and the change shows from the next start. A file tdl can't wear (a misspelled name, a color it doesn't know, a fire with no flames, a file from a newer tdl) is said at startup with what is wrong, and the built-in one is worn instead; `--splash` with such a file stops tdl before it starts.
 
 ### By name
 
-`--splash` and `--keep-splash` take a name as well as a path: `tdl --splash void`. A name is letters, digits, `-` and `_` (so `void.toml` or `./void` is a path). tdl looks for `<name>_splash.toml` in the standard config dir first, so a splash of your own saved as `~/.config/tdl/ember_splash.toml` is `--splash ember`; if there is none, it is one of the splashes that come with tdl:
+`--splash` and `--keep-splash` take a name as well as a path: `tdl --splash voidless`. A name is letters, digits, `-` and `_` (so `voidless.toml` or `./voidless` is a path). tdl looks for `<name>_splash.toml` in the standard config dir first, so a splash of your own saved as `~/.config/tdl/ember_splash.toml` is `--splash ember`; if there is none, it is one of the splashes that come with tdl:
 
 | Name | What it is |
 | --- | --- |
 | `hellfire` | The built-in splash: the TDL logo cooling from flame to blood over the fire of the PlayStation port of Doom. |
-| `void` | A white fire burning in the dark, its embers turning slowly from violet to teal and back, under the logo going from white through violet to teal. Goes with `--theme void`. |
+| `voidless` | A white fire burning in the dark, its embers turning slowly from violet to teal and back, under the logo going from white through violet to teal. Goes with `--theme voidless`. |
 | `monokai` | Monokai's colors: a fire whose flames take turns in its signature colors, rising to white hot, under the logo in its stripes. |
 | `gruvbox` | Gruvbox (dark)'s colors: a fire whose flames take turns in its signature colors, rising to white hot, under the logo in its stripes. |
 | `noctis` | Noctis's colors: a fire whose flames take turns in its signature colors, rising to white hot, under the logo in its stripes. |

@@ -65,7 +65,7 @@ fn main() {
     let uzdoom = session_file("--uzdoom", cli.uzdoom);
     let base_wad = session_file("--base-wad", cli.base_wad);
     let ini = session_file("--ini", cli.ini);
-    // 👗 a theme or a splash may be a name instead (`--theme void`), found in the standard config
+    // 👗 a theme or a splash may be a name instead (`--theme voidless`), found in the standard config
     // dir or among the ones that come with tdl, and must be one that can be worn, from the very
     // first window
     let config_dir = Launcher::standard_config_dir().unwrap_or_default();

@@ -1,6 +1,6 @@
-# void: tdl's splash of a white fire burning in the dark between the stars, its embers going from
-# violet to teal and back. Comes with tdl: play it with `tdl --splash void`. Every field is
-# explained in SPLASH.md; it goes with `--theme void`.
+# voidless: tdl's splash of a white fire burning in the dark between the stars, its embers going from
+# violet to teal and back. Comes with tdl: play it with `tdl --splash voidless`. Every field is
+# explained in SPLASH.md; it goes with `--theme voidless`.
 
 edition = 1
 

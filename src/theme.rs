@@ -441,21 +441,25 @@ mod tests {
     #[test]
     fn a_theme_is_found_by_name_the_users_own_first() {
         let altar = crate::loadout::scribe::tests::Altar::new("theme-names");
-        let void = Theme::load("void".as_ref(), &altar.0).unwrap();
-        assert_eq!(void.colors.screen, Color::Rgb(0x8B, 0x5C, 0xF6));
+        let voidless = Theme::load("voidless".as_ref(), &altar.0).unwrap();
+        assert_eq!(voidless.colors.screen, Color::Rgb(0x8B, 0x5C, 0xF6));
         assert_eq!(
             Theme::load("hellfire".as_ref(), &altar.0),
             Ok(Theme::default())
         );
-        // the user's own void_theme.toml wins over the one that comes with tdl
-        fs::write(altar.file("void_theme.toml"), "[colors]\ntext = \"white\"").unwrap();
-        let mine = Theme::load("void".as_ref(), &altar.0).unwrap();
+        // the user's own voidless_theme.toml wins over the one that comes with tdl
+        fs::write(
+            altar.file("voidless_theme.toml"),
+            "[colors]\ntext = \"white\"",
+        )
+        .unwrap();
+        let mine = Theme::load("voidless".as_ref(), &altar.0).unwrap();
         assert_eq!(mine.colors.text, Color::White);
         assert_eq!(mine.colors.screen, Colors::default().screen);
         fs::write(altar.file("mine_theme.toml"), "").unwrap();
         assert_eq!(Theme::load("mine".as_ref(), &altar.0), Ok(Theme::default()));
         let missing = Theme::load("nope".as_ref(), &altar.0).unwrap_err();
-        assert!(missing.contains("hellfire, void, monokai"), "{missing}");
+        assert!(missing.contains("hellfire, voidless, monokai"), "{missing}");
         // and a path is a path
         let path = altar.file("mine_theme.toml");
         assert_eq!(

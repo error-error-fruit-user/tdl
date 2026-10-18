@@ -4,7 +4,10 @@
 
 /// Every theme that comes with tdl but the built-in one, by name.
 pub const THEMES: &[(&str, &str)] = &[
-    ("void", include_str!("../../assets/themes/void_theme.toml")),
+    (
+        "voidless",
+        include_str!("../../assets/themes/voidless_theme.toml"),
+    ),
     (
         "monokai",
         include_str!("../../assets/themes/monokai_theme.toml"),
@@ -46,7 +49,10 @@ pub const THEMES: &[(&str, &str)] = &[
 
 /// Every splash that comes with tdl but the built-in one, by name.
 pub const SPLASHES: &[(&str, &str)] = &[
-    ("void", include_str!("../../assets/themes/void_splash.toml")),
+    (
+        "voidless",
+        include_str!("../../assets/themes/voidless_splash.toml"),
+    ),
     (
         "monokai",
         include_str!("../../assets/themes/monokai_splash.toml"),

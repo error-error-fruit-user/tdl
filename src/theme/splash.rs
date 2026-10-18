@@ -348,11 +348,11 @@ mod tests {
     }
 
     #[test]
-    fn the_void_splash_burns_white_with_violet_and_teal() {
-        let altar = crate::loadout::scribe::tests::Altar::new("splash-void");
-        let void = Splash::load("void".as_ref(), &altar.0).unwrap();
-        assert_eq!(void.fire.flames.len(), 2);
-        for flame in &void.fire.flames {
+    fn the_voidless_splash_burns_white_with_violet_and_teal() {
+        let altar = crate::loadout::scribe::tests::Altar::new("splash-voidless");
+        let voidless = Splash::load("voidless".as_ref(), &altar.0).unwrap();
+        assert_eq!(voidless.fire.flames.len(), 2);
+        for flame in &voidless.fire.flames {
             let Flame::Shades(shades) = flame else {
                 panic!("a shaded flame")
             };
