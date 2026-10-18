@@ -35,13 +35,15 @@ const BORDER_COLOR: Color = Color::LightMagenta;
 
 /// Fetches the host's manifest and picks a profile to join with: the only compatible one, a choice
 /// among several, or a new profile downloaded from the host when none match. With
-/// `always_download`, the wads that aren't installed are downloaded without asking first.
+/// `always_download`, the wads that aren't installed are downloaded without asking first. With
+/// `host_ini`, the game is played with the host's ini, if it shares it (see [`net::ini`]).
 pub fn summon(
     grimoire: &mut Grimoire,
     vault: &mut Vault,
     index: &mut usize,
     address: &Address,
     always_download: bool,
+    host_ini: bool,
 ) -> Result<()> {
     status::summon(grimoire, "Joining", "Joining...", BORDER_COLOR)?;
     let manifest = match Manifest::fetch(address) {
@@ -62,6 +64,27 @@ pub fn summon(
     };
     let Some(uzdoom) = profile.uzdoom(&vault.global) else {
         return Warning::uzdoom_not_selected(grimoire);
+    };
+    let profile = if host_ini {
+        status::summon(
+            grimoire,
+            "Joining",
+            "Getting the host's ini...",
+            BORDER_COLOR,
+        )?;
+        match with_host_ini(vault, address, &profile, uzdoom) {
+            Ok(Some(joining)) => joining,
+            Ok(None) => {
+                Warning::summon(grimoire, "The host doesn't share its ini, so yours is used")?;
+                profile.clone()
+            }
+            Err(problem) => {
+                Warning::summon(grimoire, &format!("{problem}, so yours is used"))?;
+                profile.clone()
+            }
+        }
+    } else {
+        profile.clone()
     };
     let base_wad = profile.base_wad(&vault.global);
     if manifest.base_wad_matches(base_wad)
@@ -84,6 +107,22 @@ pub fn summon(
     } else {
         Ok(())
     }
+}
+
+/// `profile` as it joins with the host's ini (see [`net::ini::take`]), kept in its own data dir
+/// as `host.ini`; nothing is saved to the profile. `None` if the host shares no ini.
+pub fn with_host_ini(
+    vault: &Vault,
+    address: &Address,
+    profile: &Profile,
+    uzdoom: &std::ffi::OsStr,
+) -> std::result::Result<Option<Profile>, String> {
+    let own = net::ini::in_use(profile.ini.as_deref(), uzdoom);
+    let taken = net::ini::take(address, own.as_deref(), &vault.data_dir.join(&profile.name))?;
+    Ok(taken.map(|ini| Profile {
+        ini: Some(ini.into_os_string()),
+        ..profile.clone()
+    }))
 }
 
 /// The profile to join with: the single compatible one, a pick among several, or a fresh download.

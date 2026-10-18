@@ -440,10 +440,11 @@ impl Launcher {
                 port,
                 code,
                 always_download,
+                host_ini,
             } => {
                 let address = Command::address(&host, port, code.as_deref())
                     .ok_or("join --headless needs the host's join code: --code <code>")?;
-                plain::join(vault, &address, always_download)
+                plain::join(vault, &address, always_download, host_ini)
             }
             Command::Launch { profile } => {
                 let index = find_profile(&vault.profiles, &profile)
@@ -508,9 +509,10 @@ impl Launcher {
                 port,
                 code,
                 always_download,
+                host_ini,
             } => {
-                let Some(address) =
-                    JoinAddressForm::summon_with(grimoire, &host, port, code.as_deref())?
+                let Some(joining) =
+                    JoinAddressForm::summon_with(grimoire, &host, port, code.as_deref(), host_ini)?
                 else {
                     return Ok(());
                 };
@@ -519,8 +521,9 @@ impl Launcher {
                     grimoire,
                     &mut self.vault,
                     &mut index,
-                    &address,
+                    &joining.address,
                     always_download,
+                    joining.host_ini,
                 )
             }
         }
@@ -1366,8 +1369,15 @@ impl Ritual for Launcher {
                 }
             }
             KeyCode::Char('n') => {
-                if let Some(address) = JoinAddressForm::summon(grimoire)? {
-                    join_game::summon(grimoire, &mut self.vault, index, &address, false)?;
+                if let Some(joining) = JoinAddressForm::summon(grimoire)? {
+                    join_game::summon(
+                        grimoire,
+                        &mut self.vault,
+                        index,
+                        &joining.address,
+                        false,
+                        joining.host_ini,
+                    )?;
                 }
                 Ok(Phase::Render)
             }

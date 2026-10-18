@@ -32,6 +32,8 @@ The macOS paths follow the `directories` crate's documentation and have not been
 ├── brutal/                     one dir per profile, named after the profile
 │   ├── saves/                  UZDoom's save games for this profile (-savedir)
 │   ├── uzdoom.ini              only if you chose "New" for the profile's UZDoom config (see below)
+│   ├── host.ini                only once you joined with the host's ini: the last host's, with your
+│   │                           own player, controls, screen and sound (written again every join)
 │   └── session.log             everything UZDoom printed during the last session
 ├── nacht/
 │   ├── saves/

@@ -13,11 +13,12 @@ use crate::{
 };
 
 /// Prompts for where the host is: its IP address, the port its wads are served on, and the join
-/// code it was given.
+/// code it was given, and whether to play with the host's ini, if it shares it.
 pub struct JoinAddressForm {
     ip: String,
     port: String,
     code: String,
+    host_ini: bool,
     focus: usize,
     /// Where the cursor is in the focused field.
     caret: usize,
@@ -26,7 +27,7 @@ pub struct JoinAddressForm {
 impl JoinAddressForm {
     const TITLE: &str = "join";
     const BORDER_COLOR: Color = theme::MULTIPLAYER;
-    const FIELDS: usize = 3;
+    const FIELDS: usize = 4;
     /// Long enough for any IPv4 address.
     const MAX_IP: usize = 15;
     const IP_LEGEND: &[[&str; 2]] = &[
@@ -51,18 +52,26 @@ impl JoinAddressForm {
         ["Esc", "Cancel"],
     ];
 
+    const INI_LEGEND: &[[&str; 2]] = &[
+        ["Enter", "Launch"],
+        ["Tab/↓, Backtab/↑", "Traverse"],
+        ["J/K, ←/→", "Yours or the Host's"],
+        ["Esc", "Cancel"],
+    ];
+
     pub fn new() -> Self {
         Self {
             ip: String::new(),
             port: String::new(),
             code: String::new(),
+            host_ini: false,
             focus: 0,
             caret: 0,
         }
     }
 
     /// `None` if cancelled.
-    pub fn summon(grimoire: &mut Grimoire) -> Result<Option<Address>> {
+    pub fn summon(grimoire: &mut Grimoire) -> Result<Option<Joining>> {
         Self::new().invoke(grimoire)
     }
 
@@ -73,30 +82,33 @@ impl JoinAddressForm {
         host: &str,
         port: Option<u16>,
         code: Option<&str>,
-    ) -> Result<Option<Address>> {
-        Self::filled(host, port, code).invoke(grimoire)
+        host_ini: bool,
+    ) -> Result<Option<Joining>> {
+        Self::filled(host, port, code, host_ini).invoke(grimoire)
     }
 
-    /// A form filled in with `host`, `port` and `code`.
-    fn filled(host: &str, port: Option<u16>, code: Option<&str>) -> Self {
+    /// A form filled in with `host`, `port`, `code` and whether to play with the host's ini.
+    fn filled(host: &str, port: Option<u16>, code: Option<&str>, host_ini: bool) -> Self {
         let mut form = Self {
             ip: host.to_string(),
             port: port.map(|port| port.to_string()).unwrap_or_default(),
             code: code.unwrap_or_default().to_string(),
+            host_ini,
             ..Self::new()
         };
         // 👆 the code is what is most likely missing, so that is where the cursor waits
         form.focus = if form.code.is_empty() { 2 } else { 0 };
-        form.caret = text::end(form.focused());
+        form.caret = form.focused().map_or(0, |text| text::end(text));
         form
     }
 
-    /// The field in focus, to type into.
-    fn focused(&mut self) -> &mut String {
+    /// The field in focus, to type into, if it is one that is typed into.
+    fn focused(&mut self) -> Option<&mut String> {
         match self.focus {
-            0 => &mut self.ip,
-            1 => &mut self.port,
-            _ => &mut self.code,
+            0 => Some(&mut self.ip),
+            1 => Some(&mut self.port),
+            2 => Some(&mut self.code),
+            _ => None,
         }
     }
 
@@ -124,8 +136,15 @@ impl JoinAddressForm {
     }
 }
 
+/// What the join form was left with: where the host is, and whether to play with its ini.
+#[derive(Debug, PartialEq)]
+pub struct Joining {
+    pub address: Address,
+    pub host_ini: bool,
+}
+
 impl Ritual for JoinAddressForm {
-    type Return = Option<Address>;
+    type Return = Option<Joining>;
 
     fn render(&mut self, page: &mut Page) {
         let default_port = net::DEFAULT_PORT.to_string();
@@ -151,6 +170,13 @@ impl Ritual for JoinAddressForm {
                 room: net::MAX_CODE_LENGTH as u16,
                 caret: (self.focus == 2).then_some(self.caret),
             },
+            Field {
+                label: "ini",
+                value: if self.host_ini { "the host's" } else { "yours" },
+                placeholder: "",
+                room: 10,
+                caret: None,
+            },
         ];
         form::draw(page, Self::TITLE, Self::BORDER_COLOR, &fields, self.focus);
     }
@@ -162,7 +188,10 @@ impl Ritual for JoinAddressForm {
     ) -> Result<Phase<Self::Return>> {
         match key_code {
             KeyCode::Enter => match self.address() {
-                Ok(address) => Ok(Phase::Return(Some(address))),
+                Ok(address) => Ok(Phase::Return(Some(Joining {
+                    address,
+                    host_ini: self.host_ini,
+                }))),
                 Err(problem) => {
                     Warning::summon(grimoire, problem)?;
                     Ok(Phase::Render)
@@ -175,7 +204,8 @@ impl Ritual for JoinAddressForm {
                     match self.focus {
                         0 => Self::IP_LEGEND,
                         1 => Self::PORT_LEGEND,
-                        _ => Self::CODE_LEGEND,
+                        2 => Self::CODE_LEGEND,
+                        _ => Self::INI_LEGEND,
                     },
                 )?;
                 Ok(Phase::Render)
@@ -187,17 +217,22 @@ impl Ritual for JoinAddressForm {
 
 impl JoinAddressForm {
     /// Moves to the field `by` away, wrapping around, with the cursor at the end of its text.
-    fn move_focus(&mut self, by: usize) -> Phase<Option<Address>> {
+    fn move_focus(&mut self, by: usize) -> Phase<Option<Joining>> {
         self.focus = (self.focus + by) % Self::FIELDS;
-        self.caret = text::end(self.focused());
+        self.caret = self.focused().map_or(0, |text| text::end(text));
         Phase::Render
     }
 
     /// Every key but the ones that close the form or show the legend.
-    fn edit(&mut self, key_code: KeyCode) -> Phase<Option<Address>> {
+    fn edit(&mut self, key_code: KeyCode) -> Phase<Option<Joining>> {
         match key_code {
             KeyCode::Tab | KeyCode::Down => self.move_focus(1),
             KeyCode::BackTab | KeyCode::Up => self.move_focus(Self::FIELDS - 1),
+            KeyCode::Char('j' | 'k') | KeyCode::Left | KeyCode::Right if self.focus == 3 => {
+                self.host_ini = !self.host_ini;
+                Phase::Render
+            }
+            _ if self.focus == 3 => Phase::Prompt,
             key_code => {
                 let (max, accept): (usize, fn(char) -> Option<char>) = match self.focus {
                     0 => (Self::MAX_IP, |c| {
@@ -209,7 +244,8 @@ impl JoinAddressForm {
                     }),
                 };
                 let mut caret = self.caret;
-                let changed = text::edit(self.focused(), &mut caret, key_code, max, accept);
+                let text = self.focused().expect("a typed field has focus");
+                let changed = text::edit(text, &mut caret, key_code, max, accept);
                 self.caret = caret;
                 match changed {
                     Some(changed) => Phase::render_if(changed),
@@ -230,7 +266,7 @@ mod tests {
     #[test]
     fn an_empty_form_shows_what_goes_there() {
         let mut form = JoinAddressForm::new();
-        assert_snapshot!(testing::draw(50, 12, |page| form.render(page)));
+        assert_snapshot!(testing::draw(50, 14, |page| form.render(page)));
     }
 
     #[test]
@@ -266,21 +302,26 @@ mod tests {
         assert_eq!(form.focus, 1);
         let _ = form.edit(KeyCode::Up);
         let _ = form.edit(KeyCode::Up);
-        assert_eq!(form.focus, 2, "wrapping around to the code");
+        assert_eq!(form.focus, 3, "wrapping around to the ini");
+        let _ = form.edit(KeyCode::Up);
         let _ = form.edit(KeyCode::Char('A'));
         assert_eq!(form.code, "a");
         // letters don't go in the ip
         let _ = form.edit(KeyCode::Down);
+        let _ = form.edit(KeyCode::Down);
+        assert_eq!(form.focus, 0);
         assert!(form.edit(KeyCode::Char('x')) == Phase::Prompt);
     }
 
     #[test]
     fn a_filled_form_waits_on_the_missing_code_and_gives_the_address_as_it_is() {
-        let form = JoinAddressForm::filled("10.0.0.2", Some(9000), None);
+        let form = JoinAddressForm::filled("10.0.0.2", Some(9000), None, false);
         assert_eq!(form.focus, 2);
         assert_eq!(form.port, "9000");
-        let full = JoinAddressForm::filled("10.0.0.2", None, Some("abc234"));
+        assert!(!form.host_ini);
+        let full = JoinAddressForm::filled("10.0.0.2", None, Some("abc234"), true);
         assert_eq!(full.focus, 0);
+        assert!(full.host_ini);
         assert_eq!(
             full.address(),
             Ok(Address {
@@ -289,6 +330,20 @@ mod tests {
                 code: "abc234".into(),
             })
         );
+    }
+
+    #[test]
+    fn the_ini_is_yours_until_switched_to_the_hosts_and_takes_no_typing() {
+        let mut form = JoinAddressForm::new();
+        assert!(!form.host_ini);
+        form.focus = 3;
+        assert!(form.edit(KeyCode::Right) == Phase::Render);
+        assert!(form.host_ini);
+        assert!(form.edit(KeyCode::Char('x')) == Phase::Prompt);
+        let _ = form.edit(KeyCode::Char('j'));
+        assert!(!form.host_ini);
+        assert!(form.edit(KeyCode::Down) == Phase::Render);
+        assert_eq!(form.focus, 0, "wrapping around to the ip");
     }
 
     #[test]

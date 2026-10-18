@@ -27,7 +27,7 @@ use crate::{
     screens::wad_namer,
     slayer::{
         host_game,
-        join_game::{fill_gaps, first_match},
+        join_game::{self, fill_gaps, first_match},
         share,
         upgrade::{self, Choice, Outdated, Settled},
     },
@@ -210,8 +210,14 @@ pub fn host(vault: &mut Vault, index: usize, overrides: &HostOverrides) -> Outco
 
 /// Joins the game at `address` with the first profile that matches the host's wads, or a new one
 /// made from the wads already here and downloads of the rest (after asking, unless
-/// `always_download`), and returns when the game ends.
-pub fn join(vault: &mut Vault, address: &Address, always_download: bool) -> Outcome {
+/// `always_download`), with the host's ini if `host_ini` and it shares one, and returns when the
+/// game ends.
+pub fn join(
+    vault: &mut Vault,
+    address: &Address,
+    always_download: bool,
+    host_ini: bool,
+) -> Outcome {
     let where_to = format!("{}:{}", address.host, address.port);
     let manifest = match Manifest::fetch(address) {
         Ok(manifest) => manifest,
@@ -227,6 +233,24 @@ pub fn join(vault: &mut Vault, address: &Address, always_download: bool) -> Outc
     };
     let uzdoom = ready_to_play(vault, &profile)?;
     let profile = upgrade_volatile(vault, address, &manifest, profile)?;
+    let profile = if host_ini {
+        match join_game::with_host_ini(vault, address, &profile, &uzdoom) {
+            Ok(Some(joining)) => {
+                println!("Playing with the host's ini");
+                joining
+            }
+            Ok(None) => {
+                eprintln!("The host doesn't share its ini, so yours is used");
+                profile
+            }
+            Err(problem) => {
+                eprintln!("{problem}, so yours is used");
+                profile
+            }
+        }
+    } else {
+        profile
+    };
     let base_wad = profile.base_wad(&vault.global);
     if !manifest.base_wad_matches(base_wad) {
         eprintln!("Your base wad isn't the host's, joining anyway");

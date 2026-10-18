@@ -122,12 +122,14 @@ pub enum Command {
     },
     /// Join the game hosted at `host`, on `port` (the default if `None`) with `code`, which the
     /// join form asks for if it wasn't given. With `always_download`, wads that aren't installed
-    /// are downloaded without asking first.
+    /// are downloaded without asking first. With `host_ini`, the game is played with the host's
+    /// ini, if it shares it.
     Join {
         host: String,
         port: Option<u16>,
         code: Option<String>,
         always_download: bool,
+        host_ini: bool,
     },
 }
 
@@ -428,6 +430,10 @@ enum Commands {
         /// Download the wads that aren't installed without asking first
         #[arg(long)]
         always_download: bool,
+        /// Play with the host's ini, if it shares it (your own player, controls, screen and sound
+        /// stay yours)
+        #[arg(long)]
+        host_ini: bool,
         /// No form and no windows, only plain lines in the terminal (needs --code)
         #[arg(long, requires = "code")]
         headless: bool,
@@ -545,6 +551,7 @@ impl Cli {
                 host,
                 connection,
                 always_download,
+                host_ini,
                 headless: plain,
             } => {
                 headless = plain;
@@ -553,6 +560,7 @@ impl Cli {
                     port: connection.port,
                     code: connection.code,
                     always_download,
+                    host_ini,
                 }
             }
         });
@@ -971,6 +979,7 @@ mod tests {
                 port: None,
                 code: Some("abc234".into()),
                 always_download: false,
+                host_ini: false,
             })
         );
         let with_port = parse(&["join", "10.0.0.2", "--port=9000", "--code=abc234"]).unwrap();
@@ -1013,6 +1022,17 @@ mod tests {
         ));
         assert!(parse(&["host", "p", "--always-download"]).is_err());
         assert!(parse(&["--always-download"]).is_err());
+    }
+
+    #[test]
+    fn the_hosts_ini_is_asked_for_on_join_and_shared_on_host() {
+        let cli = parse(&["join", "10.0.0.2", "--host-ini"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Join { host_ini: true, .. })
+        ));
+        assert!(parse(&["host", "p", "--host-ini"]).is_err());
+        assert!(parse(&["join", "10.0.0.2", "--share-ini"]).is_err());
     }
 
     #[test]
