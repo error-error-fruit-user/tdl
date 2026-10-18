@@ -30,7 +30,7 @@ use crate::{
     tag, theme,
     vault::Vault,
     vault::profile::Profile,
-    vault::shelf::Shelf,
+    vault::shelf::{self, Shelf},
     vault::wad::{Fault, Wad},
     widgets::{
         details::Details,
@@ -105,6 +105,7 @@ impl<'a> Editor<'a> {
         ["}/{", "Swap (Selected, If Any)"],
         ["Space", "Inspect Wad"],
         ["R", "Replace Wad"],
+        ["N", "Rename Wad's File"],
         ["V", "Toggle Volatility"],
         Selection::LEGEND,
         ["Y/Shift+Y", "Copy Selected/All Wads"],
@@ -368,6 +369,55 @@ impl<'a> Editor<'a> {
         self.selection.clear();
         self.found = Found::default();
         Ok(())
+    }
+
+    /// Renames the file of the wad at `index`, where it is, to a name the user types. Every
+    /// profile using it follows it (see [`Editor::open_library`]). Returns whether it was renamed.
+    fn rename_wad(&mut self, grimoire: &mut Grimoire, index: usize) -> Result<bool> {
+        let wad = &self.profile.wads[index];
+        let from = PathBuf::from(&wad.path);
+        let current = wad.file_name().into_owned();
+        let Some(dir) = from.parent().filter(|_| from.is_file()) else {
+            Warning::summon(
+                grimoire,
+                &format!("'{current}' is missing, so it can't be renamed"),
+            )?;
+            return Ok(false);
+        };
+        // 📦 a download is found again by its host's name, so that name stays
+        if shelf::is_download(&from, &self.shelf.downloads) {
+            Warning::summon(grimoire, "A download keeps the host's name for it")?;
+            return Ok(false);
+        }
+        let wads = &self.profile.wads;
+        let is_free = |name: &str| {
+            name == current
+                || !(shelf::holds(dir, name)
+                    || wads
+                        .iter()
+                        .enumerate()
+                        .any(|(i, wad)| i != index && wad.file_name() == name))
+        };
+        let Some(name) = WadNamer::summon_renaming_wad(grimoire, &current, is_free)? else {
+            return Ok(false);
+        };
+        if name == current {
+            return Ok(false);
+        }
+        match shelf::rename(&from, &name) {
+            Ok(to) => {
+                self.profile.follow(&from, &to);
+                self.original.follow(&from, &to);
+                self.clipboard.follow(&from, &to);
+                self.shelf.moves.push((from, to));
+                self.faults[index] = self.profile.wads[index].check();
+                Ok(true)
+            }
+            Err(error) => {
+                Warning::summon(grimoire, &format!("Could not rename '{current}': {error}"))?;
+                Ok(false)
+            }
+        }
     }
 
     /// Pastes the clipboard's wads in front of the cursor, asking about any whose file name the
@@ -892,6 +942,11 @@ impl Ritual for Editor<'_> {
                     Dialog::should_use_different_file(grimoire)
                 })?;
                 Ok(Phase::render_if(replaced))
+            }
+            KeyCode::Char('n') if self.editing_wads && *index != self.profile.wads.len() => {
+                let index = *index;
+                self.rename_wad(grimoire, index)?;
+                Ok(Phase::Render)
             }
             KeyCode::Char('a') => {
                 let Some(mod_paths) =

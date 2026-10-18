@@ -23,6 +23,7 @@ use crate::{
     screens::{
         search::{self, Found, Search, Typed},
         selection::{self, Selection},
+        wad_namer::WadNamer,
         wrap_around,
     },
     theme,
@@ -92,6 +93,7 @@ impl<'a> Library<'a> {
         Selection::LEGEND,
         ["Y/X", "Copy/Cut (Selected, or Whole Dir)"],
         ["P", "Paste Into Dir (Copies or Moves Files)"],
+        ["N", "Rename Wad"],
         ["A", "Add Dir"],
         ["D", "Erase Wads or Dismiss Their Dir"],
     ];
@@ -377,6 +379,46 @@ impl<'a> Library<'a> {
             Warning::summon(grimoire, problem)?;
         }
         Ok(())
+    }
+
+    /// Renames the file of the wad under the cursor, where it is, to a name the user types. Every
+    /// profile using it follows it, as with a move.
+    fn rename(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+        let Some(Item::Wad(source, index)) = self.current() else {
+            return Ok(());
+        };
+        let from = self.wad(source, index).path.clone();
+        // 📦 a download is found again by its host's name, so that name stays
+        if shelf::is_download(&from, &self.shelf.downloads) {
+            return Warning::summon(grimoire, "A download keeps the host's name for it");
+        }
+        let current = file_name(&from);
+        let dir = from.parent().unwrap_or(Path::new(""));
+        let is_free = |name: &str| name == current || !shelf::holds(dir, name);
+        let Some(name) = WadNamer::summon_renaming_wad(grimoire, &current, is_free)? else {
+            return Ok(());
+        };
+        if name == current {
+            return Ok(());
+        }
+        match shelf::rename(&from, &name) {
+            Ok(to) => {
+                self.clipboard.follow(&from, &to);
+                self.shelf.moves.push((from, to.clone()));
+                self.restack();
+                if let Some(row) = self
+                    .rows
+                    .iter()
+                    .position(|&item| self.identity(item).as_ref() == Some(&to))
+                {
+                    self.table_state.select(Some(row));
+                }
+                Ok(())
+            }
+            Err(error) => {
+                Warning::summon(grimoire, &format!("Could not rename '{current}': {error}"))
+            }
+        }
     }
 
     /// Picks a dir to look for wads in, and asks where to keep it, as with `--wads`.
@@ -775,6 +817,10 @@ impl Ritual for Library<'_> {
                     return Ok(Phase::Prompt);
                 }
                 self.paste(grimoire)?;
+                Ok(Phase::Render)
+            }
+            KeyCode::Char('n') => {
+                self.rename(grimoire)?;
                 Ok(Phase::Render)
             }
             KeyCode::Char('a') => {

@@ -11,8 +11,9 @@ use crate::{
     },
 };
 
-/// Prompts for the file name of a pasted wad's copy, or of the joiner's own wad when it is renamed
-/// to make room for the host's. Only the part before the extension is typed; the extension stays
+/// Prompts for the file name of a pasted wad's copy, of the joiner's own wad when it is renamed
+/// to make room for the host's, or of a wad renamed with `N`. Only the part before the extension
+/// is typed; the extension stays
 /// the original's, so UZDoom still knows what kind of file it is. A name that `is_free` turns down
 /// (a file already there, or a wad the profile already has) is refused.
 pub struct WadNamer<F> {
@@ -21,8 +22,19 @@ pub struct WadNamer<F> {
     caret: usize,
     extension: String,
     title: String,
-    renaming: bool,
+    naming: Naming,
     is_free: F,
+}
+
+/// What the name is for.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Naming {
+    /// A pasted wad's copy.
+    Copy,
+    /// The joiner's own wad, to make room for the host's.
+    Yours,
+    /// A wad renamed where it is.
+    Wad,
 }
 
 impl<F: Fn(&str) -> bool> WadNamer<F> {
@@ -37,6 +49,12 @@ impl<F: Fn(&str) -> bool> WadNamer<F> {
     ];
     const RENAMING_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Rename Yours"],
+        ["A-Z/0-9/_-. ", "Input"],
+        ["←/→/Home/End", "Move the Cursor"],
+        ["Esc", "Back"],
+    ];
+    const RENAMING_WAD_LEGEND: &[[&str; 2]] = &[
+        ["Enter", "Rename It"],
         ["A-Z/0-9/_-. ", "Input"],
         ["←/→/Home/End", "Move the Cursor"],
         ["Esc", "Back"],
@@ -57,7 +75,20 @@ impl<F: Fn(&str) -> bool> WadNamer<F> {
     ) -> Result<Option<String>> {
         let mut namer = Self::new(suggested, is_free);
         namer.title = format!("rename yours ({})", extension_label(&namer.extension));
-        namer.renaming = true;
+        namer.naming = Naming::Yours;
+        namer.invoke(grimoire)
+    }
+
+    /// Asks for a new file name for a wad, starting from `current`, its file name now. The full
+    /// file name (which may still be `current`), or `None` to go back.
+    pub fn summon_renaming_wad(
+        grimoire: &mut Grimoire,
+        current: &str,
+        is_free: F,
+    ) -> Result<Option<String>> {
+        let mut namer = Self::new(current, is_free);
+        namer.title = format!("rename the wad ({})", extension_label(&namer.extension));
+        namer.naming = Naming::Wad;
         namer.invoke(grimoire)
     }
 
@@ -68,7 +99,7 @@ impl<F: Fn(&str) -> bool> WadNamer<F> {
             caret: text::end(stem),
             extension: extension.to_string(),
             title: format!("name the copy ({})", extension_label(extension)),
-            renaming: false,
+            naming: Naming::Copy,
             is_free,
         }
     }
@@ -87,10 +118,10 @@ impl<F: Fn(&str) -> bool> WadNamer<F> {
     fn check(&self) -> std::result::Result<String, &'static str> {
         let name = self.file_name();
         if self.stem.trim().is_empty() || self.stem.starts_with('.') {
-            Err(if self.renaming {
-                "Type a new name for yours"
-            } else {
-                "Type a name for the copy"
+            Err(match self.naming {
+                Naming::Copy => "Type a name for the copy",
+                Naming::Yours => "Type a new name for yours",
+                Naming::Wad => "Type a new name for the wad",
             })
         } else if !(self.is_free)(&name) {
             Err("A file or wad of that name is already there")
@@ -139,10 +170,10 @@ impl<F: Fn(&str) -> bool> Ritual for WadNamer<F> {
             },
             KeyCode::Esc => Ok(Phase::Return(None)),
             KeyCode::Char('?') | KeyCode::F(1) => {
-                let legend = if self.renaming {
-                    Self::RENAMING_LEGEND
-                } else {
-                    Self::LEGEND
+                let legend = match self.naming {
+                    Naming::Copy => Self::LEGEND,
+                    Naming::Yours => Self::RENAMING_LEGEND,
+                    Naming::Wad => Self::RENAMING_WAD_LEGEND,
                 };
                 Legend::summon(grimoire, legend)?;
                 Ok(Phase::Render)

@@ -2,7 +2,7 @@
 //! launcher, or wad files from the wads screen. It lasts for the session and is never saved.
 //! Copying one kind replaces the other.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::vault::{profile::Profile, wad::Wad};
 
@@ -45,6 +45,29 @@ impl Clipboard {
         }
     }
 
+    /// Points whatever is on the clipboard at `to` where it was at `from`, after the file was
+    /// renamed, so pasting it later doesn't paste a wad that is gone.
+    pub fn follow(&mut self, from: &Path, to: &Path) {
+        match self {
+            Self::Empty => {}
+            Self::Wads(wads) => {
+                for wad in wads {
+                    wad.follow(from, to);
+                }
+            }
+            Self::Profiles(profiles) | Self::CutProfiles(profiles) => {
+                for profile in profiles {
+                    profile.follow(from, to);
+                }
+            }
+            Self::Files { paths, .. } => {
+                for path in paths.iter_mut().filter(|path| *path == from) {
+                    *path = to.to_path_buf();
+                }
+            }
+        }
+    }
+
     /// What the note under the window says is copied, if anything is.
     pub fn note(&self) -> Option<String> {
         let (count, kind, done) = match self {
@@ -68,6 +91,26 @@ mod tests {
 
     fn wad(name: &str) -> Wad {
         Wad::new(format!("/wads/{name}").into(), String::new(), 1)
+    }
+
+    #[test]
+    fn a_renamed_file_is_followed_wherever_it_is_on_the_clipboard() {
+        let (from, to) = (Path::new("/wads/a.wad"), Path::new("/wads/b.wad"));
+        let mut wads = Clipboard::Wads(vec![wad("a.wad"), wad("c.wad")]);
+        wads.follow(from, to);
+        assert_eq!(wads, Clipboard::Wads(vec![wad("b.wad"), wad("c.wad")]));
+        let mut files = Clipboard::Files {
+            paths: vec![from.to_path_buf()],
+            cut: true,
+        };
+        files.follow(from, to);
+        assert_eq!(
+            files,
+            Clipboard::Files {
+                paths: vec![to.to_path_buf()],
+                cut: true,
+            }
+        );
     }
 
     #[test]

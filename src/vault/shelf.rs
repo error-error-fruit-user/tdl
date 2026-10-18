@@ -219,6 +219,32 @@ pub fn relocate(from: &Path, to: &Path, downloads: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Whether `dir` holds an entry named exactly `name`. Asked of the dir's own list rather than of
+/// the path, so a rename that only changes a name's case isn't turned down on a disk that
+/// ignores case.
+pub fn holds(dir: &Path, name: &str) -> bool {
+    fs::read_dir(dir).is_ok_and(|entries| {
+        entries
+            .flatten()
+            .any(|entry| entry.file_name() == std::ffi::OsStr::new(name))
+    })
+}
+
+/// Renames the wad file at `from` to `name`, in the same dir, and returns where it is now. Turned
+/// down if something by that name is already there, so nothing is ever written over.
+pub fn rename(from: &Path, name: &str) -> io::Result<PathBuf> {
+    let dir = from.parent().unwrap_or(Path::new(""));
+    if holds(dir, name) {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("{name} is already there"),
+        ));
+    }
+    let to = dir.join(name);
+    fs::rename(from, &to)?;
+    Ok(to)
+}
+
 /// Deletes the wad file at `path`, and its download's own dir with it once that is empty.
 pub fn delete(path: &Path, downloads: &Path) -> io::Result<()> {
     fs::remove_file(path)?;
@@ -357,6 +383,29 @@ mod tests {
             .collect();
         assert_eq!(found, expected);
         assert!(scan(&altar.file("nowhere")).is_empty());
+    }
+
+    #[test]
+    fn a_rename_stays_in_the_dir_and_never_writes_over_a_file() {
+        let altar = Altar::new("shelf-rename");
+        let dir = altar.file("wads");
+        touch(&dir.join("brutal.pk3"));
+        touch(&dir.join("sigil.wad"));
+
+        let renamed = rename(&dir.join("brutal.pk3"), "brutal dev.pk3").unwrap();
+        assert_eq!(renamed, dir.join("brutal dev.pk3"));
+        assert!(renamed.is_file() && !dir.join("brutal.pk3").exists());
+
+        assert!(rename(&renamed, "sigil.wad").is_err());
+        assert_eq!(
+            fs::read(dir.join("sigil.wad")).unwrap(),
+            dir.join("sigil.wad").to_string_lossy().as_bytes()
+        );
+        // 🔠 only a case change: the file itself isn't in the way
+        assert_eq!(
+            rename(&renamed, "Brutal Dev.pk3").unwrap(),
+            dir.join("Brutal Dev.pk3")
+        );
     }
 
     #[test]
