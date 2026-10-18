@@ -9,12 +9,13 @@ use ratatui::{
 };
 
 use crate::{
-    layout, theme,
-    vault::{
-        global::Global,
+    layout,
+    loadout::{
         profile::{Part, Profile},
+        uac::Uac,
         wad::{Fault, Wad},
     },
+    theme,
 };
 
 /// How a line in the panel is doing, which decides its mark and color.
@@ -224,7 +225,7 @@ fn wads_line(wads: &[Wad], faults: impl Iterator<Item = Fault>) -> Detail {
 
 impl Details {
     /// What launching `profile` would use, with `faults` from [`Profile::faults`].
-    pub fn launch(profile: &Profile, global: &Global, faults: &[(Part, Fault)]) -> Self {
+    pub fn launch(profile: &Profile, global: &Uac, faults: &[(Part, Fault)]) -> Self {
         let fault = |part| faults.iter().find(|(p, _)| *p == part).map(|(_, f)| f);
         let mut uzdoom = or_session(
             file_line(
@@ -282,7 +283,7 @@ impl Details {
     }
 
     /// The global settings, which every profile without its own falls back on.
-    pub fn global(global: &Global) -> Self {
+    pub fn global(global: &Uac) -> Self {
         // 🧪 what is in effect: this session's from the command line, else the saved ones
         let uzdoom_fault = global
             .uzdoom_in_effect()
@@ -491,7 +492,7 @@ mod tests {
             parts.join(", ")
         }
     }
-    use crate::vault::scribe::tests::Altar;
+    use crate::loadout::scribe::tests::Altar;
 
     fn wad(altar: &Altar, name: &str) -> Wad {
         fs::write(altar.file(name), b"1234").unwrap();
@@ -502,9 +503,9 @@ mod tests {
     fn a_healthy_profile_on_global_settings_is_ready() {
         let altar = Altar::new("details-ready");
         fs::write(altar.file("uzdoom"), b"").unwrap();
-        let global = Global {
+        let global = Uac {
             uzdoom: Some(altar.file("uzdoom").into()),
-            ..Global::default()
+            ..Uac::default()
         };
         let profile = Profile {
             wads: vec![wad(&altar, "a.pk3")],
@@ -522,7 +523,7 @@ mod tests {
 
     #[test]
     fn no_uzdoom_at_all_is_broken() {
-        let details = Details::launch(&Profile::default(), &Global::default(), &[]);
+        let details = Details::launch(&Profile::default(), &Uac::default(), &[]);
         assert_eq!(details.title, "broken");
         assert_eq!(details.lines[0].state, State::Bad);
         assert_eq!(details.lines[0].value, "not set");
@@ -532,9 +533,9 @@ mod tests {
     fn broken_and_changed_wads_are_counted() {
         let altar = Altar::new("details-wads");
         fs::write(altar.file("uzdoom"), b"").unwrap();
-        let global = Global {
+        let global = Uac {
             uzdoom: Some(altar.file("uzdoom").into()),
-            ..Global::default()
+            ..Uac::default()
         };
         let mut volatile = wad(&altar, "v.pk3");
         volatile.volatile = true;
@@ -561,7 +562,7 @@ mod tests {
             uzdoom: Some(altar.file("nope").into()),
             ..Profile::default()
         };
-        let global = Global::default();
+        let global = Uac::default();
         let details = Details::launch(&profile, &global, &profile.faults(&global));
         assert_eq!(details.lines[0].note_text(), "missing");
         assert_eq!(details.lines[0].state, State::Bad);
@@ -590,14 +591,14 @@ mod tests {
 
     #[test]
     fn a_uzdoom_and_base_wad_from_the_command_line_are_said_to_be_the_sessions() {
-        let altar = crate::vault::scribe::tests::Altar::new("details-session");
+        let altar = crate::loadout::scribe::tests::Altar::new("details-session");
         fs::write(altar.file("uzdoom-dev"), b"").unwrap();
         fs::write(altar.file("freedoom2.wad"), b"iwad").unwrap();
-        let global = Global {
+        let global = Uac {
             uzdoom: Some("/global/uzdoom".into()),
             session_uzdoom: Some(altar.file("uzdoom-dev").into()),
             session_base_wad: Some(Wad::from_path(&altar.file("freedoom2.wad")).unwrap()),
-            ..Global::default()
+            ..Uac::default()
         };
         let profile = Profile {
             uzdoom: Some("/own/uzdoom".into()),
@@ -628,7 +629,7 @@ mod tests {
 
     #[test]
     fn the_lines_line_up_and_the_size_fits_them() {
-        let details = Details::launch(&Profile::default(), &Global::default(), &[]);
+        let details = Details::launch(&Profile::default(), &Uac::default(), &[]);
         let lines = details.lines();
         assert!(
             lines

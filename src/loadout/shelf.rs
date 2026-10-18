@@ -1,7 +1,7 @@
 //! What the wads screen works on: the dirs wads are looked for in (the session's wad dirs, then
 //! the downloads), the wad files in them, and copying and moving those files between them. The
-//! screen changes a [`Shelf`] of its own, and hands it back to the vault (see
-//! [`Vault::restock`](crate::vault::Vault::restock)), which keeps the dirs and points every
+//! screen changes a [`Shelf`] of its own, and hands it back to the loadout (see
+//! [`Loadout::restock`](crate::loadout::Loadout::restock)), which keeps the dirs and points every
 //! profile's wads at wherever their files were moved.
 
 use std::{
@@ -11,7 +11,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use crate::{error::Result, tag, vault::wad::Wad};
+use crate::{error::Result, loadout::wad::Wad, tag};
 
 /// The dirs wads are looked for in, and what happened to them on the wads screen.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -20,22 +20,22 @@ pub struct Shelf {
     pub dirs: Vec<PathBuf>,
     /// Where downloaded wads are kept, by hash. Always a source, and never taken out.
     pub downloads: PathBuf,
-    /// The wad dirs kept for this vault, and for every vault, as they are to be saved.
-    pub kept_vault: Vec<PathBuf>,
+    /// The wad dirs kept for this loadout, and for every loadout, as they are to be saved.
+    pub kept_loadout: Vec<PathBuf>,
     pub kept_global: Vec<PathBuf>,
-    /// False if `global.rite` is from a newer tdl, so no dir can be kept for every vault.
-    pub global_writable: bool,
+    /// False if `uac.rite` is from a newer tdl, so no dir can be kept for every loadout.
+    pub uac_writable: bool,
     /// Every file moved by a cut and paste, from where to where, in the order they moved.
     pub moves: Vec<(PathBuf, PathBuf)>,
 }
 
-/// Where a wad dir added on the wads screen is kept: just for this session, for every vault, or
+/// Where a wad dir added on the wads screen is kept: just for this session, for every loadout, or
 /// for this one, as with `--wads`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Keep {
     Session,
     Global,
-    Vault,
+    Loadout,
 }
 
 impl Shelf {
@@ -55,12 +55,12 @@ impl Shelf {
 
     /// Looks in `dir` for wads from now on, after the others, and keeps it as `keep` says. The
     /// kept lists are the ones that are used whenever tdl starts without `--wads`, so a dir kept
-    /// for the vault or globally goes there too.
+    /// for the loadout or globally goes there too.
     pub fn add(&mut self, dir: PathBuf, keep: Keep) {
         let kept = match keep {
             Keep::Session => None,
             Keep::Global => Some(&mut self.kept_global),
-            Keep::Vault => Some(&mut self.kept_vault),
+            Keep::Loadout => Some(&mut self.kept_loadout),
         };
         if let Some(kept) = kept
             && !kept.contains(&dir)
@@ -76,7 +76,7 @@ impl Shelf {
     /// kept. The files in it stay where they are. The downloads can't be taken out.
     pub fn remove(&mut self, dir: &Path) {
         self.dirs.retain(|known| known != dir);
-        self.kept_vault.retain(|known| known != dir);
+        self.kept_loadout.retain(|known| known != dir);
         self.kept_global.retain(|known| known != dir);
     }
 }
@@ -351,7 +351,7 @@ pub fn paste(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vault::scribe::tests::Altar;
+    use crate::loadout::scribe::tests::Altar;
 
     fn touch(path: &Path) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -452,14 +452,14 @@ mod tests {
             kept_global: vec!["/wads".into()],
             ..Shelf::default()
         };
-        shelf.add("/mods".into(), Keep::Vault);
+        shelf.add("/mods".into(), Keep::Loadout);
         shelf.add("/maps".into(), Keep::Session);
         shelf.add("/wads".into(), Keep::Global);
         assert_eq!(
             shelf.dirs,
             [PathBuf::from("/wads"), "/mods".into(), "/maps".into()]
         );
-        assert_eq!(shelf.kept_vault, [PathBuf::from("/mods")]);
+        assert_eq!(shelf.kept_loadout, [PathBuf::from("/mods")]);
         assert_eq!(shelf.kept_global, [PathBuf::from("/wads")]);
         assert!(shelf.has(Path::new("/data/.downloads")));
         assert_eq!(
@@ -470,7 +470,7 @@ mod tests {
         shelf.remove(Path::new("/wads"));
         shelf.remove(Path::new("/mods"));
         assert_eq!(shelf.dirs, [PathBuf::from("/maps")]);
-        assert!(shelf.kept_vault.is_empty() && shelf.kept_global.is_empty());
+        assert!(shelf.kept_loadout.is_empty() && shelf.kept_global.is_empty());
     }
 
     #[test]

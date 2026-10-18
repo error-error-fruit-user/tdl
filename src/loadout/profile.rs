@@ -8,13 +8,13 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    vault::edition::Edition,
-    vault::global::Global,
-    vault::host_settings::HostSettings,
-    vault::saved::{SavedPath, SavedWad},
-    vault::scribe,
-    vault::shelf,
-    vault::wad::{Fault, Wad},
+    loadout::edition::Edition,
+    loadout::host_settings::HostSettings,
+    loadout::saved::{SavedPath, SavedWad},
+    loadout::scribe,
+    loadout::shelf,
+    loadout::uac::Uac,
+    loadout::wad::{Fault, Wad},
 };
 
 /// The profiles dir inside the config dir. The dot keeps it from ever matching a profile's
@@ -354,7 +354,7 @@ impl Profile {
 
     /// The UZDoom path to use: this session's from `--uzdoom` if there is one, else the profile's
     /// own, else the global one.
-    pub fn uzdoom<'a>(&'a self, global: &'a Global) -> Option<&'a OsString> {
+    pub fn uzdoom<'a>(&'a self, global: &'a Uac) -> Option<&'a OsString> {
         global
             .session_uzdoom
             .as_ref()
@@ -365,7 +365,7 @@ impl Profile {
     /// Everything wrong with the files this profile needs to run, UZDoom first. The UZDoom path,
     /// base wad and ini are the effective ones, so the global settings count too. This only looks
     /// at the disk; nothing is hashed.
-    pub fn faults(&self, global: &Global) -> Vec<(Part, Fault)> {
+    pub fn faults(&self, global: &Uac) -> Vec<(Part, Fault)> {
         let uzdoom = self
             .uzdoom(global)
             .and_then(|path| Fault::of(Path::new(path), 0))
@@ -393,13 +393,13 @@ impl Profile {
     }
 
     /// The extra arguments for UZDoom: the profile's own, falling back to the global ones.
-    pub fn uzdoom_args<'a>(&'a self, global: &'a Global) -> &'a str {
+    pub fn uzdoom_args<'a>(&'a self, global: &'a Uac) -> &'a str {
         self.uzdoom_args.as_deref().unwrap_or(&global.uzdoom_args)
     }
 
     /// The base wad to use: this session's from `--base-wad` if there is one, else the profile's
     /// own, else the global one.
-    pub fn base_wad<'a>(&'a self, global: &'a Global) -> Option<&'a Wad> {
+    pub fn base_wad<'a>(&'a self, global: &'a Uac) -> Option<&'a Wad> {
         global
             .session_base_wad
             .as_ref()
@@ -486,7 +486,7 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::vault::scribe::tests::Altar;
+    use crate::loadout::scribe::tests::Altar;
 
     fn wad(altar: &Altar, name: &str) -> Wad {
         fs::write(altar.file(name), b"1234").unwrap();
@@ -505,7 +505,7 @@ mod tests {
             ini: Some(altar.file("a.ini").into()),
             ..Profile::default()
         };
-        assert_eq!(profile.faults(&Global::default()), []);
+        assert_eq!(profile.faults(&Uac::default()), []);
     }
 
     #[test]
@@ -521,7 +521,7 @@ mod tests {
         fs::remove_file(altar.file("b.pk3")).unwrap();
         fs::remove_file(altar.file("base.wad")).unwrap();
         fs::write(altar.file("a.wad"), b"123456789").unwrap();
-        let parts: Vec<_> = profile.faults(&Global::default());
+        let parts: Vec<_> = profile.faults(&Uac::default());
         assert_eq!(
             parts,
             [
@@ -546,23 +546,23 @@ mod tests {
     #[test]
     fn the_global_settings_count_when_the_profile_has_no_overrides() {
         let altar = Altar::new("profile-global");
-        let global = Global {
+        let global = Uac {
             uzdoom: Some(altar.file("nowhere").into()),
-            ..Global::default()
+            ..Uac::default()
         };
         assert_eq!(
             Profile::default().faults(&global),
             [(Part::Uzdoom, Fault::Missing)]
         );
         // no UZDoom chosen at all is not a fault; that has its own warning
-        assert_eq!(Profile::default().faults(&Global::default()), []);
+        assert_eq!(Profile::default().faults(&Uac::default()), []);
     }
 
     #[test]
     fn a_profiles_own_arguments_win_over_the_global_ones() {
-        let global = Global {
+        let global = Uac {
             uzdoom_args: "-nomusic".into(),
-            ..Global::default()
+            ..Uac::default()
         };
         assert_eq!(Profile::default().uzdoom_args(&global), "-nomusic");
         let own = Profile {
@@ -585,10 +585,10 @@ mod tests {
             base_wad: Some(base("/own/DOOM2.WAD")),
             ..Profile::default()
         };
-        let mut global = Global {
+        let mut global = Uac {
             uzdoom: Some("/global/uzdoom".into()),
             base_wad: Some(base("/global/DOOM2.WAD")),
-            ..Global::default()
+            ..Uac::default()
         };
         assert_eq!(own.uzdoom(&global), Some(&"/own/uzdoom".into()));
         global.session_uzdoom = Some("/test/uzdoom-dev".into());
@@ -601,9 +601,9 @@ mod tests {
         assert_eq!(global.uzdoom_in_effect(), Some(&"/test/uzdoom-dev".into()));
         // the session's never reach the file
         let altar = Altar::new("profile-session");
-        let path = Global::path(&altar.0);
+        let path = Uac::path(&altar.0);
         global.save(&path).unwrap();
-        let saved = Global::open(&path).unwrap();
+        let saved = Uac::open(&path).unwrap();
         assert_eq!(saved.session_uzdoom, None);
         assert_eq!(saved.session_base_wad, None);
         assert_eq!(saved.uzdoom, Some("/global/uzdoom".into()));

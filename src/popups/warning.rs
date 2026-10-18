@@ -2,10 +2,10 @@ use ratatui::{crossterm::event::KeyCode, style::Style, text::Line};
 
 use crate::{
     error::{Error, Result},
+    loadout::{profile::Part, wad::Fault},
     popups,
     ritual::{Grimoire, Page, Phase, Ritual},
     theme,
-    vault::{profile::Part, wad::Fault},
 };
 
 /// A popup of one or more lines, dismissed by any key.

@@ -7,17 +7,17 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    vault::edition::Edition,
-    vault::profile::Profile,
-    vault::saved::{optional_path, paths},
-    vault::wad::Wad,
+    loadout::edition::Edition,
+    loadout::profile::Profile,
+    loadout::saved::{optional_path, paths},
+    loadout::wad::Wad,
 };
 
 const FILE: &str = "config.rite";
 
-/// What belongs to one vault: the order of its profiles and the wad dirs kept for it. Every
-/// setting lives in the global settings instead (see [`Global`](crate::vault::global::Global)), so
-/// it is the same whichever vault is open.
+/// What belongs to one loadout: the order of its profiles and the wad dirs kept for it. Every
+/// setting lives in the global settings instead (see [`Uac`](crate::loadout::uac::Global)), so
+/// it is the same whichever loadout is open.
 ///
 /// Stored as `<config>/config.rite`. The field order is the layout of edition 0, where this was a
 /// bare `(uzdoom, base_wad, profile_names)` array, so it must not change.
@@ -25,7 +25,7 @@ const FILE: &str = "config.rite";
 pub struct Config {
     /// The settings a file from before edition 5 still holds, read but never written again: the
     /// launcher hands them to the global settings (see
-    /// [`Global::adopt`](crate::vault::global::Global::adopt)).
+    /// [`Uac::adopt`](crate::loadout::uac::Global::adopt)).
     #[serde(default, rename = "uzdoom", with = "optional_path", skip_serializing)]
     pub old_uzdoom: Option<OsString>,
     #[serde(default, rename = "base_wad", skip_serializing)]
@@ -37,7 +37,7 @@ pub struct Config {
     pub old_skip_splash: bool,
     #[serde(default, rename = "host_port", skip_serializing)]
     pub old_host_port: Option<u16>,
-    /// Wad dirs kept for this vault from `--wads`, used whenever tdl starts without it.
+    /// Wad dirs kept for this loadout from `--wads`, used whenever tdl starts without it.
     /// Missing in older files, which count as none. Called `wad_folders` before edition 4.
     #[serde(default, alias = "wad_folders", with = "paths")]
     pub wad_dirs: Vec<OsString>,
@@ -63,14 +63,14 @@ fn v0_to_v1(config: Config) -> Config {
 }
 
 /// Edition 2 saves paths as text, so the file reads on any OS. Both shapes read into a [`Config`]
-/// already (see [`crate::vault::saved::SavedPath`]); the new edition number keeps older builds
+/// already (see [`crate::loadout::saved::SavedPath`]); the new edition number keeps older builds
 /// from reading a file they can't understand.
 fn v1_to_v2(config: Config) -> Config {
     config
 }
 
 /// Edition 3 fills in the global base wad's size if it was added before sizes were recorded, as
-/// [`crate::vault::profile`] does for every profile's wads.
+/// [`crate::loadout::profile`] does for every profile's wads.
 fn v2_to_v3(config: Config) -> Config {
     Config {
         old_base_wad: config.old_base_wad.map(Wad::with_size_backfilled),
@@ -85,7 +85,7 @@ fn v3_to_v4(config: Config) -> Config {
 }
 
 /// Edition 5 keeps no settings: UZDoom, the base wad, UZDoom's arguments, the splash and the last
-/// host port moved to `global.rite`, so they are the same in every vault. They are still read from
+/// host port moved to `uac.rite`, so they are the same in every loadout. They are still read from
 /// older files (as `old_*`), for the launcher to hand over before the file is upgraded.
 fn v4_to_v5(config: Config) -> Config {
     config
@@ -139,7 +139,7 @@ mod tests {
     fn a_config_saved_by_edition_one_loads_and_saves_paths_as_text() {
         use std::fs;
 
-        use crate::vault::scribe::tests::Altar;
+        use crate::loadout::scribe::tests::Altar;
 
         /// How edition 1 saved the settings: paths as `OsString`s tagged with the OS.
         #[derive(Serialize)]
@@ -200,7 +200,7 @@ mod tests {
     fn a_config_saved_by_edition_three_keeps_its_wad_folders_as_dirs() {
         use std::fs;
 
-        use crate::vault::scribe::tests::Altar;
+        use crate::loadout::scribe::tests::Altar;
 
         /// How edition 3 saved the settings: today's shape, with the wad dirs called folders.
         #[derive(Serialize)]
@@ -240,7 +240,7 @@ mod tests {
     fn a_config_saved_by_edition_four_gives_up_its_settings_when_upgraded() {
         use std::fs;
 
-        use crate::vault::scribe::tests::Altar;
+        use crate::loadout::scribe::tests::Altar;
 
         let altar = Altar::new("config-edition-four");
         let path = Config::path(&altar.file(""));
@@ -282,7 +282,7 @@ mod tests {
         assert_eq!(config.old_uzdoom_args, "-nomusic");
         assert!(config.upgrade(&path).unwrap());
         assert_eq!(Config::stored_version(&path), Some(5));
-        // the upgraded file keeps only what is the vault's own
+        // the upgraded file keeps only what is the loadout's own
         let upgraded = Config::open(&path).unwrap();
         assert_eq!(upgraded.profile_names, ["brutal"]);
         assert_eq!(upgraded.wad_dirs, [OsString::from("/wads")]);
@@ -294,7 +294,7 @@ mod tests {
     fn a_config_saved_by_edition_two_gets_its_base_wads_size() {
         use std::fs;
 
-        use crate::vault::scribe::tests::Altar;
+        use crate::loadout::scribe::tests::Altar;
 
         let altar = Altar::new("config-edition-two");
         fs::write(altar.file("DOOM2.WAD"), b"12345").unwrap();

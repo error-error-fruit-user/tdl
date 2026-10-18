@@ -12,9 +12,9 @@ use std::{
 
 use crate::{
     error::{Error, Result},
-    vault::host_settings::HostSettings,
-    vault::profile::Profile,
-    vault::wad::Wad,
+    loadout::host_settings::HostSettings,
+    loadout::profile::Profile,
+    loadout::wad::Wad,
 };
 
 /// How long a stopped UZDoom gets to go quietly before it is killed outright.
@@ -368,7 +368,7 @@ for file in "${files[@]}"; do add "$file" "PWAD IWAD"; done
     fn loads_the_iwad_and_every_wad_in_order(name: &str, uzdoom: &str, iwad: PathBuf) {
         use std::fs;
 
-        use crate::vault::scribe::tests::Altar;
+        use crate::loadout::scribe::tests::Altar;
 
         let altar = Altar::new(name);
 
@@ -425,7 +425,7 @@ for file in "${files[@]}"; do add "$file" "PWAD IWAD"; done
     #[test]
     #[cfg(unix)]
     fn the_dummy_uzdoom_loads_the_iwad_and_every_wad_in_order() {
-        use crate::vault::scribe::tests::Altar;
+        use crate::loadout::scribe::tests::Altar;
 
         // an IWAD of two empty lumps' worth of header, which is all the dummy looks at
         let altar = Altar::new("dummy-iwad");
@@ -445,7 +445,7 @@ for file in "${files[@]}"; do add "$file" "PWAD IWAD"; done
     fn the_dummy_uzdoom_fails_like_uzdoom_on_a_file_that_is_not_a_wad() {
         use std::fs;
 
-        use crate::vault::scribe::tests::Altar;
+        use crate::loadout::scribe::tests::Altar;
 
         let altar = Altar::new("dummy-uzdoom-bad");
         let wrapper = altar.file("uzdoom.sh");
@@ -477,7 +477,7 @@ for file in "${files[@]}"; do add "$file" "PWAD IWAD"; done
     fn extra_arguments_go_after_tdls_own_and_before_the_wads() {
         use std::fs;
 
-        use crate::vault::scribe::tests::Altar;
+        use crate::loadout::scribe::tests::Altar;
 
         let altar = Altar::new("uzdoom-extra-args");
         let echo = altar.file("uzdoom.sh");

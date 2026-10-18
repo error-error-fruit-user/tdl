@@ -147,7 +147,7 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::vault::scribe::tests::Altar;
+    use crate::loadout::scribe::tests::Altar;
 
     #[test]
     fn the_preferred_dir_wins_when_it_exists() {

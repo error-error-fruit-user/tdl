@@ -10,9 +10,9 @@ tdl stores two kinds of files: **config** (what you set up) and **data** (what t
 | macOS | `~/Library/Application Support/error.error.fruit.eef.tdl` | same dir as config |
 | Windows | `%APPDATA%\eef\tdl\config` | `%APPDATA%\eef\tdl\data` |
 
-Pass `--vault /some/dir` to use `/some/dir/config` and `/some/dir/data` instead. The older form, the dir on its own (`tdl /some/dir`), still works. tdl then asks whether to open that vault every time; if you say yes, it is remembered in `global.rite` (below) and opened whenever tdl starts without `--vault`. If it has gone missing, tdl says so and opens the standard dirs. `--vault-once /some/dir` opens a vault the same way without asking. `tdl --forget-vault` opens the standard dirs and asks whether to forget the remembered vault; `tdl --forget-vault-once` opens them without asking.
+Pass `--loadout /some/dir` to use `/some/dir/config` and `/some/dir/data` instead. The older form, the dir on its own (`tdl /some/dir`), still works. tdl then asks whether to open that loadout every time; if you say yes, it is remembered in `uac.rite` (below) and opened whenever tdl starts without `--loadout`. If it has gone missing, tdl says so and opens the standard dirs. `--loadout-once /some/dir` opens a loadout the same way without asking. `tdl --forget-loadout` opens the standard dirs and asks whether to forget the remembered loadout; `tdl --forget-loadout-once` opens them without asking.
 
-`global.rite` always lives in the standard config dir, whichever vault is open, since it is the one place every vault can find. It holds `vault` (the vault to open by default), `wad_dirs` (wad dirs kept for every vault from `--wads`), `music` (`Off`, `Splash` or `Kept`: no music, music on the splash screen only, or music that keeps playing in the launcher; missing in older files, which count as `Splash`), `splash_quip` (the splash screen's quip: `Random`, or `Custom` with the text as typed, in which every `#<number>` stands for that built-in quip; missing in older files, which count as `Random`, and a number this tdl has no quip for shows a random one), `no_quips` (`true` to leave the quips out of every window; missing in older files, which count as `false`), `song` (the path of a song to play instead of the built-in track, picked in the settings; missing in older files, which count as the built-in one), `uzdoom` (the UZDoom executable used by profiles that don't set their own, `U` in the launcher), `base_wad` (the default base wad, saved like a profile's: `path`, `hash`, `size`, `volatile` and `modified`; `W` in the launcher), `uzdoom_args` (extra arguments for UZDoom, as one line of text split at spaces, passed on every launch, host and join before the wads; **uzdoom args** in the settings), `skip_splash` (`true` to go straight to the launcher; **splash** in the settings), `pride` (`true` to play the pride splash every time; **pride** in the settings; missing in older files, which count as `false`) and `host_port` (the port the last game was hosted on, offered again in the host form; empty for the default, 8080). `uzdoom`, `base_wad`, `uzdoom_args`, `skip_splash` and `host_port` were kept in each vault's `config.rite` before its edition 5, and are missing in older `global.rite` files, which count as none, `false` or empty.
+`uac.rite` always lives in the standard config dir, whichever loadout is open, since it is the one place every loadout can find. It holds `loadout` (the loadout to open by default), `wad_dirs` (wad dirs kept for every loadout from `--wads`), `music` (`Off`, `Splash` or `Kept`: no music, music on the splash screen only, or music that keeps playing in the launcher; missing in older files, which count as `Splash`), `splash_quip` (the splash screen's quip: `Random`, or `Custom` with the text as typed, in which every `#<number>` stands for that built-in quip; missing in older files, which count as `Random`, and a number this tdl has no quip for shows a random one), `no_quips` (`true` to leave the quips out of every window; missing in older files, which count as `false`), `song` (the path of a song to play instead of the built-in track, picked in the settings; missing in older files, which count as the built-in one), `uzdoom` (the UZDoom executable used by profiles that don't set their own, `U` in the launcher), `base_wad` (the default base wad, saved like a profile's: `path`, `hash`, `size`, `volatile` and `modified`; `W` in the launcher), `uzdoom_args` (extra arguments for UZDoom, as one line of text split at spaces, passed on every launch, host and join before the wads; **uzdoom args** in the settings), `skip_splash` (`true` to go straight to the launcher; **splash** in the settings), `pride` (`true` to play the pride splash every time; **pride** in the settings; missing in older files, which count as `false`) and `host_port` (the port the last game was hosted on, offered again in the host form; empty for the default, 8080). `uzdoom`, `base_wad`, `uzdoom_args`, `skip_splash` and `host_port` were kept in each loadout's `config.rite` before its edition 5, and are missing in older `uac.rite` files, which count as none, `false` or empty.
 
 The macOS paths follow the `directories` crate's documentation and have not been tried on a Mac. On macOS the two dirs are the same, so the files below share one dir. That is why the profiles dir and the downloads dir start with a dot: profile names can't contain one, so those dirs can never be mistaken for a profile's data dir.
 
@@ -20,9 +20,9 @@ The macOS paths follow the `directories` crate's documentation and have not been
 
 ```
 <config dir>/
-├── config.rite                 the order of profiles and the vault's own wad dirs
+├── config.rite                 the order of profiles and the loadout's own wad dirs
 ├── config.rite.bak             the config as it was before the last save
-├── global.rite                 (standard config dir only) every setting, the default vault and global wad dirs
+├── uac.rite                 (standard config dir only) every setting, the default loadout and global wad dirs
 └── .profiles/                  (the dot keeps it from ever matching a profile's name)
     ├── brutal.rite             one file per profile, named after the profile
     ├── brutal.rite.bak         that profile as it was before the last save
@@ -60,9 +60,9 @@ Every `.rite` file is MessagePack, a compact binary format, in a wrapper that re
 | Field | Meaning |
 | --- | --- |
 | `profile_names` | The profiles in the order the launcher shows them. |
-| `wad_dirs` | Wad dirs kept for this vault from `--wads`, used whenever tdl starts without it (before the global ones). Missing in older files, which count as none. |
+| `wad_dirs` | Wad dirs kept for this loadout from `--wads`, used whenever tdl starts without it (before the global ones). Missing in older files, which count as none. |
 
-Only what belongs to the vault is here; every setting is in `global.rite`, so it is the same whichever vault is open. Before edition 5, `config.rite` also held `uzdoom`, `base_wad`, `skip_splash`, `host_port` and `uzdoom_args`. They are still read from such a file and handed to `global.rite`, each one only if `global.rite` doesn't have it yet (so the first vault opened since keeps its own, and later vaults' are dropped), and `global.rite` is saved before the upgrade rewrites `config.rite` without them.
+Only what belongs to the loadout is here; every setting is in `uac.rite`, so it is the same whichever loadout is open. Before edition 5, `config.rite` also held `uzdoom`, `base_wad`, `skip_splash`, `host_port` and `uzdoom_args`. They are still read from such a file and handed to `uac.rite`, each one only if `uac.rite` doesn't have it yet (so the first loadout opened since keeps its own, and later loadouts' are dropped), and `uac.rite` is saved before the upgrade rewrites `config.rite` without them.
 
 **`.profiles/<name>.rite`** (`data`)
 
@@ -85,16 +85,16 @@ Files saved before edition 2 kept each wad's whole path as an OS-tagged string, 
 
 Edition 3 (profiles and `config.rite`) fills in the `size` of any wad saved with 0, the wads added before sizes were recorded, from the file as it is on disk when the file is upgraded, so a change from then on is marked. Wads whose file is missing keep 0. Nothing is hashed, and `modified` stays 0, so such a wad is still read again before it is trusted when joining.
 
-Edition 4 (profiles and `config.rite`), and edition 1 of `global.rite`, only rename fields: `folders` is now `dirs` and each wad's `folder` its `dir` in a profile, and `wad_folders` is now `wad_dirs` in `config.rite` and `global.rite`. Files with the old names still load, and the upgrade prompt rewrites profiles and `config.rite` with the new ones; `global.rite` takes the new names the next time it is saved. Older tdl can't read the new editions.
+Edition 4 (profiles and `config.rite`), and edition 1 of `uac.rite`, only rename fields: `folders` is now `dirs` and each wad's `folder` its `dir` in a profile, and `wad_folders` is now `wad_dirs` in `config.rite` and `uac.rite`. Files with the old names still load, and the upgrade prompt rewrites profiles and `config.rite` with the new ones; `uac.rite` takes the new names the next time it is saved. Older tdl can't read the new editions.
 
 ## Scrolls
 
-A `.scroll` is one or more profiles sealed up to share (`S` in the launcher: the profile under the cursor, the ones selected, or the whole vault), written wherever you choose. Like the other files it is MessagePack in an edition wrapper, holding:
+A `.scroll` is one or more profiles sealed up to share (`S` in the launcher: the profile under the cursor, the ones selected, or the whole loadout), written wherever you choose. Like the other files it is MessagePack in an edition wrapper, holding:
 
 | Field | Meaning |
 | --- | --- |
 | `profiles` | The profiles, in the launcher's order. Each has a `name` (kept on import unless it is taken, or offered to rename for a scroll of one), `wads` (in load order, each only its `name`, `size` (0 if unknown), `hash` and `volatile`: no dirs, no paths), `base_wad` (the profile's own, the same way, if it has one) and `host_defaults` (with the join code left out, and `share_ini` off). |
-| `settings` | The maker's `music`, `no_quips` and `splash_quip` from their `global.rite`, if they chose to seal them in. Never their song, vault or wad dirs. Missing if they didn't. A splash quip over 120 characters or with control characters gets the scroll refused. |
+| `settings` | The maker's `music`, `no_quips` and `splash_quip` from their `uac.rite`, if they chose to seal them in. Never their song, loadout or wad dirs. Missing if they didn't. A splash quip over 120 characters or with control characters gets the scroll refused. |
 
 Scrolls of edition 0 (from tdl 0.6.0) held one profile, with its `name`, `wads`, `base_wad` and `host_defaults` at the top level beside `settings`. They still import, as a scroll of that one profile. tdl 0.6.0 can't read the newer edition.
 

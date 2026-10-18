@@ -13,9 +13,9 @@ use std::{
 
 use crate::{
     error::{Error, Result},
+    loadout::wad::{self, Wad},
     net::{Address, Entry, new_agent},
     tally::Tally,
-    vault::wad::{self, Wad},
 };
 
 /// How slowly a wad may arrive before its download is given up on, so a dead connection
@@ -197,12 +197,12 @@ mod tests {
 
     use super::*;
     use crate::{
+        loadout::profile::Profile,
+        loadout::scribe::tests::Altar,
         net::{
             Manifest,
             tests::{CODE, host, host_wads, local},
         },
-        vault::profile::Profile,
-        vault::scribe::tests::Altar,
     };
 
     /// Counts what a download reports, instead of drawing it.

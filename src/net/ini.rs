@@ -581,7 +581,7 @@ pub fn blend(host: &str, own: Option<&str>, keys: bool) -> Blended {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vault::scribe::tests::Altar;
+    use crate::loadout::scribe::tests::Altar;
 
     #[test]
     fn the_profiles_own_ini_is_the_one_in_use_if_it_is_there() {

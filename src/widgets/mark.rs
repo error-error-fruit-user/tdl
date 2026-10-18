@@ -4,8 +4,8 @@
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 
 use crate::{
+    loadout::{profile::Profile, uac::Uac, wad::Fault, wad::Wad},
     theme,
-    vault::{global::Global, profile::Profile, wad::Fault, wad::Wad},
 };
 
 /// How wide a badge is: the glyph with a space on either side.
@@ -50,7 +50,7 @@ impl Mark {
 
     /// The mark for a whole profile: the worst thing about it. This looks at the disk once for each
     /// of its files, so call it only for profiles that are on screen.
-    pub fn of_profile(profile: &Profile, global: &Global) -> Option<Self> {
+    pub fn of_profile(profile: &Profile, global: &Uac) -> Option<Self> {
         let faults = profile.faults(global);
         if profile.uzdoom(global).is_none() || faults.iter().any(|(_, f)| f.is_blocking()) {
             Some(Self::Broken)
@@ -93,15 +93,15 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::vault::scribe::tests::Altar;
+    use crate::loadout::scribe::tests::Altar;
 
-    fn setup(name: &str) -> (Altar, Global, Wad) {
+    fn setup(name: &str) -> (Altar, Uac, Wad) {
         let altar = Altar::new(name);
         fs::write(altar.file("uzdoom"), b"").unwrap();
         fs::write(altar.file("a.pk3"), b"1234").unwrap();
-        let global = Global {
+        let global = Uac {
             uzdoom: Some(altar.file("uzdoom").into()),
-            ..Global::default()
+            ..Uac::default()
         };
         let wad = Wad::from_path(&altar.file("a.pk3")).unwrap();
         (altar, global, wad)
@@ -134,7 +134,7 @@ mod tests {
         let (_altar, _, wad) = setup("mark-no-uzdoom");
         let profile = Profile::new("p".into(), vec![wad]);
         assert_eq!(
-            Mark::of_profile(&profile, &Global::default()),
+            Mark::of_profile(&profile, &Uac::default()),
             Some(Mark::Broken)
         );
     }
@@ -168,7 +168,10 @@ mod tests {
         Mark::Broken.paint(2, 0, area, &mut buffer);
         assert_eq!(buffer[(2, 0)].symbol(), " ");
         assert_eq!(buffer[(3, 0)].symbol(), "!");
-        assert_eq!(Some(buffer[(3, 0)].bg), theme::worn().styles.broken_badge.bg);
+        assert_eq!(
+            Some(buffer[(3, 0)].bg),
+            theme::worn().styles.broken_badge.bg
+        );
         // the cell before the badge keeps the cursor's style
         assert_eq!(Some(buffer[(1, 0)].bg), theme::worn().styles.cursor.bg);
     }
@@ -179,7 +182,13 @@ mod tests {
         let mut buffer = Buffer::empty(area);
         buffer.set_style(area, theme::worn().styles.broken_cursor);
         Mark::Broken.paint(0, 0, area, &mut buffer);
-        assert_eq!(Some(buffer[(1, 0)].bg), theme::worn().styles.broken_badge.fg);
-        assert_eq!(Some(buffer[(1, 0)].fg), theme::worn().styles.broken_badge.bg);
+        assert_eq!(
+            Some(buffer[(1, 0)].bg),
+            theme::worn().styles.broken_badge.fg
+        );
+        assert_eq!(
+            Some(buffer[(1, 0)].fg),
+            theme::worn().styles.broken_badge.bg
+        );
     }
 }

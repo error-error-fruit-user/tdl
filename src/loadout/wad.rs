@@ -12,11 +12,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::Result,
-    tally::Tally,
-    vault::{
+    loadout::{
         hash,
         saved::{SavedPath, SavedWad},
     },
+    tally::Tally,
 };
 
 /// A wad or pk3 file, identified across machines by the BLAKE3 hash of its contents.
@@ -277,7 +277,7 @@ impl fmt::Display for Fault {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vault::scribe::tests::Altar;
+    use crate::loadout::scribe::tests::Altar;
 
     #[test]
     fn a_healthy_file_has_no_fault() {

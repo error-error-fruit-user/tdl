@@ -2,10 +2,10 @@ use ratatui::{crossterm::event::KeyCode, style::Color};
 
 use crate::{
     error::Result,
+    loadout::profile::Profile,
     popups::{legend::Legend, three_way_dialog::ThreeWayDialog, warning::Warning},
     ritual::{Grimoire, Page, Phase, Ritual},
     theme,
-    vault::profile::Profile,
     widgets::{
         form::{self, Field},
         text,

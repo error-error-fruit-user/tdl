@@ -11,7 +11,12 @@ use ratatui::{
 use crate::{
     clipboard::Clipboard,
     error::Result,
-    layout, picker,
+    layout,
+    loadout::Loadout,
+    loadout::profile::Profile,
+    loadout::shelf::{self, Shelf},
+    loadout::wad::{Fault, Wad},
+    picker,
     popups::legend::Legend,
     popups::warning::Warning,
     popups::{self, dialog::Dialog, hashing, status, three_way_dialog::ThreeWayDialog},
@@ -28,10 +33,6 @@ use crate::{
     },
     slayer::watch,
     tag, theme,
-    vault::Vault,
-    vault::profile::Profile,
-    vault::shelf::{self, Shelf},
-    vault::wad::{Fault, Wad},
     widgets::{
         details::Details,
         form::{self, Field},
@@ -66,9 +67,9 @@ pub struct Editor<'a> {
     found: Found,
     /// The wads picked to be copied together.
     selection: Selection,
-    /// The vault's clipboard, handed back when the editor closes.
+    /// The loadout's clipboard, handed back when the editor closes.
     clipboard: Clipboard,
-    /// What the wads screen (`L`) works on, handed back to the vault when the editor closes, so it
+    /// What the wads screen (`L`) works on, handed back to the loadout when the editor closes, so it
     /// keeps the wad dirs and follows any files moved.
     shelf: Shelf,
     /// The profile whose name this one was saved under, after the user agreed to replace it.
@@ -120,32 +121,32 @@ impl<'a> Editor<'a> {
         ["U/W/I/G", "Select UZDoom/Base Wad/Ini/Args"],
     ];
 
-    /// Creates a profile and puts it in at `index` (see [`Vault::insert`]), or in place of the
+    /// Creates a profile and puts it in at `index` (see [`Loadout::insert`]), or in place of the
     /// profile it replaces, where `index` then points. Nothing if cancelled or left empty.
     pub fn summon_blank(
         grimoire: &mut Grimoire,
-        vault: &mut Vault,
+        loadout: &mut Loadout,
         index: &mut usize,
     ) -> Result<()> {
-        Self::summon_with(grimoire, vault, index, Vec::new())
+        Self::summon_with(grimoire, loadout, index, Vec::new())
     }
 
     /// Like [`Editor::summon_blank`], with a profile that starts out with `wads`, such as the ones
     /// on the clipboard.
     pub fn summon_with(
         grimoire: &mut Grimoire,
-        vault: &mut Vault,
+        loadout: &mut Loadout,
         index: &mut usize,
         wads: Vec<Wad>,
     ) -> Result<()> {
-        let mut editor = Editor::new(&vault.profiles, &vault.data_dir);
+        let mut editor = Editor::new(&loadout.profiles, &loadout.data_dir);
         if !wads.is_empty() {
             editor.faults = check_wads(&wads);
             editor.profile.wads = wads;
             editor.editing_wads = true;
         }
-        editor.clipboard = vault.clipboard.clone();
-        editor.shelf = vault.shelf();
+        editor.clipboard = loadout.clipboard.clone();
+        editor.shelf = loadout.shelf();
         let profile = editor.invoke(grimoire)?;
         let Editor {
             clipboard,
@@ -153,36 +154,36 @@ impl<'a> Editor<'a> {
             replacing,
             ..
         } = editor;
-        vault.clipboard = clipboard;
+        loadout.clipboard = clipboard;
         let saved = match (profile, replacing) {
-            (Some(profile), Some(replaced)) => vault
+            (Some(profile), Some(replaced)) => loadout
                 .supplant(replaced, None, profile)
                 .map(|landed| *index = landed),
-            (Some(profile), None) => vault.insert(index, profile),
+            (Some(profile), None) => loadout.insert(index, profile),
             (None, _) => Ok(()),
         };
         if saved.is_err() {
             Warning::save_failed(grimoire)?;
         }
-        if vault.restock(shelf).is_err() {
+        if loadout.restock(shelf).is_err() {
             Warning::save_failed(grimoire)?;
         }
         Ok(())
     }
 
-    /// Edits `vault.profiles[index]` and saves the result. Cancelling keeps the original. A profile
+    /// Edits `loadout.profiles[index]` and saves the result. Cancelling keeps the original. A profile
     /// saved under the name of another, which it replaces, can end up one place up, as `index` says.
     pub fn summon_existing(
         grimoire: &mut Grimoire,
-        vault: &mut Vault,
+        loadout: &mut Loadout,
         index: &mut usize,
     ) -> Result<()> {
         let edited = *index;
         // 👀 a watched dir's new wads are in before the edit starts
-        watch::refresh_saved(grimoire, vault, edited)?;
-        let mut editor = Editor::edit(&vault.profiles, &vault.data_dir, edited);
-        editor.clipboard = vault.clipboard.clone();
-        editor.shelf = vault.shelf();
+        watch::refresh_saved(grimoire, loadout, edited)?;
+        let mut editor = Editor::edit(&loadout.profiles, &loadout.data_dir, edited);
+        editor.clipboard = loadout.clipboard.clone();
+        editor.shelf = loadout.shelf();
         let profile = editor.invoke(grimoire)?;
         let Editor {
             clipboard,
@@ -191,22 +192,22 @@ impl<'a> Editor<'a> {
             replacing,
             ..
         } = editor;
-        vault.clipboard = clipboard;
+        loadout.clipboard = clipboard;
         if let Some(mut profile) = profile {
             // 🙈 a wad taken out of a watched dir's profile stays out
             profile.note_dismissed(&original);
             let saved = match replacing {
-                Some(replaced) => vault
+                Some(replaced) => loadout
                     .supplant(replaced, Some(edited), profile)
                     .map(|landed| *index = landed),
-                None => vault.replace(edited, profile),
+                None => loadout.replace(edited, profile),
             };
             if saved.is_err() {
                 Warning::save_failed(grimoire)?;
             }
         }
         // 🚚 after the edit is in, so a profile left unsaved still follows any file it moved
-        if vault.restock(shelf).is_err() {
+        if loadout.restock(shelf).is_err() {
             Warning::save_failed(grimoire)?;
         }
         Ok(())
@@ -1277,7 +1278,7 @@ mod tests {
     use std::{cell::Cell, fs};
 
     use super::*;
-    use crate::vault::scribe::tests::Altar;
+    use crate::loadout::scribe::tests::Altar;
 
     fn wad_with(altar: &Altar, name: &str, contents: &[u8]) -> Wad {
         fs::write(altar.file(name), contents).unwrap();
@@ -1420,9 +1421,9 @@ mod tests {
     #[test]
     fn snapshot_editing_a_profile_with_every_kind_of_mark() {
         let altar = Altar::new("snap-editor");
-        let root = crate::testing::example_vault(&altar);
-        let vault = Vault::new(root.join("config"), root.join("data"));
-        let mut editor = Editor::edit(&vault.profiles, &vault.data_dir, 1);
+        let root = crate::testing::example_loadout(&altar);
+        let loadout = Loadout::new(root.join("config"), root.join("data"));
+        let mut editor = Editor::edit(&loadout.profiles, &loadout.data_dir, 1);
         editor.table_state.select(Some(1));
         insta::assert_snapshot!(crate::testing::draw(90, 28, |page| editor.render(page)));
     }
@@ -1689,9 +1690,9 @@ mod tests {
     #[test]
     fn only_a_profile_that_differs_from_how_it_was_opened_is_changed() {
         let altar = Altar::new("editor-changed");
-        let root = crate::testing::example_vault(&altar);
-        let vault = Vault::new(root.join("config"), root.join("data"));
-        let mut editor = Editor::edit(&vault.profiles, &vault.data_dir, 0);
+        let root = crate::testing::example_loadout(&altar);
+        let loadout = Loadout::new(root.join("config"), root.join("data"));
+        let mut editor = Editor::edit(&loadout.profiles, &loadout.data_dir, 0);
         assert!(!editor.is_changed());
         editor.toggle_volatility(0);
         assert!(editor.is_changed());

@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::vault::{profile::Profile, wad::Wad};
+use crate::loadout::{profile::Profile, wad::Wad};
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum Clipboard {

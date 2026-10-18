@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{Error, Result},
+    loadout::profile::Profile,
+    loadout::wad::Wad,
     net::{Address, MAX_FILES, is_safe, new_agent},
-    vault::profile::Profile,
-    vault::wad::Wad,
 };
 
 /// What a host serves at `/manifest`: its wads in load order, identified by hash.

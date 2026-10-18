@@ -4,37 +4,37 @@ use ratatui::{crossterm::event::KeyCode, style::Color};
 
 use crate::{
     error::Result,
+    loadout::uac::{Music, SplashQuip, Uac},
     music, picker,
     popups::{legend::Legend, three_way_dialog::ThreeWayDialog, warning::Warning},
     ritual::{Grimoire, Page, Phase, Ritual},
     theme,
-    vault::global::{Global, Music, SplashQuip},
     widgets::{
         form::{self, Field},
         text,
     },
 };
 
-/// The settings: whether the splash screen shows and extra arguments for UZDoom, for this vault;
-/// and the music, the song, and the quips, for every vault.
+/// The settings: whether the splash screen shows and extra arguments for UZDoom, for this loadout;
+/// and the music, the song, and the quips, for every loadout.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub splash: bool,
-    /// Whether the splash is the pride one, for every vault.
+    /// Whether the splash is the pride one, for every loadout.
     pub pride: bool,
     pub music: Music,
     pub uzdoom_args: String,
-    /// Whether windows show quips at all, for every vault.
+    /// Whether windows show quips at all, for every loadout.
     pub quips: bool,
     /// The splash quip as it is typed: see [`SplashQuip::from_typed`].
     pub quip: String,
-    /// A song of the player's own instead of the built-in track, for every vault.
+    /// A song of the player's own instead of the built-in track, for every loadout.
     pub song: Option<PathBuf>,
 }
 
 impl Settings {
     /// The settings as `global` has them.
-    pub fn of(global: &Global) -> Self {
+    pub fn of(global: &Uac) -> Self {
         Self {
             splash: !global.skip_splash,
             pride: global.pride,
@@ -48,7 +48,7 @@ impl Settings {
 
     /// Writes the settings into `global`, which the caller then saves. Fails, changing nothing, if
     /// the quip is a number that isn't one of the quips.
-    pub fn apply(self, global: &mut Global) -> std::result::Result<(), String> {
+    pub fn apply(self, global: &mut Uac) -> std::result::Result<(), String> {
         let quip = SplashQuip::from_typed(&self.quip)?;
         global.skip_splash = !self.splash;
         global.pride = self.pride;
@@ -356,18 +356,18 @@ mod tests {
 
     #[test]
     fn the_settings_come_from_the_global_ones_and_go_back_into_them() {
-        let global = Global {
+        let global = Uac {
             skip_splash: true,
             uzdoom_args: "-nomusic".into(),
             splash_quip: SplashQuip::Custom("#3".into()),
-            ..Global::default()
+            ..Uac::default()
         };
         let settings = Settings::of(&global);
         assert!(!settings.splash);
         assert_eq!(settings.music, Music::Splash);
         assert_eq!(settings.quip, "#3");
 
-        let mut changed = Global::default();
+        let mut changed = Uac::default();
         Settings {
             splash: false,
             pride: true,
@@ -399,33 +399,33 @@ mod tests {
         assert_eq!(Music::Off.previous(), Music::Kept);
         assert_eq!(Music::Splash.previous(), Music::Off);
 
-        let mut form = SettingsForm::new(Settings::of(&Global::default()));
+        let mut form = SettingsForm::new(Settings::of(&Uac::default()));
         form.focus = SettingsForm::MUSIC;
         assert!(form.edit(KeyCode::Char('k')) == Phase::Render);
         assert_eq!(form.settings.music, Music::Off);
 
-        let mut global = Global::default();
+        let mut global = Uac::default();
         form.settings.clone().apply(&mut global).unwrap();
         assert_eq!(global.music, Music::Off);
     }
 
     #[test]
     fn a_quip_number_that_is_not_one_changes_nothing() {
-        let mut global = Global::default();
+        let mut global = Uac::default();
         let settings = Settings {
             splash: false,
             quip: "#0".into(),
             ..Settings::of(&global)
         };
         assert!(settings.apply(&mut global).is_err());
-        assert_eq!(global, Global::default());
+        assert_eq!(global, Uac::default());
     }
 
     #[test]
     fn backspace_on_the_song_goes_back_to_the_built_in_track() {
         let mut form = SettingsForm::new(Settings {
             song: Some("/songs/e1m1.ogg".into()),
-            ..Settings::of(&Global::default())
+            ..Settings::of(&Uac::default())
         });
         form.focus = SettingsForm::SONG;
         assert!(
@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn the_quip_takes_question_marks_as_words() {
-        let mut form = SettingsForm::new(Settings::of(&Global::default()));
+        let mut form = SettingsForm::new(Settings::of(&Uac::default()));
         form.focus = SettingsForm::QUIP;
         for c in "Minecraft?".chars() {
             assert!(form.edit(KeyCode::Char(c)) == Phase::Render);
@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn toggles_switch_and_the_args_take_any_character_including_spaces() {
-        let mut form = SettingsForm::new(Settings::of(&Global::default()));
+        let mut form = SettingsForm::new(Settings::of(&Uac::default()));
         let keys: Vec<_> = [
             KeyCode::Char('j'),
             KeyCode::Tab,
@@ -482,7 +482,7 @@ mod tests {
 
     #[test]
     fn a_change_is_noticed_and_changing_it_back_is_no_change() {
-        let mut form = SettingsForm::new(Settings::of(&Global::default()));
+        let mut form = SettingsForm::new(Settings::of(&Uac::default()));
         assert!(!form.is_changed());
         let _ = form.edit(KeyCode::Char('j'));
         assert!(form.is_changed());
@@ -492,7 +492,7 @@ mod tests {
 
     #[test]
     fn escape_throws_the_changes_away() {
-        let mut form = SettingsForm::new(Settings::of(&Global::default()));
+        let mut form = SettingsForm::new(Settings::of(&Uac::default()));
         assert_eq!(
             press(&mut form, &[KeyCode::Char('j'), KeyCode::Esc]),
             Some(None)

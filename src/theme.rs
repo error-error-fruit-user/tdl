@@ -574,7 +574,7 @@ mod tests {
 
     #[test]
     fn the_built_in_theme_is_written_once_and_a_changed_one_is_kept() {
-        let altar = crate::vault::scribe::tests::Altar::new("theme-write");
+        let altar = crate::loadout::scribe::tests::Altar::new("theme-write");
         let path = altar.file("dir/theme.toml");
         Theme::write_built_in(&path).unwrap();
         assert_eq!(Theme::read(&path), Ok(Theme::default()));

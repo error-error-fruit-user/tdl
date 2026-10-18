@@ -23,6 +23,10 @@ use crate::{
     cli::HostOverrides,
     error::{Error, INTERRUPTED_EXIT, Result as TdlResult},
     layout::show_size,
+    loadout::{
+        Loadout, edition::Edition, host_settings::HostSettings, lookup::Local, profile::Profile,
+        scroll::Scroll, uac::Shared, wad::Wad,
+    },
     net::{self, Address, Manifest, ini::HostIni},
     screens::wad_namer,
     slayer::{
@@ -34,10 +38,6 @@ use crate::{
     tag,
     tally::Tally,
     uzdoom::{self, Game},
-    vault::{
-        Vault, edition::Edition, global::Shared, host_settings::HostSettings, lookup::Local,
-        profile::Profile, scroll::Scroll, wad::Wad,
-    },
 };
 
 /// What went wrong, said to the user as it is.
@@ -115,16 +115,16 @@ fn wait_for(mut game: Game) -> Outcome {
 }
 
 /// Plays the profile at `index`, and returns when the game ends.
-pub fn launch(vault: &Vault, index: usize) -> Outcome {
-    let profile = &vault.profiles[index];
-    let uzdoom = ready_to_play(vault, profile)?;
+pub fn launch(loadout: &Loadout, index: usize) -> Outcome {
+    let profile = &loadout.profiles[index];
+    let uzdoom = ready_to_play(loadout, profile)?;
     println!("Launching {}", profile.name);
     let game = uzdoom::launch(
         &uzdoom,
-        profile.base_wad(&vault.global).map(Wad::deref),
+        profile.base_wad(&loadout.uac).map(Wad::deref),
         profile,
-        profile.uzdoom_args(&vault.global),
-        &vault.data_dir.join(&profile.name),
+        profile.uzdoom_args(&loadout.uac),
+        &loadout.data_dir.join(&profile.name),
     )
     .map_err(|error| error.to_string())?;
     wait_for(game)?;
@@ -134,22 +134,22 @@ pub fn launch(vault: &Vault, index: usize) -> Outcome {
 
 /// Hosts the profile at `index` with its host defaults, changed by `overrides`, and returns when
 /// the game ends.
-pub fn host(vault: &mut Vault, index: usize, overrides: &HostOverrides) -> Outcome {
-    let profile = vault.profiles[index].clone();
+pub fn host(loadout: &mut Loadout, index: usize, overrides: &HostOverrides) -> Outcome {
+    let profile = loadout.profiles[index].clone();
     let defaults = profile
         .host_defaults
         .clone()
-        .unwrap_or_else(|| HostSettings::new(vault.global.host_port));
+        .unwrap_or_else(|| HostSettings::new(loadout.uac.host_port));
     let settings = overrides.apply(defaults);
     let port = settings
         .port()
         .ok_or("The port must be a number from 1 to 65535")?;
-    let uzdoom = ready_to_play(vault, &profile)?;
+    let uzdoom = ready_to_play(loadout, &profile)?;
     // 💾 only a port other than the default is worth remembering, as the host form does
     let remembered = (port != net::DEFAULT_PORT).then_some(port);
-    if vault.global.host_port != remembered {
-        vault.global.host_port = remembered;
-        if vault.keep_global().is_err() {
+    if loadout.uac.host_port != remembered {
+        loadout.uac.host_port = remembered;
+        if loadout.keep_uac().is_err() {
             eprintln!("Could not save the port for next time, is the disk full?");
         }
     }
@@ -160,7 +160,7 @@ pub fn host(vault: &mut Vault, index: usize, overrides: &HostOverrides) -> Outco
         .map(|wad| wad.refreshed(&mut ()))
         .collect::<Result<_, _>>()
         .map_err(|_| "One of the profile's wads can't be read")?;
-    let base_wad = profile.base_wad(&vault.global);
+    let base_wad = profile.base_wad(&loadout.uac);
     let manifest = Manifest::build(&wads, base_wad.map(|w| w.hash.clone()).unwrap_or_default())
         .map_err(|_| "One of the profile's wads can't be read")?;
     let ini = if settings.share_ini {
@@ -196,8 +196,8 @@ pub fn host(vault: &mut Vault, index: usize, overrides: &HostOverrides) -> Outco
         base_wad.map(Wad::deref),
         &profile,
         &settings,
-        profile.uzdoom_args(&vault.global),
-        &vault.data_dir.join(&profile.name),
+        profile.uzdoom_args(&loadout.uac),
+        &loadout.data_dir.join(&profile.name),
     )
     .map_err(|error| error.to_string())?;
     let ended = wait_for(game);
@@ -213,7 +213,7 @@ pub fn host(vault: &mut Vault, index: usize, overrides: &HostOverrides) -> Outco
 /// `always_download`), with the host's ini (and its keys) as `host_ini` says, if it shares one,
 /// and returns when the game ends.
 pub fn join(
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     address: &Address,
     always_download: bool,
     host_ini: HostIni,
@@ -224,18 +224,18 @@ pub fn join(
         Err(Error::Refused) => return Err(format!("The host at {where_to} refused the join code")),
         Err(_) => return Err(format!("Couldn't reach a host at {where_to}")),
     };
-    let profile = match resolve_profile(vault, address, &manifest, always_download)? {
+    let profile = match resolve_profile(loadout, address, &manifest, always_download)? {
         Some(profile) => profile,
         None => {
             println!("Not joining");
             return Ok(());
         }
     };
-    let uzdoom = ready_to_play(vault, &profile)?;
-    let profile = upgrade_volatile(vault, address, &manifest, profile)?;
+    let uzdoom = ready_to_play(loadout, &profile)?;
+    let profile = upgrade_volatile(loadout, address, &manifest, profile)?;
     let profile = if host_ini != HostIni::Yours {
         let keys = host_ini == HostIni::WithKeys;
-        match join_game::with_host_ini(vault, address, &profile, &uzdoom, keys) {
+        match join_game::with_host_ini(loadout, address, &profile, &uzdoom, keys) {
             Ok(Some((joining, warnings))) => {
                 for warning in &warnings {
                     eprintln!("{warning}");
@@ -255,7 +255,7 @@ pub fn join(
     } else {
         profile
     };
-    let base_wad = profile.base_wad(&vault.global);
+    let base_wad = profile.base_wad(&loadout.uac);
     if !manifest.base_wad_matches(base_wad) {
         eprintln!("Your base wad isn't the host's, joining anyway");
     }
@@ -264,8 +264,8 @@ pub fn join(
         base_wad.map(Wad::deref),
         &profile,
         &address.host,
-        profile.uzdoom_args(&vault.global),
-        &vault.data_dir.join(&profile.name),
+        profile.uzdoom_args(&loadout.uac),
+        &loadout.data_dir.join(&profile.name),
     )
     .map_err(|error| error.to_string())?;
     wait_for(game)?;
@@ -278,38 +278,38 @@ pub fn join(
 /// other contents are offered the host's version first, after which one may match. `None` if the
 /// user says no.
 fn resolve_profile(
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     address: &Address,
     manifest: &Manifest,
     always_download: bool,
 ) -> std::result::Result<Option<Profile>, String> {
-    if let Some(profile) = compatible(vault, manifest) {
+    if let Some(profile) = compatible(loadout, manifest) {
         return Ok(Some(profile));
     }
-    if vault.global.uzdoom_in_effect().is_none() {
+    if loadout.uac.uzdoom_in_effect().is_none() {
         return Err("No UZDoom is selected: pick one in tdl with U, or pass --uzdoom".to_string());
     }
-    let mut local = find_local(vault, manifest)?;
-    let outdated = upgrade::outdated(vault, manifest, &local);
+    let mut local = find_local(loadout, manifest)?;
+    let outdated = upgrade::outdated(loadout, manifest, &local);
     if !outdated.is_empty() {
-        let choices = choose(vault, &outdated, always_download);
-        let settled = bring_up_to_date(vault, address, manifest, &outdated, &choices)?;
+        let choices = choose(loadout, &outdated, always_download);
+        let settled = bring_up_to_date(loadout, address, manifest, &outdated, &choices)?;
         for (wad, placed) in local.iter_mut().zip(settled.placed) {
             if wad.is_none() {
                 *wad = placed;
             }
         }
         // ⬆️ a profile whose wads were just brought up to date may be the host's now
-        if let Some(profile) = compatible(vault, manifest) {
+        if let Some(profile) = compatible(loadout, manifest) {
             return Ok(Some(profile));
         }
     }
-    make_profile(vault, address, manifest, local, always_download)
+    make_profile(loadout, address, manifest, local, always_download)
 }
 
 /// The first profile that matches the host's wads, said.
-fn compatible(vault: &Vault, manifest: &Manifest) -> Option<Profile> {
-    let profile = vault
+fn compatible(loadout: &Loadout, manifest: &Manifest) -> Option<Profile> {
+    let profile = loadout
         .profiles
         .iter()
         .find(|profile| manifest.is_compatible_with(profile))?;
@@ -320,10 +320,10 @@ fn compatible(vault: &Vault, manifest: &Manifest) -> Option<Profile> {
 /// The host's wads that are already on this machine, in the manifest's order, with `None` for
 /// each one that isn't.
 fn find_local(
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     manifest: &Manifest,
 ) -> std::result::Result<Vec<Option<Wad>>, String> {
-    let lookup = vault.lookup();
+    let lookup = loadout.lookup();
     let checks: Vec<_> = manifest
         .entries
         .iter()
@@ -343,7 +343,7 @@ fn find_local(
 /// What to do with each of the joiner's wads that isn't the host's version: a volatile one is
 /// replaced without asking, and so is any other with `always_download`; otherwise the joiner is
 /// asked, and no answer is skip.
-fn choose(vault: &Vault, outdated: &[Outdated], always_download: bool) -> Vec<Choice> {
+fn choose(loadout: &Loadout, outdated: &[Outdated], always_download: bool) -> Vec<Choice> {
     outdated
         .iter()
         .map(|wad| {
@@ -354,14 +354,14 @@ fn choose(vault: &Vault, outdated: &[Outdated], always_download: bool) -> Vec<Ch
             } else if always_download {
                 println!(
                     "Replacing {shown} with the host's version, as --always-download says{}",
-                    if wad.is_download(vault) {
+                    if wad.is_download(loadout) {
                         String::new()
                     } else {
                         format!(" (yours is kept as {}.bak)", wad.file_name())
                     }
                 );
                 Choice::Replace
-            } else if wad.is_download(vault) {
+            } else if wad.is_download(loadout) {
                 let question = format!(
                     "Your download of {} isn't the host's version. Use the host's in its place?",
                     wad.file_name()
@@ -433,7 +433,7 @@ fn ask_rename(wad: &Outdated) -> Choice {
 /// replaced (the old file kept as `.bak`) if it really differs. What goes wrong is said, and the
 /// game joined with the joiner's own version.
 fn upgrade_volatile(
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     address: &Address,
     manifest: &Manifest,
     profile: Profile,
@@ -450,7 +450,7 @@ fn upgrade_volatile(
         let path = PathBuf::from(&wad.path);
         if wad.hash == manifest.entries[entry].hash {
             // 🟰 it only looked different: the file has become the host's since it was hashed
-            if vault.upgrade_wad(&path, &wad).is_err() {
+            if loadout.upgrade_wad(&path, &wad).is_err() {
                 eprintln!("Could not save the new hash of {}", path.display());
             }
         } else {
@@ -466,18 +466,18 @@ fn upgrade_volatile(
         }
     }
     let choices = vec![Choice::Replace; outdated.len()];
-    let settled = bring_up_to_date(vault, address, manifest, &outdated, &choices)?;
+    let settled = bring_up_to_date(loadout, address, manifest, &outdated, &choices)?;
     if !settled.problems.is_empty() {
         eprintln!("Joining anyway, with your own versions of those");
     }
-    let upgraded = vault.profiles.iter().find(|p| p.name == profile.name);
+    let upgraded = loadout.profiles.iter().find(|p| p.name == profile.name);
     Ok(upgraded.cloned().unwrap_or(profile))
 }
 
 /// Downloads the host's version of each outdated wad that `choices` doesn't skip, then does each
 /// choice, saying whatever went wrong.
 fn bring_up_to_date(
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     address: &Address,
     manifest: &Manifest,
     outdated: &[Outdated],
@@ -488,10 +488,10 @@ fn bring_up_to_date(
         .iter()
         .map(|&i| manifest.entries[i].clone())
         .collect();
-    let downloaded = download(vault, address, &needed)?;
+    let downloaded = download(loadout, address, &needed)?;
     let downloaded: Vec<_> = wanted.into_iter().zip(downloaded).collect();
     let settled = upgrade::settle(
-        vault,
+        loadout,
         manifest.entries.len(),
         outdated,
         choices,
@@ -506,7 +506,7 @@ fn bring_up_to_date(
 /// Downloads `entries` from the host, a line for each, or nothing if there are none. Ctrl+C ends
 /// tdl.
 fn download(
-    vault: &Vault,
+    loadout: &Loadout,
     address: &Address,
     entries: &[net::Entry],
 ) -> std::result::Result<Vec<Wad>, String> {
@@ -514,7 +514,7 @@ fn download(
         return Ok(Vec::new());
     }
     let mut lines = Lines(Keys::take());
-    match net::download(address, entries, &vault.downloads_dir(), &mut lines) {
+    match net::download(address, entries, &loadout.downloads_dir(), &mut lines) {
         Ok(wads) => Ok(wads),
         // 🧹 the partial file is gone already; finished ones stay, so a retry picks up there
         Err(Error::Cancelled) => lines.0.end_interrupted(),
@@ -524,15 +524,15 @@ fn download(
 
 /// The UZDoom to play `profile` with, if it has one and nothing it needs is broken.
 fn ready_to_play(
-    vault: &Vault,
+    loadout: &Loadout,
     profile: &Profile,
 ) -> std::result::Result<std::ffi::OsString, String> {
     let uzdoom = profile
-        .uzdoom(&vault.global)
+        .uzdoom(&loadout.uac)
         .cloned()
         .ok_or("No UZDoom is selected: pick one in tdl with U, or pass --uzdoom")?;
     let broken: Vec<_> = profile
-        .faults(&vault.global)
+        .faults(&loadout.uac)
         .into_iter()
         .filter(|(_, fault)| fault.is_blocking())
         .collect();
@@ -555,7 +555,7 @@ fn ready_to_play(
 /// rest downloaded, but only if the user says yes. Named after the host, so it is easy to find
 /// and rename in tdl. `None` if the user says no.
 fn make_profile(
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     address: &Address,
     manifest: &Manifest,
     local: Vec<Option<Wad>>,
@@ -582,34 +582,34 @@ fn make_profile(
             return Ok(None);
         }
     }
-    let downloaded = download(vault, address, &wanted)?;
+    let downloaded = download(loadout, address, &wanted)?;
     let wads = fill_gaps(local, downloaded).ok_or("Fewer wads arrived than were asked for")?;
-    let name = joined_name(&address.host, &vault.profiles);
+    let name = joined_name(&address.host, &loadout.profiles);
     let profile = Profile::new(name, wads);
-    let mut index = vault.profiles.len();
-    vault
+    let mut index = loadout.profiles.len();
+    loadout
         .insert(&mut index, profile.clone())
         .map_err(|_| "Could not save the new profile, is the disk full?")?;
     println!("Made the profile {}", profile.name);
     Ok(Some(profile))
 }
 
-/// `tdl --seal`: every profile in `vault`, in the launcher's order, and the global `settings` if
+/// `tdl --seal`: every profile in `loadout`, in the launcher's order, and the global `settings` if
 /// there are any, sealed into `scroll` (`.scroll` added if it doesn't end in it). An existing file
 /// is never written over. Returns where the scroll went.
 pub fn seal(
-    vault: &Vault,
+    loadout: &Loadout,
     settings: Option<Shared>,
     scroll: &Path,
 ) -> std::result::Result<PathBuf, String> {
-    if vault.profiles.is_empty() {
-        return Err("There are no profiles in the vault to seal".to_string());
+    if loadout.profiles.is_empty() {
+        return Err("There are no profiles in the loadout to seal".to_string());
     }
     let path = share::with_extension(scroll.to_path_buf());
     if path.exists() {
         return Err(format!("There is already a file at {}", path.display()));
     }
-    let mut sealed = Scroll::of(&vault.profiles)?;
+    let mut sealed = Scroll::of(&loadout.profiles)?;
     let with = if settings.is_some() {
         " and your global settings"
     } else {
@@ -619,7 +619,7 @@ pub fn seal(
     sealed
         .save(&path)
         .map_err(|error| format!("Could not write {}: {error}", path.display()))?;
-    let count = vault.profiles.len();
+    let count = loadout.profiles.len();
     let profiles = if count == 1 { "profile" } else { "profiles" };
     println!("Sealed {count} {profiles}{with} in {}", path.display());
     Ok(path)
@@ -698,37 +698,37 @@ impl Tally for Lines {
 mod tests {
     use super::*;
     use crate::{
+        loadout::{edition::Loaded, scribe::tests::Altar},
         testing,
-        vault::{edition::Loaded, scribe::tests::Altar},
     };
 
-    /// The example vault in `altar`.
-    fn example(altar: &Altar) -> Vault {
-        let root = testing::example_vault(altar);
-        Vault::new(root.join("config"), root.join("data"))
+    /// The example loadout in `altar`.
+    fn example(altar: &Altar) -> Loadout {
+        let root = testing::example_loadout(altar);
+        Loadout::new(root.join("config"), root.join("data"))
     }
 
     #[test]
     fn sealing_puts_every_profile_and_the_settings_in_a_new_scroll() {
         let altar = Altar::new("plain-seal");
-        let vault = example(&altar);
+        let loadout = example(&altar);
         let settings = Shared::default();
-        let path = seal(&vault, Some(settings.clone()), &altar.file("all")).unwrap();
+        let path = seal(&loadout, Some(settings.clone()), &altar.file("all")).unwrap();
         assert_eq!(path, altar.file("all.scroll"), ".scroll is added");
         let Loaded::Fine(scroll) = Scroll::load(&path) else {
             panic!("the scroll should read back");
         };
         let names: Vec<_> = scroll.profiles.iter().map(|p| p.name.clone()).collect();
-        let expected: Vec<_> = vault.profiles.iter().map(|p| p.name.clone()).collect();
+        let expected: Vec<_> = loadout.profiles.iter().map(|p| p.name.clone()).collect();
         assert_eq!(names, expected);
         assert_eq!(scroll.settings, Some(settings));
-        let bare = seal(&vault, None, &altar.file("bare")).unwrap();
+        let bare = seal(&loadout, None, &altar.file("bare")).unwrap();
         let Loaded::Fine(bare) = Scroll::load(&bare) else {
             panic!("the scroll should read back");
         };
         assert_eq!(bare.settings, None, "settings only go in when asked for");
         // 🚫 never over a file that is already there
-        assert!(seal(&vault, None, &path).is_err());
+        assert!(seal(&loadout, None, &path).is_err());
     }
 
     #[test]

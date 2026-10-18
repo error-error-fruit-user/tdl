@@ -1,4 +1,4 @@
-//! `.scroll` files: profiles to share with someone else, one or a whole vault. Each wad is only
+//! `.scroll` files: profiles to share with someone else, one or a whole loadout. Each wad is only
 //! its file name, size and hash, with no paths, since paths only mean something on the machine
 //! that wrote them. Breaking the seal (importing) finds each wad again by joining its name onto the
 //! wad dirs.
@@ -13,16 +13,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{Error, Result},
-    net,
-    tally::Tally,
-    vault::{
+    loadout::{
         edition::Edition,
-        global::Shared,
         hash,
         host_settings::HostSettings,
         profile::Profile,
+        uac::Shared,
         wad::{self, Wad},
     },
+    net,
+    tally::Tally,
 };
 
 /// What a scroll's file name ends in, so it is never mistaken for a profile's `.rite`.
@@ -312,7 +312,7 @@ fn check(path: &Path, wad: &Inscribed, tally: &mut impl Tally) -> Result<Option<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vault::scribe::tests::Altar;
+    use crate::loadout::scribe::tests::Altar;
 
     /// A wad on a scroll for `contents`, as if written on another machine.
     fn inscribed(name: &str, contents: &[u8]) -> Inscribed {
@@ -502,7 +502,7 @@ mod tests {
 
     #[test]
     fn settings_that_would_garble_the_screen_are_refused_with_the_scroll() {
-        use crate::vault::global::SplashQuip;
+        use crate::loadout::uac::SplashQuip;
 
         let garbled = Scroll {
             settings: Some(Shared {
@@ -596,7 +596,7 @@ mod tests {
     #[test]
     fn a_scroll_of_several_profiles_saves_as_the_new_edition_and_opens_back() {
         let altar = Altar::new("scroll-several");
-        let path = altar.file("vault.scroll");
+        let path = altar.file("loadout.scroll");
         let written = Scroll {
             profiles: vec![
                 sealed("one", vec![inscribed("a.wad", b"a")]),

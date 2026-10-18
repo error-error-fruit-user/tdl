@@ -1,13 +1,13 @@
 # The README's screenshots, taken from the example profiles (the same ones the tests use).
 # Run from the project root, after `cargo +nightly build --release`:
 #
-#   TDL_SCREENSHOT_DIR=/tmp/tdl-shots cargo +nightly test screenshot_vault -- --ignored
+#   TDL_SCREENSHOT_DIR=/tmp/tdl-shots cargo +nightly test screenshot_loadout -- --ignored
 #   vhs screenshots.tape
 #
 # vhs saves a screenshot a moment after asking for it, so each one is followed by a second's wait,
 # or the next key gets there first and the picture shows the screen after it (or halfway to it).
 # Needs vhs and ttyd on PATH. tdl runs with HOME in /tmp/tdl-shots, so your own settings and
-# vaults are never read or written, and with no splash or music.
+# loadouts are never read or written, and with no splash or music.
 
 Output "/tmp/tdl-shots/screenshots.gif"
 
@@ -19,7 +19,7 @@ Set Padding 10
 Set TypingSpeed 0
 
 Hide
-Type "mkdir -p /tmp/tdl-shots/home && clear && HOME=/tmp/tdl-shots/home ./target/release/tdl --vault-once /tmp/tdl-shots/vault --wads-once /tmp/tdl-shots/wads --wads-once /tmp/tdl-shots/mods --no-splash --no-music" Enter
+Type "mkdir -p /tmp/tdl-shots/home && clear && HOME=/tmp/tdl-shots/home ./target/release/tdl --loadout-once /tmp/tdl-shots/loadout --wads-once /tmp/tdl-shots/wads --wads-once /tmp/tdl-shots/mods --no-splash --no-music" Enter
 Sleep 1s
 Show
 

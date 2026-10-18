@@ -1,10 +1,10 @@
-//! Shared helpers for tests: drawing a screen to text, and a vault full of example profiles.
+//! Shared helpers for tests: drawing a screen to text, and a loadout full of example profiles.
 
 use std::{fs, path::PathBuf};
 
 use ratatui::{Frame, Terminal, backend::TestBackend};
 
-use crate::vault::{Vault, global::Global, profile::Profile, scribe::tests::Altar, wad::Wad};
+use crate::loadout::{Loadout, profile::Profile, scribe::tests::Altar, uac::Uac, wad::Wad};
 
 /// Draws `scene` on a `width` x `height` screen and returns what is on it, one line per row with
 /// trailing blanks trimmed, ready for a snapshot.
@@ -21,10 +21,10 @@ pub fn draw(width: u16, height: u16, scene: impl FnOnce(&mut Frame)) -> String {
         .join("\n")
 }
 
-/// A vault in `altar` with three example profiles, the same ones as in the screenshots:
+/// A loadout in `altar` with three example profiles, the same ones as in the screenshots:
 /// `brutal_doom` is healthy; `sigil_run` has a missing, a changed and a volatile wad;
-/// `test_build` points at a UZDoom that doesn't exist. Returns the vault's dir.
-pub fn example_vault(altar: &Altar) -> PathBuf {
+/// `test_build` points at a UZDoom that doesn't exist. Returns the loadout's dir.
+pub fn example_loadout(altar: &Altar) -> PathBuf {
     let wads = altar.file("wads");
     fs::create_dir_all(&wads).unwrap();
     let names = [
@@ -70,44 +70,44 @@ pub fn example_vault(altar: &Altar) -> PathBuf {
     fs::remove_file(wads.join("gone.pk3")).unwrap();
     fs::write(wads.join("changed.wad"), b"changed-and-grown").unwrap();
 
-    let root = altar.file("vault");
-    let mut vault = Vault::new(root.join("config"), root.join("data"));
+    let root = altar.file("loadout");
+    let mut loadout = Loadout::new(root.join("config"), root.join("data"));
     // 🌐 UZDoom and the base wad are global settings, kept in the altar's standard config dir
-    let global = Global {
+    let global = Uac {
         uzdoom: Some(altar.file("uzdoom.sh").into()),
         base_wad: Some(wad("DOOM2.WAD")),
-        ..Global::default()
+        ..Uac::default()
     };
-    global.keep(&Global::path(&altar.file(STANDARD))).unwrap();
-    vault.global = global;
+    global.keep(&Uac::path(&altar.file(STANDARD))).unwrap();
+    loadout.uac = global;
     for profile in profiles {
-        let mut index = vault.profiles.len();
-        vault.insert(&mut index, profile).unwrap();
+        let mut index = loadout.profiles.len();
+        loadout.insert(&mut index, profile).unwrap();
     }
     root
 }
 
-/// The standard config dir of an altar made by [`example_vault`], where its global settings are.
+/// The standard config dir of an altar made by [`example_loadout`], where its global settings are.
 pub const STANDARD: &str = "standard";
 
-/// Leaves the example vault in `$TDL_SCREENSHOT_DIR`, for `screenshots.tape` to take the README's
+/// Leaves the example loadout in `$TDL_SCREENSHOT_DIR`, for `screenshots.tape` to take the README's
 /// screenshots of. It isn't a check, so it only runs when asked:
 ///
 /// ```sh
-/// TDL_SCREENSHOT_DIR=/tmp/tdl-shots cargo +nightly test screenshot_vault -- --ignored
+/// TDL_SCREENSHOT_DIR=/tmp/tdl-shots cargo +nightly test screenshot_loadout -- --ignored
 /// ```
 #[test]
-#[ignore = "writes the screenshot vault; see the doc comment"]
-fn screenshot_vault() {
+#[ignore = "writes the screenshot loadout; see the doc comment"]
+fn screenshot_loadout() {
     let dir = PathBuf::from(std::env::var("TDL_SCREENSHOT_DIR").expect("TDL_SCREENSHOT_DIR"));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     let altar = Altar(dir);
-    example_vault(&altar);
+    example_loadout(&altar);
     // 🏠 the tape runs tdl with HOME in the altar, so the global settings go where tdl looks then
     let config = altar.file("home/.config/tdl");
     fs::create_dir_all(&config).unwrap();
-    fs::copy(Global::path(&altar.file(STANDARD)), Global::path(&config)).unwrap();
+    fs::copy(Uac::path(&altar.file(STANDARD)), Uac::path(&config)).unwrap();
     // 📚 a second wad dir for the wads screen, with an older brutalv22.pk3 of the same name
     let mods = altar.file("mods");
     fs::create_dir_all(&mods).unwrap();

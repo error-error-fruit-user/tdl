@@ -107,7 +107,7 @@ pub(in crate::net) mod tests {
     use std::{fs, net::TcpListener};
 
     use super::{serve::ServerGuard, *};
-    use crate::{vault::scribe::tests::Altar, vault::wad::Wad};
+    use crate::{loadout::scribe::tests::Altar, loadout::wad::Wad};
 
     pub(in crate::net) const CODE: &str = "letmein";
 

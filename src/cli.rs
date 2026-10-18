@@ -12,20 +12,20 @@ use clap::{
 use ratatui::style::Color;
 
 use crate::{
+    loadout::host_settings::HostSettings,
     net::{self, Address, ini::HostIni},
     quips, theme,
-    vault::host_settings::HostSettings,
 };
 
 /// What was asked for on the command line.
 #[derive(Debug, Default, PartialEq)]
 pub struct Cli {
     /// Replaces the platform's standard config and data dirs.
-    pub vault: Option<String>,
-    /// The vault came from `--vault-once`: open it without asking to keep it.
-    pub vault_once: bool,
-    /// `--forget-vault` or `--forget-vault-once`: the standard vault instead of the remembered one.
-    pub forget_vault: Forget,
+    pub loadout: Option<String>,
+    /// The loadout came from `--loadout-once`: open it without asking to keep it.
+    pub loadout_once: bool,
+    /// `--forget-loadout` or `--forget-loadout-once`: the standard loadout instead of the remembered one.
+    pub forget_loadout: Forget,
     /// Dirs the user keeps wads in, in the order given.
     pub wads: Vec<String>,
     /// The wads came from `--wads-once`: use them without asking to keep them.
@@ -35,9 +35,9 @@ pub struct Cli {
     /// A scroll to import on startup.
     pub unseal: Option<String>,
     /// The scroll came from `--unseal-delete` or `--unseal-delete-force`: it replaces every
-    /// profile in the vault instead of joining them.
+    /// profile in the loadout instead of joining them.
     pub unseal_delete: Option<Ask>,
-    /// Seals the whole vault into a scroll, without any windows.
+    /// Seals the whole loadout into a scroll, without any windows.
     pub seal: Option<Seal>,
     /// Lists the built-in quips and does nothing else.
     pub list_quips: bool,
@@ -66,7 +66,7 @@ pub struct Cli {
     pub headless: bool,
 }
 
-/// `--seal`: the scroll to write the whole vault to, and whether the global settings go in too
+/// `--seal`: the scroll to write the whole loadout to, and whether the global settings go in too
 /// (`--with-settings`).
 #[derive(Debug, PartialEq)]
 pub struct Seal {
@@ -74,7 +74,7 @@ pub struct Seal {
     pub with_settings: bool,
 }
 
-/// What `--forget-vault` and `--forget-wads` ask for: to leave what was kept out of this run, and
+/// What `--forget-loadout` and `--forget-wads` ask for: to leave what was kept out of this run, and
 /// with the plain flag (not `-once`), to be asked whether to forget it for good.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Forget {
@@ -172,7 +172,7 @@ impl Command {
 }
 
 /// The help's headings and the options under them.
-const VAULT: &str = "Vault";
+const LOADOUT: &str = "Loadout";
 const SHARING: &str = "Sharing";
 const SPLASH: &str = "Splash and music";
 const THIS_RUN: &str = "Just for this run";
@@ -188,49 +188,49 @@ const THIS_RUN: &str = "Just for this run";
     max_term_width = 100
 )]
 struct Args {
-    /// The vault dir on its own, as before --vault existed
+    /// The loadout dir on its own, as before --loadout existed
     #[arg(
         value_name = "DIR",
-        conflicts_with_all = ["vault", "vault_once", "forget_vault", "forget_vault_once"]
+        conflicts_with_all = ["loadout", "loadout_once", "forget_loadout", "forget_loadout_once"]
     )]
     dir: Option<String>,
 
     /// Keep the config and data in DIR/config and DIR/data; tdl asks whether to open it
     /// every time
-    #[arg(long, value_name = "DIR", global = true, help_heading = VAULT)]
-    vault: Option<String>,
+    #[arg(long, value_name = "DIR", global = true, help_heading = LOADOUT)]
+    loadout: Option<String>,
 
-    /// Like --vault, but just for this run: never asks to open it every time
+    /// Like --loadout, but just for this run: never asks to open it every time
     #[arg(
         long,
         value_name = "DIR",
         global = true,
-        conflicts_with = "vault",
-        help_heading = VAULT
+        conflicts_with = "loadout",
+        help_heading = LOADOUT
     )]
-    vault_once: Option<String>,
+    loadout_once: Option<String>,
 
-    /// Open the standard vault, and ask whether to stop opening the one remembered from --vault
+    /// Open the standard loadout, and ask whether to stop opening the one remembered from --loadout
     #[arg(
         long,
         global = true,
-        conflicts_with_all = ["vault", "vault_once"],
-        help_heading = VAULT
+        conflicts_with_all = ["loadout", "loadout_once"],
+        help_heading = LOADOUT
     )]
-    forget_vault: bool,
+    forget_loadout: bool,
 
-    /// Like --forget-vault, but just for this run: opens the standard vault and asks nothing
+    /// Like --forget-loadout, but just for this run: opens the standard loadout and asks nothing
     #[arg(
         long,
         global = true,
-        conflicts_with_all = ["vault", "vault_once", "forget_vault"],
-        help_heading = VAULT
+        conflicts_with_all = ["loadout", "loadout_once", "forget_loadout"],
+        help_heading = LOADOUT
     )]
-    forget_vault_once: bool,
+    forget_loadout_once: bool,
 
     /// Where your wads are: file pickers open here, and joining looks here for wads it already
     /// has. Give it more than once for more dirs; tdl asks whether to keep them
-    #[arg(long, value_name = "DIR", global = true, help_heading = VAULT)]
+    #[arg(long, value_name = "DIR", global = true, help_heading = LOADOUT)]
     wads: Vec<String>,
 
     /// Like --wads, but just for this run: never asks to keep them
@@ -239,7 +239,7 @@ struct Args {
         value_name = "DIR",
         global = true,
         conflicts_with = "wads",
-        help_heading = VAULT
+        help_heading = LOADOUT
     )]
     wads_once: Vec<String>,
 
@@ -249,7 +249,7 @@ struct Args {
         long,
         global = true,
         conflicts_with_all = ["wads", "wads_once"],
-        help_heading = VAULT
+        help_heading = LOADOUT
     )]
     forget_wads: bool,
 
@@ -258,7 +258,7 @@ struct Args {
         long,
         global = true,
         conflicts_with_all = ["wads", "wads_once", "forget_wads"],
-        help_heading = VAULT
+        help_heading = LOADOUT
     )]
     forget_wads_once: bool,
 
@@ -267,7 +267,7 @@ struct Args {
     #[arg(long, value_name = "SCROLL", global = true, help_heading = SHARING)]
     unseal: Option<String>,
 
-    /// Like --unseal, but the scroll's profiles replace the vault's: every profile in it is
+    /// Like --unseal, but the scroll's profiles replace the loadout's: every profile in it is
     /// deleted first (with its saved games and logs; never the downloaded wads or your global
     /// settings), after asking
     #[arg(
@@ -289,7 +289,7 @@ struct Args {
     )]
     unseal_delete_force: Option<String>,
 
-    /// Seal every profile in the vault into SCROLL, with no windows, and close
+    /// Seal every profile in the loadout into SCROLL, with no windows, and close
     #[arg(
         long,
         value_name = "SCROLL",
@@ -600,9 +600,9 @@ impl Cli {
             }
         });
         Ok(Self {
-            vault_once: args.vault_once.is_some(),
-            vault: args.vault_once.or(args.vault).or(args.dir),
-            forget_vault: Forget::from_flags(args.forget_vault, args.forget_vault_once),
+            loadout_once: args.loadout_once.is_some(),
+            loadout: args.loadout_once.or(args.loadout).or(args.dir),
+            forget_loadout: Forget::from_flags(args.forget_loadout, args.forget_loadout_once),
             wads_once: !args.wads_once.is_empty(),
             wads: if args.wads_once.is_empty() {
                 args.wads
@@ -647,9 +647,9 @@ mod tests {
         Cli::parse(args.iter().map(|arg| arg.to_string())).map_err(|error| error.to_string())
     }
 
-    fn vault(dir: &str) -> Result<Cli, String> {
+    fn loadout(dir: &str) -> Result<Cli, String> {
         Ok(Cli {
-            vault: Some(dir.to_string()),
+            loadout: Some(dir.to_string()),
             ..Cli::default()
         })
     }
@@ -660,13 +660,13 @@ mod tests {
     }
 
     #[test]
-    fn the_vault_flag_takes_the_next_argument() {
-        assert_eq!(parse(&["--vault", "/tmp/v"]), vault("/tmp/v"));
+    fn the_loadout_flag_takes_the_next_argument() {
+        assert_eq!(parse(&["--loadout", "/tmp/v"]), loadout("/tmp/v"));
     }
 
     #[test]
-    fn the_vault_flag_accepts_an_equals_sign() {
-        assert_eq!(parse(&["--vault=/tmp/v"]), vault("/tmp/v"));
+    fn the_loadout_flag_accepts_an_equals_sign() {
+        assert_eq!(parse(&["--loadout=/tmp/v"]), loadout("/tmp/v"));
     }
 
     #[test]
@@ -674,7 +674,7 @@ mod tests {
         assert!(!parse(&[]).unwrap().keep_music);
         assert!(parse(&["--keep-music"]).unwrap().keep_music);
         assert!(
-            parse(&["--keep-music", "--vault", "/tmp/v"])
+            parse(&["--keep-music", "--loadout", "/tmp/v"])
                 .unwrap()
                 .keep_music
         );
@@ -706,18 +706,18 @@ mod tests {
         assert!(parse(&["--music"]).is_err());
         assert!(parse(&["--music="]).is_err());
         assert!(parse(&["--music", "a.wav", "--music", "b.wav"]).is_err());
-        // the song is not mistaken for a vault dir
-        assert_eq!(parse(&["--music", "a.wav"]).unwrap().vault, None);
+        // the song is not mistaken for a loadout dir
+        assert_eq!(parse(&["--music", "a.wav"]).unwrap().loadout, None);
     }
 
     #[test]
     fn the_dir_alone_still_works() {
-        assert_eq!(parse(&["/tmp/v"]), vault("/tmp/v"));
+        assert_eq!(parse(&["/tmp/v"]), loadout("/tmp/v"));
     }
 
     #[test]
     fn a_missing_dir_is_an_error() {
-        assert!(parse(&["--vault"]).is_err());
+        assert!(parse(&["--loadout"]).is_err());
     }
 
     #[test]
@@ -726,60 +726,69 @@ mod tests {
     }
 
     #[test]
-    fn giving_the_vault_twice_is_an_error() {
-        assert!(parse(&["--vault", "a", "--vault", "b"]).is_err());
-        assert!(parse(&["a", "--vault", "b"]).is_err());
+    fn giving_the_loadout_twice_is_an_error() {
+        assert!(parse(&["--loadout", "a", "--loadout", "b"]).is_err());
+        assert!(parse(&["a", "--loadout", "b"]).is_err());
         assert!(parse(&["a", "b"]).is_err());
     }
 
     #[test]
-    fn no_splash_works_alone_and_beside_the_vault() {
+    fn no_splash_works_alone_and_beside_the_loadout() {
         let alone = Cli {
             no_splash: true,
             ..Cli::default()
         };
         assert_eq!(parse(&["--no-splash"]), Ok(alone));
         let both = Cli {
-            vault: Some("/tmp/v".into()),
+            loadout: Some("/tmp/v".into()),
             no_splash: true,
             ..Cli::default()
         };
-        assert_eq!(parse(&["--vault", "/tmp/v", "--no-splash"]), Ok(both));
+        assert_eq!(parse(&["--loadout", "/tmp/v", "--no-splash"]), Ok(both));
         assert_eq!(
-            parse(&["--no-splash", "/tmp/v"]).unwrap().vault,
+            parse(&["--no-splash", "/tmp/v"]).unwrap().loadout,
             Some("/tmp/v".into())
         );
     }
 
     #[test]
     fn wad_dirs_can_be_given_several_times_in_order() {
-        let cli = parse(&["--wads", "/a", "--wads=/b", "--vault", "/v", "--wads", "/c"]).unwrap();
+        let cli = parse(&[
+            "--wads",
+            "/a",
+            "--wads=/b",
+            "--loadout",
+            "/v",
+            "--wads",
+            "/c",
+        ])
+        .unwrap();
         assert_eq!(cli.wads, ["/a", "/b", "/c"]);
-        assert_eq!(cli.vault, Some("/v".into()));
+        assert_eq!(cli.loadout, Some("/v".into()));
         assert!(parse(&["--wads"]).is_err());
         assert!(parse(&[]).unwrap().wads.is_empty());
     }
 
     #[test]
-    fn forgetting_the_vault_is_its_own_flag_and_cannot_go_with_one() {
+    fn forgetting_the_loadout_is_its_own_flag_and_cannot_go_with_one() {
         assert_eq!(
-            parse(&["--forget-vault"]).unwrap().forget_vault,
+            parse(&["--forget-loadout"]).unwrap().forget_loadout,
             Forget::Asking
         );
-        assert_eq!(parse(&[]).unwrap().forget_vault, Forget::Nothing);
-        assert!(parse(&["--forget-vault", "--vault", "/v"]).is_err());
-        assert!(parse(&["/v", "--forget-vault"]).is_err());
+        assert_eq!(parse(&[]).unwrap().forget_loadout, Forget::Nothing);
+        assert!(parse(&["--forget-loadout", "--loadout", "/v"]).is_err());
+        assert!(parse(&["/v", "--forget-loadout"]).is_err());
     }
 
     #[test]
-    fn forgetting_the_vault_once_asks_nothing_and_goes_with_no_other_vault_flag() {
-        let once = parse(&["--forget-vault-once"]).unwrap();
-        assert_eq!(once.forget_vault, Forget::Once);
-        assert_eq!(once.vault, None);
-        assert!(parse(&["--forget-vault-once", "--forget-vault"]).is_err());
-        assert!(parse(&["--forget-vault-once", "--vault", "/v"]).is_err());
-        assert!(parse(&["--forget-vault-once", "--vault-once", "/v"]).is_err());
-        assert!(parse(&["/v", "--forget-vault-once"]).is_err());
+    fn forgetting_the_loadout_once_asks_nothing_and_goes_with_no_other_loadout_flag() {
+        let once = parse(&["--forget-loadout-once"]).unwrap();
+        assert_eq!(once.forget_loadout, Forget::Once);
+        assert_eq!(once.loadout, None);
+        assert!(parse(&["--forget-loadout-once", "--forget-loadout"]).is_err());
+        assert!(parse(&["--forget-loadout-once", "--loadout", "/v"]).is_err());
+        assert!(parse(&["--forget-loadout-once", "--loadout-once", "/v"]).is_err());
+        assert!(parse(&["/v", "--forget-loadout-once"]).is_err());
     }
 
     #[test]
@@ -809,32 +818,32 @@ mod tests {
             assert!(parse(&[flag, "--wads-once", "/a"]).is_err());
         }
         assert!(parse(&["--forget-wads", "--forget-wads-once"]).is_err());
-        // the wads and the vault are forgotten apart
-        let both = parse(&["--forget-wads", "--forget-vault-once"]).unwrap();
+        // the wads and the loadout are forgotten apart
+        let both = parse(&["--forget-wads", "--forget-loadout-once"]).unwrap();
         assert_eq!(
-            (both.forget_wads, both.forget_vault),
+            (both.forget_wads, both.forget_loadout),
             (Forget::Asking, Forget::Once)
         );
     }
 
     #[test]
-    fn a_vault_for_once_opens_the_same_but_is_marked_not_to_ask() {
-        let once = parse(&["--vault-once", "/tmp/v"]).unwrap();
-        assert_eq!(once.vault, Some("/tmp/v".into()));
-        assert!(once.vault_once);
-        assert!(parse(&["--vault-once=/tmp/v"]).unwrap().vault_once);
-        assert!(!parse(&["--vault", "/tmp/v"]).unwrap().vault_once);
-        assert!(parse(&["--vault-once"]).is_err());
-        // still only one vault, and still not with forgetting
-        assert!(parse(&["--vault-once", "a", "--vault", "b"]).is_err());
-        assert!(parse(&["--vault-once", "a", "--forget-vault"]).is_err());
+    fn a_loadout_for_once_opens_the_same_but_is_marked_not_to_ask() {
+        let once = parse(&["--loadout-once", "/tmp/v"]).unwrap();
+        assert_eq!(once.loadout, Some("/tmp/v".into()));
+        assert!(once.loadout_once);
+        assert!(parse(&["--loadout-once=/tmp/v"]).unwrap().loadout_once);
+        assert!(!parse(&["--loadout", "/tmp/v"]).unwrap().loadout_once);
+        assert!(parse(&["--loadout-once"]).is_err());
+        // still only one loadout, and still not with forgetting
+        assert!(parse(&["--loadout-once", "a", "--loadout", "b"]).is_err());
+        assert!(parse(&["--loadout-once", "a", "--forget-loadout"]).is_err());
     }
 
     #[test]
     fn a_splash_quip_is_shown_as_given() {
-        let cli = parse(&["--splash-quip", "Rip and tear, Tyler!", "--vault", "/v"]).unwrap();
+        let cli = parse(&["--splash-quip", "Rip and tear, Tyler!", "--loadout", "/v"]).unwrap();
         assert_eq!(cli.quip.as_deref(), Some("Rip and tear, Tyler!"));
-        assert_eq!(cli.vault, Some("/v".into()));
+        assert_eq!(cli.loadout, Some("/v".into()));
         assert_eq!(
             parse(&["--splash-quip=Hi"]).unwrap().quip.as_deref(),
             Some("Hi")
@@ -898,8 +907,8 @@ mod tests {
         .unwrap();
         assert_eq!(cli.uzdoom.as_deref(), Some("/opt/uzdoom-dev"));
         assert_eq!(cli.base_wad.as_deref(), Some("/iwads/freedoom2.wad"));
-        // neither is mistaken for the vault dir
-        assert_eq!(cli.vault, None);
+        // neither is mistaken for the loadout dir
+        assert_eq!(cli.loadout, None);
         assert!(parse(&["--uzdoom"]).is_err());
         assert!(parse(&["--base-wad="]).is_err());
         assert!(parse(&["--uzdoom", "a", "--uzdoom", "b"]).is_err());
@@ -926,8 +935,8 @@ mod tests {
             })
         );
         assert_eq!(cli.uzdoom.as_deref(), Some("/opt/uzdoom-dev"));
-        // the profile isn't taken for a vault dir
-        assert_eq!(cli.vault, None);
+        // the profile isn't taken for a loadout dir
+        assert_eq!(cli.loadout, None);
         assert!(parse(&["launch"]).is_err());
         assert!(parse(&["launch", "--no-splash"]).is_err());
     }
@@ -1106,9 +1115,9 @@ mod tests {
     }
 
     #[test]
-    fn a_command_can_come_after_the_options_and_beside_a_vault_dir() {
+    fn a_command_can_come_after_the_options_and_beside_a_loadout_dir() {
         let cli = parse(&[
-            "--vault-once",
+            "--loadout-once",
             "/tmp/v",
             "--no-music",
             "launch",
@@ -1121,20 +1130,20 @@ mod tests {
                 profile: "brutal_doom".into()
             })
         );
-        assert_eq!(cli.vault, Some("/tmp/v".into()));
-        // the old-style vault dir on its own still works next to a command
+        assert_eq!(cli.loadout, Some("/tmp/v".into()));
+        // the old-style loadout dir on its own still works next to a command
         let both = parse(&["/tmp/v", "host", "p", "--coop"]).unwrap();
-        assert_eq!(both.vault, Some("/tmp/v".into()));
+        assert_eq!(both.loadout, Some("/tmp/v".into()));
         assert!(matches!(both.command, Some(Command::Host { .. })));
         // tdl's own options can come after the command too
-        let after = parse(&["host", "p", "--vault-once", "/tmp/v", "--no-music"]).unwrap();
-        assert_eq!(after.vault, Some("/tmp/v".into()));
+        let after = parse(&["host", "p", "--loadout-once", "/tmp/v", "--no-music"]).unwrap();
+        assert_eq!(after.loadout, Some("/tmp/v".into()));
         assert!(after.no_music);
     }
 
     #[test]
     fn seal_takes_a_scroll_and_maybe_the_settings() {
-        let cli = parse(&["--seal", "all.scroll", "--vault", "/v"]).unwrap();
+        let cli = parse(&["--seal", "all.scroll", "--loadout", "/v"]).unwrap();
         assert_eq!(
             cli.seal,
             Some(Seal {
@@ -1153,8 +1162,8 @@ mod tests {
             parse(&["--with-settings"]).is_err(),
             "with-settings needs seal"
         );
-        assert_eq!(cli.vault, Some("/v".into()));
-        // deleting the vault went over to unsealing
+        assert_eq!(cli.loadout, Some("/v".into()));
+        // deleting the loadout went over to unsealing
         assert!(parse(&["--seal", "a", "--delete"]).is_err());
         assert!(parse(&["--seal", "a", "--force"]).is_err());
         assert!(parse(&["--seal"]).is_err());
@@ -1165,7 +1174,7 @@ mod tests {
     }
 
     #[test]
-    fn unsealing_in_place_of_the_vault_takes_its_own_scroll() {
+    fn unsealing_in_place_of_the_loadout_takes_its_own_scroll() {
         let asked = parse(&["--unseal-delete", "all.scroll"]).unwrap();
         assert_eq!(asked.unseal.as_deref(), Some("all.scroll"));
         assert_eq!(asked.unseal_delete, Some(Ask::First));
@@ -1221,7 +1230,7 @@ mod tests {
         );
         assert!(parse(&["--unseal"]).is_err());
         assert!(parse(&["--unseal", "a.scroll", "--unseal", "b.scroll"]).is_err());
-        // the scroll is not mistaken for a vault dir
-        assert_eq!(parse(&["--unseal", "a.scroll"]).unwrap().vault, None);
+        // the scroll is not mistaken for a loadout dir
+        assert_eq!(parse(&["--unseal", "a.scroll"]).unwrap().loadout, None);
     }
 }

@@ -8,13 +8,13 @@ use std::{
 
 use crate::{
     error::{Error, Result},
+    loadout::wad::Wad,
     popups::{
         cancel::CancelHandler,
         progress::{Kind, Progress},
     },
     ritual::Grimoire,
     tally::Tally,
-    vault::wad::Wad,
 };
 
 /// Hashes the files at `paths`, in order. `None` if Esc was pressed, in which case none are kept.

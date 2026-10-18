@@ -33,7 +33,7 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::vault::scribe::tests::Altar;
+    use crate::loadout::scribe::tests::Altar;
 
     #[test]
     fn the_hash_is_blake3_and_every_byte_is_counted() {

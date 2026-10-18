@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{
     error::{Error, Result},
-    vault::scribe,
+    loadout::scribe,
 };
 
 /// Just enough of a file to read its edition, even if the rest isn't understood anymore.
@@ -172,7 +172,7 @@ pub trait Edition: Serialize + DeserializeOwned + PartialEq + Sized + 'static {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vault::scribe::tests::Altar;
+    use crate::loadout::scribe::tests::Altar;
 
     #[derive(Debug, Default, PartialEq, Deserialize, Serialize)]
     struct Note {

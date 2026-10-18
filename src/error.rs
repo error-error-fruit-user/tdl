@@ -39,7 +39,7 @@ pub enum Error {
     #[error("Upgrade Error: {0}!")]
     Upgrade(&'static str),
 
-    /// `global.rite` is from a newer tdl, so it is never written over.
+    /// `uac.rite` is from a newer tdl, so it is never written over.
     #[error("The global settings are from a newer tdl!")]
-    GlobalTooNew,
+    UacTooNew,
 }

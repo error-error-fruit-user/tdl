@@ -14,7 +14,9 @@ use ratatui::{
 use crate::{
     clipboard::Clipboard,
     error::Result,
-    layout, picker,
+    layout,
+    loadout::shelf::{self, Clash, Destination, Keep, Shelf},
+    picker,
     popups::{
         dialog::Dialog, hashing, legend::Legend, status, three_way_dialog::ThreeWayDialog,
         warning::Warning,
@@ -27,7 +29,6 @@ use crate::{
         wrap_around,
     },
     theme,
-    vault::shelf::{self, Clash, Destination, Keep, Shelf},
     widgets::notes,
 };
 
@@ -101,7 +102,7 @@ impl<'a> Library<'a> {
     ];
 
     /// Opens the screen on `shelf`, which it changes as dirs are added and taken out and files
-    /// moved, and `clipboard`, the vault's, which it copies to and pastes from.
+    /// moved, and `clipboard`, the loadout's, which it copies to and pastes from.
     pub fn summon(
         grimoire: &mut Grimoire,
         shelf: &'a mut Shelf,
@@ -436,13 +437,13 @@ impl<'a> Library<'a> {
             );
         }
         let question = format!(
-            "Look for wads in {} for this session, globally, or for this vault?",
+            "Look for wads in {} for this session, globally, or for this loadout?",
             dir.display()
         );
         let keep =
-            match ThreeWayDialog::summon(grimoire, &question, ["Session", "Global", "Vault"])? {
+            match ThreeWayDialog::summon(grimoire, &question, ["Session", "Global", "Loadout"])? {
                 Some(0) => Keep::Session,
-                Some(1) if self.shelf.global_writable => Keep::Global,
+                Some(1) if self.shelf.uac_writable => Keep::Global,
                 Some(1) => {
                     Warning::summon(
                         grimoire,
@@ -450,7 +451,7 @@ impl<'a> Library<'a> {
                     )?;
                     Keep::Session
                 }
-                Some(2) => Keep::Vault,
+                Some(2) => Keep::Loadout,
                 _ => return Ok(()),
             };
         self.shelf.add(dir.clone(), keep);
@@ -849,7 +850,7 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::vault::scribe::tests::Altar;
+    use crate::loadout::scribe::tests::Altar;
 
     /// Two wad dirs and the downloads in `altar`, with `brutal.pk3` in all three.
     fn stocked(altar: &Altar) -> Shelf {

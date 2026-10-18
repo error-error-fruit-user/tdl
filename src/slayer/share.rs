@@ -1,4 +1,4 @@
-//! Sharing profiles as `.scroll` files: sealing some (or a whole vault) up to send, and breaking
+//! Sharing profiles as `.scroll` files: sealing some (or a whole loadout) up to send, and breaking
 //! the seal on one received, finding their wads in the wad dirs.
 
 use std::path::{Path, PathBuf};
@@ -6,17 +6,17 @@ use std::path::{Path, PathBuf};
 use crate::{
     cli::Ask,
     error::Result,
+    loadout::{
+        Loadout,
+        edition::Edition,
+        profile::Profile,
+        scroll::{self, Scroll, UnsealedProfile},
+        uac::Shared,
+    },
     picker,
     popups::{dialog::Dialog, hashing, progress::Kind, warning::Warning},
     ritual::Grimoire,
     screens::profile_namer::{ProfileNamer, ask_copy_name},
-    vault::{
-        Vault,
-        edition::Edition,
-        global::Shared,
-        profile::Profile,
-        scroll::{self, Scroll, UnsealedProfile},
-    },
 };
 
 const FILTER: picker::Filter = ("scroll", &[scroll::EXTENSION]);
@@ -26,12 +26,12 @@ const FILTER: picker::Filter = ("scroll", &[scroll::EXTENSION]);
 /// if the user says so, so whoever opens it isn't handed settings they didn't ask for.
 pub fn seal(
     grimoire: &mut Grimoire,
-    vault: &Vault,
+    loadout: &Loadout,
     rows: &[usize],
     name: &str,
     settings: Shared,
 ) -> Result<()> {
-    let mut scroll = match Scroll::of(rows.iter().map(|&row| &vault.profiles[row])) {
+    let mut scroll = match Scroll::of(rows.iter().map(|&row| &loadout.profiles[row])) {
         Ok(scroll) => scroll,
         Err(problem) => return Warning::summon(grimoire, &problem),
     };
@@ -50,7 +50,7 @@ pub fn seal(
         return Warning::save_failed(grimoire);
     }
     let what = match rows {
-        [row] => format!("{} is", vault.profiles[*row].name),
+        [row] => format!("{} is", loadout.profiles[*row].name),
         _ => format!("{} profiles are", rows.len()),
     };
     Warning::announce(
@@ -83,22 +83,22 @@ pub fn with_extension(path: PathBuf) -> PathBuf {
 /// as they are.
 pub fn unseal(
     grimoire: &mut Grimoire,
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     index: &mut usize,
     current: &Shared,
 ) -> Result<Option<Shared>> {
     let Some(path) = picker::file(grimoire, Some(FILTER), None)? else {
         return Ok(None);
     };
-    unseal_file(grimoire, vault, index, &path, current, None)
+    unseal_file(grimoire, loadout, index, &path, current, None)
 }
 
 /// [`unseal`], for the scroll at `path` rather than one picked, as `--unseal` asks for. With
-/// `replacing` (`--unseal-delete`), every profile in the vault is deleted to make room for the
+/// `replacing` (`--unseal-delete`), every profile in the loadout is deleted to make room for the
 /// scroll's, once they are ready to go in, after asking if it says to.
 pub fn unseal_file(
     grimoire: &mut Grimoire,
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     index: &mut usize,
     path: &Path,
     current: &Shared,
@@ -107,7 +107,7 @@ pub fn unseal_file(
     let Some(scroll) = read(grimoire, path)? else {
         return Ok(None);
     };
-    let Some(dirs) = dirs_to_look_in(grimoire, vault)? else {
+    let Some(dirs) = dirs_to_look_in(grimoire, loadout)? else {
         return Ok(None);
     };
     let total = scroll.wad_count();
@@ -130,7 +130,7 @@ pub fn unseal_file(
     let profiles: Vec<Profile> = unsealed
         .profiles
         .into_iter()
-        .map(|unsealed| into_profile(vault, unsealed))
+        .map(|unsealed| into_profile(loadout, unsealed))
         .collect();
     let added = match <[Profile; 1]>::try_from(profiles) {
         // 📜 one profile is named as it always was, starting from the scroll's name
@@ -139,18 +139,18 @@ pub fn unseal_file(
             let taken = if replacing.is_some() {
                 &[][..]
             } else {
-                &vault.profiles[..]
+                &loadout.profiles[..]
             };
             let Some(name) = ProfileNamer::summon_suggesting(grimoire, taken, &profile.name)?
             else {
                 return Ok(None);
             };
             if let Some(ask) = replacing
-                && !clear(grimoire, vault, index, ask)?
+                && !clear(grimoire, loadout, index, ask)?
             {
                 return Ok(None);
             }
-            if vault.insert(index, Profile { name, ..profile }).is_err() {
+            if loadout.insert(index, Profile { name, ..profile }).is_err() {
                 Warning::save_failed(grimoire)?;
                 return Ok(None);
             }
@@ -159,11 +159,11 @@ pub fn unseal_file(
         // 📚 several keep their names, and only the ones that are taken are asked about
         Err(profiles) => {
             if let Some(ask) = replacing
-                && !clear(grimoire, vault, index, ask)?
+                && !clear(grimoire, loadout, index, ask)?
             {
                 return Ok(None);
             }
-            let inserted = vault.insert_copies(index, profiles, |profiles, name, tagged| {
+            let inserted = loadout.insert_copies(index, profiles, |profiles, name, tagged| {
                 ask_copy_name(grimoire, profiles, name, tagged)
             })?;
             if inserted.failed {
@@ -179,19 +179,24 @@ pub fn unseal_file(
     Ok(scroll.settings.filter(|settings| settings != current))
 }
 
-/// For `--unseal-delete`: deletes every profile in `vault`, with its saves, to make room for a
+/// For `--unseal-delete`: deletes every profile in `loadout`, with its saves, to make room for a
 /// scroll's, asking first if `ask` says to, and puts `index` at the top. Returns whether they are
 /// gone; the downloaded wads and the global settings always stay.
-fn clear(grimoire: &mut Grimoire, vault: &mut Vault, index: &mut usize, ask: Ask) -> Result<bool> {
+fn clear(
+    grimoire: &mut Grimoire,
+    loadout: &mut Loadout,
+    index: &mut usize,
+    ask: Ask,
+) -> Result<bool> {
     if ask == Ask::First {
-        let question = match vault.profiles.as_slice() {
-            [] => "Unseal the scroll into this empty vault?".to_string(),
+        let question = match loadout.profiles.as_slice() {
+            [] => "Unseal the scroll into this empty loadout?".to_string(),
             [only] => format!(
                 "Delete '{}' and its saves, and put the scroll's profiles in its place?",
                 only.name
             ),
             all => format!(
-                "Delete the {} profiles in this vault and their saves, and put the scroll's in \
+                "Delete the {} profiles in this loadout and their saves, and put the scroll's in \
                  their place?",
                 all.len()
             ),
@@ -200,7 +205,7 @@ fn clear(grimoire: &mut Grimoire, vault: &mut Vault, index: &mut usize, ask: Ask
             return Ok(false);
         }
     }
-    if vault.remove_all().is_err() {
+    if loadout.remove_all().is_err() {
         Warning::save_failed(grimoire)?;
         return Ok(false);
     }
@@ -208,12 +213,12 @@ fn clear(grimoire: &mut Grimoire, vault: &mut Vault, index: &mut usize, ask: Ask
     Ok(true)
 }
 
-/// A profile off a scroll, as it goes into `vault`. A base wad that is the global one already is
+/// A profile off a scroll, as it goes into `loadout`. A base wad that is the global one already is
 /// left to the global setting.
-fn into_profile(vault: &Vault, unsealed: UnsealedProfile) -> Profile {
+fn into_profile(loadout: &Loadout, unsealed: UnsealedProfile) -> Profile {
     let base_wad = unsealed.base_wad.filter(|wad| {
-        vault
-            .global
+        loadout
+            .uac
             .base_wad
             .as_ref()
             .is_none_or(|global| global.hash != wad.hash)
@@ -251,8 +256,8 @@ fn read(grimoire: &mut Grimoire, path: &Path) -> Result<Option<Scroll>> {
 
 /// The session's wad dirs, or, with none, one dir the user picks for this scroll.
 /// `None` if they back out.
-fn dirs_to_look_in(grimoire: &mut Grimoire, vault: &Vault) -> Result<Option<Vec<PathBuf>>> {
-    let dirs: Vec<_> = vault
+fn dirs_to_look_in(grimoire: &mut Grimoire, loadout: &Loadout) -> Result<Option<Vec<PathBuf>>> {
+    let dirs: Vec<_> = loadout
         .wad_dirs
         .iter()
         .filter(|dir| dir.is_dir())

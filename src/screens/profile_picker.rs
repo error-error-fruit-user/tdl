@@ -8,11 +8,11 @@ use ratatui::{
 use crate::{
     error::Result,
     layout,
+    loadout::profile::Profile,
     popups::legend::Legend,
     ritual::{self, Grimoire, Page, Phase, Ritual},
     screens::wrap_around,
     theme,
-    vault::profile::Profile,
 };
 
 /// Lists the compatible profiles so the user can choose which to join with.

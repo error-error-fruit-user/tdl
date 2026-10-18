@@ -12,6 +12,7 @@ mod cli;
 mod clipboard;
 mod error;
 mod layout;
+mod loadout;
 mod music;
 mod net;
 mod picker;
@@ -26,7 +27,6 @@ mod tally;
 mod testing;
 mod theme;
 mod uzdoom;
-mod vault;
 mod widgets;
 
 fn main() {
@@ -61,9 +61,9 @@ fn main() {
     let headless = cli.headless;
     let seal = cli.seal;
     let start = Start {
-        vault: cli.vault,
-        ask_about_vault: !cli.vault_once,
-        forget_vault: cli.forget_vault,
+        loadout: cli.loadout,
+        ask_about_loadout: !cli.loadout_once,
+        forget_loadout: cli.forget_loadout,
         ask_about_wads: !cli.wads_once,
         forget_wads: cli.forget_wads,
         wads: cli.wads,
@@ -79,7 +79,7 @@ fn main() {
         base_wad,
         command: cli.command,
     };
-    // 📜 --seal draws no windows either: the vault goes into the scroll, and tdl closes
+    // 📜 --seal draws no windows either: the loadout goes into the scroll, and tdl closes
     if let Some(seal) = seal {
         if let Err(message) = Launcher::seal_plain(start, &seal) {
             eprintln!("{message}");

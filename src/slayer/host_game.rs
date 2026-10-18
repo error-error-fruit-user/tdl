@@ -2,13 +2,13 @@ use std::ops::Deref;
 
 use crate::{
     error::{Error, Result},
+    loadout::Loadout,
+    loadout::host_settings::HostSettings,
+    loadout::wad::Wad,
     net,
     popups::{hashing, running, status, warning::Warning},
     ritual::Grimoire,
     theme, uzdoom,
-    vault::Vault,
-    vault::host_settings::HostSettings,
-    vault::wad::Wad,
 };
 
 const TITLE: &str = "Hosting";
@@ -18,7 +18,7 @@ const TITLE: &str = "Hosting";
 /// port is remembered for next time.
 pub fn summon(
     grimoire: &mut Grimoire,
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     index: usize,
     settings: HostSettings,
 ) -> Result<()> {
@@ -27,17 +27,17 @@ pub fn summon(
     };
     // 💾 only a port other than the default is worth remembering
     let remembered = (port != net::DEFAULT_PORT).then_some(port);
-    if vault.global.host_port != remembered {
-        vault.global.host_port = remembered;
-        if vault.keep_global().is_err() {
+    if loadout.uac.host_port != remembered {
+        loadout.uac.host_port = remembered;
+        if loadout.keep_uac().is_err() {
             Warning::save_failed(grimoire)?;
         }
     }
-    let profile = &vault.profiles[index];
-    let Some(uzdoom) = profile.uzdoom(&vault.global) else {
+    let profile = &loadout.profiles[index];
+    let Some(uzdoom) = profile.uzdoom(&loadout.uac) else {
         return Warning::uzdoom_not_selected(grimoire);
     };
-    let base_wad = profile.base_wad(&vault.global);
+    let base_wad = profile.base_wad(&loadout.uac);
     status::summon(grimoire, TITLE, "Hosting...", theme::worn().colors.netplay)?;
 
     // 🌀 volatile wads are hashed fresh, so what the manifest says is what actually gets served
@@ -86,8 +86,8 @@ pub fn summon(
         base_wad.map(Wad::deref),
         profile,
         &settings,
-        profile.uzdoom_args(&vault.global),
-        &vault.data_dir.join(&profile.name),
+        profile.uzdoom_args(&loadout.uac),
+        &loadout.data_dir.join(&profile.name),
     )
     .and_then(|game| running::summon(grimoire, "hosting", &details, game));
     Warning::report_spawn(grimoire, result)

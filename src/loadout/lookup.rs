@@ -12,15 +12,15 @@ use std::{
 };
 
 use crate::{
-    net::Entry,
-    vault::{
-        Vault,
+    loadout::{
+        Loadout,
         wad::{self, Wad},
     },
+    net::Entry,
 };
 
 /// What this machine knows about where wads are. Built from the profiles only when it's needed
-/// (see [`Vault::lookup`]), since most sessions never join a game.
+/// (see [`Loadout::lookup`]), since most sessions never join a game.
 pub struct Lookup {
     /// Every wad in a profile, or a base wad, by hash. Volatile wads are left out, since their
     /// stored hash is expected to be out of date.
@@ -42,21 +42,21 @@ pub enum Local {
 }
 
 impl Lookup {
-    pub fn build(vault: &Vault) -> Self {
+    pub fn build(loadout: &Loadout) -> Self {
         let mut known: HashMap<String, Vec<Wad>> = HashMap::new();
         // 📂 the dirs the user named come first: that's where they said their wads are
         let mut dirs = Vec::new();
-        for dir in &vault.wad_dirs {
+        for dir in &loadout.wad_dirs {
             if !dirs.contains(dir) {
                 dirs.push(dir.clone());
             }
         }
-        let wads = vault
+        let wads = loadout
             .profiles
             .iter()
             .flat_map(|profile| profile.wads.iter().chain(&profile.base_wad))
-            .chain(&vault.global.base_wad)
-            .chain(&vault.global.session_base_wad);
+            .chain(&loadout.uac.base_wad)
+            .chain(&loadout.uac.session_base_wad);
         for wad in wads {
             if let Some(dir) = Path::new(&wad.path).parent()
                 && !dirs.iter().any(|known| known == dir)
@@ -73,7 +73,7 @@ impl Lookup {
         Self {
             known,
             dirs,
-            downloads_dir: vault.downloads_dir(),
+            downloads_dir: loadout.downloads_dir(),
         }
     }
 
@@ -128,7 +128,7 @@ fn file_of_size(path: &Path, size: u64) -> Option<fs::Metadata> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vault::{profile::Profile, scribe::tests::Altar};
+    use crate::loadout::{profile::Profile, scribe::tests::Altar};
 
     fn entry_for(wad: &Wad) -> Entry {
         Entry {
@@ -138,13 +138,13 @@ mod tests {
         }
     }
 
-    /// A vault with one profile holding `wads`.
-    fn vault_with(altar: &Altar, wads: Vec<Wad>) -> Vault {
-        let mut vault = Vault::new(altar.file("config"), altar.file("data"));
-        vault
+    /// A loadout with one profile holding `wads`.
+    fn loadout_with(altar: &Altar, wads: Vec<Wad>) -> Loadout {
+        let mut loadout = Loadout::new(altar.file("config"), altar.file("data"));
+        loadout
             .insert(&mut 0, Profile::new("p".into(), wads))
             .unwrap();
-        vault
+        loadout
     }
 
     #[test]
@@ -152,9 +152,9 @@ mod tests {
         let altar = Altar::new("lookup-known");
         fs::write(altar.file("a.wad"), b"aaaa").unwrap();
         let wad = Wad::from_path(&altar.file("a.wad")).unwrap();
-        let vault = vault_with(&altar, vec![wad.clone()]);
+        let loadout = loadout_with(&altar, vec![wad.clone()]);
         assert_eq!(
-            Lookup::build(&vault).check(&entry_for(&wad)),
+            Lookup::build(&loadout).check(&entry_for(&wad)),
             Local::Intact(wad)
         );
     }
@@ -167,9 +167,9 @@ mod tests {
         let entry = entry_for(&wad);
         // as if it had been written since, to the same size
         wad.modified -= 1;
-        let vault = vault_with(&altar, vec![wad]);
+        let loadout = loadout_with(&altar, vec![wad]);
         assert_eq!(
-            Lookup::build(&vault).check(&entry),
+            Lookup::build(&loadout).check(&entry),
             Local::Maybe(vec![altar.file("a.wad")])
         );
     }
@@ -182,10 +182,10 @@ mod tests {
             volatile: true,
             ..Wad::from_path(&altar.file("a.wad")).unwrap()
         };
-        let vault = vault_with(&altar, vec![wad.clone()]);
+        let loadout = loadout_with(&altar, vec![wad.clone()]);
         // still found by name in its dir, but only to be hashed
         assert_eq!(
-            Lookup::build(&vault).check(&entry_for(&wad)),
+            Lookup::build(&loadout).check(&entry_for(&wad)),
             Local::Maybe(vec![altar.file("a.wad")])
         );
     }
@@ -196,11 +196,11 @@ mod tests {
         fs::write(altar.file("used.wad"), b"used").unwrap();
         fs::write(altar.file("unused.wad"), b"unused").unwrap();
         fs::write(altar.file("wrong_size.wad"), b"x").unwrap();
-        let vault = vault_with(
+        let loadout = loadout_with(
             &altar,
             vec![Wad::from_path(&altar.file("used.wad")).unwrap()],
         );
-        let lookup = Lookup::build(&vault);
+        let lookup = Lookup::build(&loadout);
         let unused = Wad::from_path(&altar.file("unused.wad")).unwrap();
         assert_eq!(
             lookup.check(&entry_for(&unused)),
@@ -218,9 +218,9 @@ mod tests {
     #[test]
     fn a_downloaded_wad_is_intact() {
         let altar = Altar::new("lookup-downloads");
-        let vault = vault_with(&altar, vec![]);
+        let loadout = loadout_with(&altar, vec![]);
         let hash = blake3::hash(b"dl").to_hex().to_string();
-        let dir = vault.downloads_dir().join(&hash);
+        let dir = loadout.downloads_dir().join(&hash);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("dl.wad"), b"dl").unwrap();
         let entry = Entry {
@@ -228,7 +228,7 @@ mod tests {
             size: 2,
             hash,
         };
-        let Local::Intact(wad) = Lookup::build(&vault).check(&entry) else {
+        let Local::Intact(wad) = Lookup::build(&loadout).check(&entry) else {
             panic!("the download should be found");
         };
         assert_eq!(wad.path, dir.join("dl.wad").into_os_string());
@@ -240,11 +240,11 @@ mod tests {
         let wads = altar.file("wads");
         fs::create_dir_all(&wads).unwrap();
         fs::write(wads.join("loose.wad"), b"loose").unwrap();
-        let mut vault = vault_with(&altar, vec![]);
-        vault.wad_dirs = vec![wads.clone()];
+        let mut loadout = loadout_with(&altar, vec![]);
+        loadout.wad_dirs = vec![wads.clone()];
         let loose = Wad::from_path(&wads.join("loose.wad")).unwrap();
         assert_eq!(
-            Lookup::build(&vault).check(&entry_for(&loose)),
+            Lookup::build(&loadout).check(&entry_for(&loose)),
             Local::Maybe(vec![wads.join("loose.wad")])
         );
     }

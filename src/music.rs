@@ -188,7 +188,7 @@ mod tests {
 
     #[test]
     fn a_song_that_is_not_one_or_is_not_there_is_refused() {
-        use crate::vault::scribe::tests::Altar;
+        use crate::loadout::scribe::tests::Altar;
 
         let altar = Altar::new("music-bad-song");
         std::fs::write(altar.file("notes.mp3"), b"not a song at all").unwrap();

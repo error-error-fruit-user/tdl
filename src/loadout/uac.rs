@@ -1,6 +1,6 @@
-//! Settings that belong to no vault: which vault to open when none is passed, wad dirs every
-//! vault uses, UZDoom, the base wad and UZDoom's arguments, the splash, the music, and the quips. Kept in `global.rite` in the platform's standard config dir, the one place every
-//! vault can find.
+//! Settings that belong to no loadout: which loadout to open when none is passed, wad dirs every
+//! loadout uses, UZDoom, the base wad and UZDoom's arguments, the splash, the music, and the quips. Kept in `uac.rite` in the platform's standard config dir, the one place every
+//! loadout can find.
 
 use std::{
     ffi::OsString,
@@ -11,23 +11,23 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    quips,
-    vault::{
+    loadout::{
         config::Config,
         edition::Edition,
         saved::{optional_path, paths},
         wad::Wad,
     },
+    quips,
 };
 
-const FILE: &str = "global.rite";
+const FILE: &str = "uac.rite";
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
-pub struct Global {
-    /// The vault to open when tdl starts without `--vault`, kept from an earlier `--vault`.
+pub struct Uac {
+    /// The loadout to open when tdl starts without `--loadout`, kept from an earlier `--loadout`.
     #[serde(default, with = "optional_path")]
-    pub vault: Option<OsString>,
-    /// Wad dirs kept from `--wads` for every vault, used after the vault's own. Called
+    pub loadout: Option<OsString>,
+    /// Wad dirs kept from `--wads` for every loadout, used after the loadout's own. Called
     /// `wad_folders` before edition 1.
     #[serde(default, alias = "wad_folders", with = "paths")]
     pub wad_dirs: Vec<OsString>,
@@ -49,7 +49,7 @@ pub struct Global {
     #[serde(default, with = "optional_path")]
     pub song: Option<OsString>,
     /// Path to the UZDoom executable, used by profiles that don't set their own. Kept in each
-    /// vault's `config.rite` before its edition 5; missing in older files, which count as none.
+    /// loadout's `config.rite` before its edition 5; missing in older files, which count as none.
     #[serde(default, with = "optional_path")]
     pub uzdoom: Option<OsString>,
     /// The base wad used by profiles that don't set their own, the same way.
@@ -80,7 +80,7 @@ pub struct Global {
 }
 
 /// The global settings a scroll can carry to someone else: how tdl looks and sounds, and nothing
-/// that names a place on this machine (the vault, the wad dirs, the song).
+/// that names a place on this machine (the loadout, the wad dirs, the song).
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct Shared {
     #[serde(default)]
@@ -196,18 +196,18 @@ impl SplashQuip {
     }
 }
 
-impl Edition for Global {
+impl Edition for Uac {
     /// Born after editions existed, so edition 0 is already a named map, never a bare array.
     const UPGRADES: &[fn(Self) -> Self] = &[v0_to_v1];
 }
 
-/// Edition 1 calls `wad_folders` `wad_dirs`. The old name still reads (see [`Global::wad_dirs`]);
+/// Edition 1 calls `wad_folders` `wad_dirs`. The old name still reads (see [`Uac::wad_dirs`]);
 /// the new edition number keeps older builds, which would drop the field, from reading the file.
-fn v0_to_v1(global: Global) -> Global {
+fn v0_to_v1(global: Uac) -> Uac {
     global
 }
 
-impl Global {
+impl Uac {
     /// The UZDoom a profile without its own uses: this session's, else the global one.
     pub fn uzdoom_in_effect(&self) -> Option<&OsString> {
         self.session_uzdoom.as_ref().or(self.uzdoom.as_ref())
@@ -218,9 +218,9 @@ impl Global {
         self.session_base_wad.as_ref().or(self.base_wad.as_ref())
     }
 
-    /// Takes the settings a vault's `config.rite` kept before its edition 5, for each that isn't
-    /// set here yet, so the first vault opened since keeps its own; what is set here wins over
-    /// any other vault's. They are taken out of `config` either way. Returns whether any was
+    /// Takes the settings a loadout's `config.rite` kept before its edition 5, for each that isn't
+    /// set here yet, so the first loadout opened since keeps its own; what is set here wins over
+    /// any other loadout's. They are taken out of `config` either way. Returns whether any was
     /// taken.
     pub fn adopt(&mut self, config: &mut Config) -> bool {
         let mut adopted = false;
@@ -275,7 +275,7 @@ impl Global {
         standard_config_dir.join(FILE)
     }
 
-    /// Saves to `path`, making its dir first: someone who only ever opens other vaults may
+    /// Saves to `path`, making its dir first: someone who only ever opens other loadouts may
     /// never have had the standard config dir made.
     pub fn keep(&self, path: &Path) -> io::Result<()> {
         if let Some(dir) = path.parent() {
@@ -288,15 +288,15 @@ impl Global {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vault::scribe::tests::Altar;
+    use crate::loadout::scribe::tests::Altar;
 
     #[test]
     fn global_settings_save_and_load_back() {
         let altar = Altar::new("global-round-trip");
         // in a dir that doesn't exist yet
-        let path = Global::path(&altar.file("standard"));
-        let global = Global {
-            vault: Some("/home/me/doom".into()),
+        let path = Uac::path(&altar.file("standard"));
+        let global = Uac {
+            loadout: Some("/home/me/doom".into()),
             wad_dirs: vec!["/wads".into(), "/mods".into()],
             splash_quip: SplashQuip::Custom("Rip and tear!".into()),
             no_quips: true,
@@ -307,25 +307,25 @@ mod tests {
             uzdoom_args: "-nomusic".into(),
             skip_splash: true,
             host_port: Some(9000),
-            ..Global::default()
+            ..Uac::default()
         };
         global.keep(&path).unwrap();
-        assert_eq!(Global::open(&path), Some(global.clone()));
+        assert_eq!(Uac::open(&path), Some(global.clone()));
         // this session's UZDoom and base wad never reach the file
-        let session = Global {
+        let session = Uac {
             session_uzdoom: Some("/test/uzdoom-dev".into()),
             session_base_wad: Some(Wad::new("/test/freedoom2.wad".into(), "cd".repeat(32), 1)),
             ..global.clone()
         };
         session.keep(&path).unwrap();
-        assert_eq!(Global::open(&path), Some(global));
+        assert_eq!(Uac::open(&path), Some(global));
     }
 
     #[test]
     fn global_settings_from_before_the_quip_show_a_random_one() {
         #[derive(Serialize)]
         struct Before {
-            vault: Option<String>,
+            loadout: Option<String>,
             wad_folders: Vec<String>,
         }
         #[derive(Serialize)]
@@ -334,17 +334,17 @@ mod tests {
             data: Before,
         }
         let altar = Altar::new("global-before-quip");
-        let path = Global::path(&altar.0);
+        let path = Uac::path(&altar.0);
         let bytes = rmp_serde::to_vec_named(&Sealed {
             version: 0,
             data: Before {
-                vault: None,
+                loadout: None,
                 wad_folders: vec!["/wads".into()],
             },
         })
         .unwrap();
         fs::write(&path, bytes).unwrap();
-        let global = Global::open(&path).unwrap();
+        let global = Uac::open(&path).unwrap();
         assert_eq!(global.splash_quip, SplashQuip::Random);
         assert!(!global.no_quips);
         assert_eq!(global.song, None);
@@ -353,10 +353,10 @@ mod tests {
     }
 
     #[test]
-    fn a_vaults_old_settings_are_taken_where_none_are_set_and_taken_out_either_way() {
+    fn a_loadouts_old_settings_are_taken_where_none_are_set_and_taken_out_either_way() {
         let old = || Config {
-            old_uzdoom: Some("/vault/uzdoom".into()),
-            old_base_wad: Some(Wad::new("/vault/DOOM2.WAD".into(), "ab".repeat(32), 3)),
+            old_uzdoom: Some("/loadout/uzdoom".into()),
+            old_base_wad: Some(Wad::new("/loadout/DOOM2.WAD".into(), "ab".repeat(32), 3)),
             old_uzdoom_args: "-nomusic".into(),
             old_skip_splash: true,
             old_host_port: Some(9000),
@@ -364,9 +364,9 @@ mod tests {
             ..Config::default()
         };
         let mut config = old();
-        let mut global = Global::default();
+        let mut global = Uac::default();
         assert!(global.adopt(&mut config));
-        assert_eq!(global.uzdoom, Some("/vault/uzdoom".into()));
+        assert_eq!(global.uzdoom, Some("/loadout/uzdoom".into()));
         assert_eq!(global.base_wad.as_ref().map(|wad| wad.size), Some(3));
         assert_eq!(global.uzdoom_args, "-nomusic");
         assert!(global.skip_splash);
@@ -379,40 +379,40 @@ mod tests {
                 }
         );
 
-        // another vault's: what is set already wins, and nothing is left behind
+        // another loadout's: what is set already wins, and nothing is left behind
         let mut other = old();
         other.old_uzdoom = Some("/other/uzdoom".into());
         assert!(!global.adopt(&mut other));
-        assert_eq!(global.uzdoom, Some("/vault/uzdoom".into()));
+        assert_eq!(global.uzdoom, Some("/loadout/uzdoom".into()));
         assert!(other.old_uzdoom.is_none() && other.old_base_wad.is_none());
         // a config with none has nothing to give
-        assert!(!Global::default().adopt(&mut Config::default()));
+        assert!(!Uac::default().adopt(&mut Config::default()));
     }
 
     #[test]
     fn sharing_leaves_out_the_song_and_everything_about_this_machine() {
-        let mine = Global {
-            vault: Some("/home/me/doom".into()),
+        let mine = Uac {
+            loadout: Some("/home/me/doom".into()),
             wad_dirs: vec!["/wads".into()],
             splash_quip: SplashQuip::Custom("#2, hun!".into()),
             no_quips: false,
             song: Some("/songs/e1m1.ogg".into()),
             music: Music::Kept,
-            ..Global::default()
+            ..Uac::default()
         };
         let shared = mine.shared();
-        let mut theirs = Global {
-            vault: Some("/home/them/doom".into()),
+        let mut theirs = Uac {
+            loadout: Some("/home/them/doom".into()),
             song: Some("/songs/theirs.mp3".into()),
             no_quips: true,
-            ..Global::default()
+            ..Uac::default()
         };
         theirs.take_shared(shared.clone());
         assert_eq!(theirs.music, Music::Kept);
         assert!(!theirs.no_quips);
         assert_eq!(theirs.splash_quip, mine.splash_quip);
-        // their own vault and song are theirs to keep
-        assert_eq!(theirs.vault, Some("/home/them/doom".into()));
+        // their own loadout and song are theirs to keep
+        assert_eq!(theirs.loadout, Some("/home/them/doom".into()));
         assert_eq!(theirs.song, Some("/songs/theirs.mp3".into()));
         assert_eq!(
             shared.summary(),

@@ -2,11 +2,11 @@ use ratatui::{crossterm::event::KeyCode, style::Color};
 
 use crate::{
     error::Result,
+    loadout::{Loadout, host_settings::HostSettings},
     net,
     popups::{dialog::Dialog, legend::Legend, warning::Warning},
     ritual::{Grimoire, Page, Phase, Ritual},
     theme,
-    vault::{Vault, host_settings::HostSettings},
     widgets::{
         form::{self, Button, Field},
         text,
@@ -109,12 +109,12 @@ impl HostSettingsForm {
     /// cancelled.
     pub fn summon(
         grimoire: &mut Grimoire,
-        vault: &mut Vault,
+        loadout: &mut Loadout,
         index: usize,
         start: Option<HostSettings>,
     ) -> Result<Option<HostSettings>> {
-        let defaults = vault.profiles[index].host_defaults.clone();
-        let mut form = Self::new(defaults, vault.global.host_port);
+        let defaults = loadout.profiles[index].host_defaults.clone();
+        let mut form = Self::new(defaults, loadout.uac.host_port);
         if let Some(start) = start {
             form.settings = start;
         }
@@ -124,7 +124,7 @@ impl HostSettingsForm {
                 Choice::Cancel => return Ok(None),
                 Choice::SaveDefaults => {
                     if Dialog::summon(grimoire, "Save these as this profile's host defaults?")?
-                        && save_defaults(grimoire, vault, index, Some(form.settings.clone()))?
+                        && save_defaults(grimoire, loadout, index, Some(form.settings.clone()))?
                     {
                         form.has_defaults = true;
                     }
@@ -134,7 +134,7 @@ impl HostSettingsForm {
                 }
                 Choice::ClearDefaults => {
                     if Dialog::summon(grimoire, "Clear this profile's host defaults?")?
-                        && save_defaults(grimoire, vault, index, None)?
+                        && save_defaults(grimoire, loadout, index, None)?
                     {
                         form.has_defaults = false;
                     }
@@ -148,13 +148,13 @@ impl HostSettingsForm {
 /// saved, in which case the profile is left as it was.
 fn save_defaults(
     grimoire: &mut Grimoire,
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     index: usize,
     defaults: Option<HostSettings>,
 ) -> Result<bool> {
-    let mut profile = vault.profiles[index].clone();
+    let mut profile = loadout.profiles[index].clone();
     profile.host_defaults = defaults;
-    if vault.replace(index, profile).is_err() {
+    if loadout.replace(index, profile).is_err() {
         Warning::save_failed(grimoire)?;
         return Ok(false);
     }

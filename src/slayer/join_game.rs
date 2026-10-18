@@ -10,6 +10,7 @@ use std::{
 
 use crate::{
     error::{Error, Result},
+    loadout::{Loadout, lookup::Local, profile::Profile, wad::Wad},
     net::{self, Address, Entry, Manifest, Report, ini::HostIni},
     popups::{
         cancel::CancelHandler,
@@ -26,7 +27,6 @@ use crate::{
     tag,
     tally::Tally,
     theme, uzdoom,
-    vault::{Vault, lookup::Local, profile::Profile, wad::Wad},
 };
 
 /// Fetches the host's manifest and picks a profile to join with: the only compatible one, a choice
@@ -36,7 +36,7 @@ use crate::{
 /// (see [`net::ini`]).
 pub fn summon(
     grimoire: &mut Grimoire,
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     index: &mut usize,
     address: &Address,
     always_download: bool,
@@ -53,18 +53,24 @@ pub fn summon(
         Err(Error::Refused) => return Warning::code_refused(grimoire),
         Err(_) => return Warning::host_unreachable(grimoire),
     };
-    let Some(profile) =
-        resolve_profile(grimoire, vault, index, address, &manifest, always_download)?
+    let Some(profile) = resolve_profile(
+        grimoire,
+        loadout,
+        index,
+        address,
+        &manifest,
+        always_download,
+    )?
     else {
         return Ok(());
     };
-    if Warning::faults(grimoire, &profile.faults(&vault.global))? {
+    if Warning::faults(grimoire, &profile.faults(&loadout.uac))? {
         return Ok(());
     }
-    let Some(profile) = upgrade_volatile(grimoire, vault, address, &manifest, profile)? else {
+    let Some(profile) = upgrade_volatile(grimoire, loadout, address, &manifest, profile)? else {
         return Ok(());
     };
-    let Some(uzdoom) = profile.uzdoom(&vault.global) else {
+    let Some(uzdoom) = profile.uzdoom(&loadout.uac) else {
         return Warning::uzdoom_not_selected(grimoire);
     };
     let profile = if host_ini != HostIni::Yours {
@@ -75,7 +81,7 @@ pub fn summon(
             theme::worn().colors.netplay,
         )?;
         let keys = host_ini == HostIni::WithKeys;
-        match with_host_ini(vault, address, &profile, uzdoom, keys) {
+        match with_host_ini(loadout, address, &profile, uzdoom, keys) {
             Ok(Some((joining, warnings))) => {
                 if !warnings.is_empty() {
                     Warning::summon_lines(grimoire, &warnings)?;
@@ -94,7 +100,7 @@ pub fn summon(
     } else {
         profile.clone()
     };
-    let base_wad = profile.base_wad(&vault.global);
+    let base_wad = profile.base_wad(&loadout.uac);
     if manifest.base_wad_matches(base_wad)
         || Dialog::summon(
             grimoire,
@@ -107,8 +113,8 @@ pub fn summon(
             base_wad.map(Wad::deref),
             &profile,
             &address.host,
-            profile.uzdoom_args(&vault.global),
-            &vault.data_dir.join(&profile.name),
+            profile.uzdoom_args(&loadout.uac),
+            &loadout.data_dir.join(&profile.name),
         )
         .and_then(|game| running::summon(grimoire, "joining", &details, game));
         Warning::report_spawn(grimoire, result)
@@ -121,14 +127,14 @@ pub fn summon(
 /// kept in its own data dir as `host.ini` (nothing is saved to the profile), and the warnings
 /// about what was left out. `None` if the host shares no ini.
 pub fn with_host_ini(
-    vault: &Vault,
+    loadout: &Loadout,
     address: &Address,
     profile: &Profile,
     uzdoom: &std::ffi::OsStr,
     keys: bool,
 ) -> std::result::Result<Option<(Profile, Vec<String>)>, String> {
     let own = net::ini::in_use(profile.ini.as_deref(), uzdoom);
-    let dir = vault.data_dir.join(&profile.name);
+    let dir = loadout.data_dir.join(&profile.name);
     let taken = net::ini::take(address, own.as_deref(), keys, &dir)?;
     Ok(taken.map(|taken| {
         let joining = Profile {
@@ -145,29 +151,29 @@ pub fn with_host_ini(
 /// out.
 fn resolve_profile(
     grimoire: &mut Grimoire,
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     index: &mut usize,
     address: &Address,
     manifest: &Manifest,
     always_download: bool,
 ) -> Result<Option<Profile>> {
-    if let Some(picked) = pick_compatible(grimoire, vault, manifest)? {
+    if let Some(picked) = pick_compatible(grimoire, loadout, manifest)? {
         return Ok(picked);
     }
-    if vault.global.uzdoom_in_effect().is_none() {
+    if loadout.uac.uzdoom_in_effect().is_none() {
         Warning::uzdoom_not_selected(grimoire)?;
         return Ok(None);
     }
-    let Some(mut local) = find_local(grimoire, vault, manifest)? else {
+    let Some(mut local) = find_local(grimoire, loadout, manifest)? else {
         return Ok(None);
     };
-    let outdated = upgrade::outdated(vault, manifest, &local);
+    let outdated = upgrade::outdated(loadout, manifest, &local);
     if !outdated.is_empty() {
-        let Some(choices) = choose(grimoire, vault, &outdated)? else {
+        let Some(choices) = choose(grimoire, loadout, &outdated)? else {
             return Ok(None);
         };
         let Some(settled) =
-            bring_up_to_date(grimoire, vault, address, manifest, &outdated, &choices)?
+            bring_up_to_date(grimoire, loadout, address, manifest, &outdated, &choices)?
         else {
             return Ok(None);
         };
@@ -177,13 +183,13 @@ fn resolve_profile(
             }
         }
         // ⬆️ a profile whose wads were just brought up to date may be the host's now
-        if let Some(picked) = pick_compatible(grimoire, vault, manifest)? {
+        if let Some(picked) = pick_compatible(grimoire, loadout, manifest)? {
             return Ok(picked);
         }
     }
     download_profile(
         grimoire,
-        vault,
+        loadout,
         index,
         address,
         manifest,
@@ -196,10 +202,10 @@ fn resolve_profile(
 /// the user backs out). `None` if there are none.
 fn pick_compatible(
     grimoire: &mut Grimoire,
-    vault: &Vault,
+    loadout: &Loadout,
     manifest: &Manifest,
 ) -> Result<Option<Option<Profile>>> {
-    let compatible_profiles: Vec<_> = vault
+    let compatible_profiles: Vec<_> = loadout
         .profiles
         .iter()
         .filter(|p| manifest.is_compatible_with(p))
@@ -216,14 +222,14 @@ fn pick_compatible(
 /// replaced, renamed or skipped. `None` if Esc was pressed.
 fn choose(
     grimoire: &mut Grimoire,
-    vault: &Vault,
+    loadout: &Loadout,
     outdated: &[Outdated],
 ) -> Result<Option<Vec<Choice>>> {
     let mut choices = Vec::with_capacity(outdated.len());
     for wad in outdated {
         let choice = if wad.volatile {
             Choice::Replace
-        } else if wad.is_download(vault) {
+        } else if wad.is_download(loadout) {
             let question = format!(
                 "Your download of {} isn't the host's version. Use the host's in its place?",
                 wad.file_name()
@@ -276,7 +282,7 @@ fn ask_replace(grimoire: &mut Grimoire, wad: &Outdated) -> Result<Option<Choice>
 /// and asked whether to join with their own. `None` if they back out.
 fn upgrade_volatile(
     grimoire: &mut Grimoire,
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     address: &Address,
     manifest: &Manifest,
     profile: Profile,
@@ -294,7 +300,7 @@ fn upgrade_volatile(
         let path = PathBuf::from(&wad.path);
         if wad.hash == manifest.entries[entry].hash {
             // 🟰 it only looked different: the file has become the host's since it was hashed
-            if vault.upgrade_wad(&path, &wad).is_err() {
+            if loadout.upgrade_wad(&path, &wad).is_err() {
                 Warning::save_failed(grimoire)?;
             }
         } else {
@@ -306,7 +312,8 @@ fn upgrade_volatile(
         }
     }
     let choices = vec![Choice::Replace; outdated.len()];
-    let Some(settled) = bring_up_to_date(grimoire, vault, address, manifest, &outdated, &choices)?
+    let Some(settled) =
+        bring_up_to_date(grimoire, loadout, address, manifest, &outdated, &choices)?
     else {
         return Ok(None);
     };
@@ -318,7 +325,7 @@ fn upgrade_volatile(
     {
         return Ok(None);
     }
-    let upgraded = vault.profiles.iter().find(|p| p.name == profile.name);
+    let upgraded = loadout.profiles.iter().find(|p| p.name == profile.name);
     Ok(Some(upgraded.cloned().unwrap_or(profile)))
 }
 
@@ -327,7 +334,7 @@ fn upgrade_volatile(
 /// user was told).
 fn bring_up_to_date(
     grimoire: &mut Grimoire,
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     address: &Address,
     manifest: &Manifest,
     outdated: &[Outdated],
@@ -338,7 +345,7 @@ fn bring_up_to_date(
         .iter()
         .map(|&i| manifest.entries[i].clone())
         .collect();
-    let Some(downloaded) = fetch(grimoire, address, needed, vault.downloads_dir())? else {
+    let Some(downloaded) = fetch(grimoire, address, needed, loadout.downloads_dir())? else {
         return Ok(None);
     };
     if !downloaded.is_empty() {
@@ -352,7 +359,7 @@ fn bring_up_to_date(
     }
     let downloaded: Vec<_> = wanted.into_iter().zip(downloaded).collect();
     let settled = upgrade::settle(
-        vault,
+        loadout,
         manifest.entries.len(),
         outdated,
         choices,
@@ -399,7 +406,7 @@ fn fetch(
 /// `always_download` there is no asking first when some have to be downloaded.
 fn download_profile(
     grimoire: &mut Grimoire,
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     index: &mut usize,
     address: &Address,
     manifest: &Manifest,
@@ -419,7 +426,7 @@ fn download_profile(
     if asked && !Dialog::summon(grimoire, &question)? {
         return Ok(None);
     }
-    let Some(profile_name) = ProfileNamer::summon(grimoire, &vault.profiles)? else {
+    let Some(profile_name) = ProfileNamer::summon(grimoire, &loadout.profiles)? else {
         return Ok(None);
     };
     let wanted: Vec<_> = manifest
@@ -429,13 +436,13 @@ fn download_profile(
         .filter(|(_, wad)| wad.is_none())
         .map(|(entry, _)| entry.clone())
         .collect();
-    let Some(downloaded) = fetch(grimoire, address, wanted, vault.downloads_dir())? else {
+    let Some(downloaded) = fetch(grimoire, address, wanted, loadout.downloads_dir())? else {
         return Ok(None);
     };
     let wads = fill_gaps(local, downloaded)
         .ok_or(Error::Download("Fewer wads arrived than were asked for"))?;
     let profile = Profile::new(profile_name, wads);
-    if vault.insert(index, profile.clone()).is_err() {
+    if loadout.insert(index, profile.clone()).is_err() {
         Warning::save_failed(grimoire)?;
         return Ok(None);
     }
@@ -457,10 +464,10 @@ pub(crate) fn fill_gaps(local: Vec<Option<Wad>>, downloaded: Vec<Wad>) -> Option
 /// `None` if Esc was pressed.
 fn find_local(
     grimoire: &mut Grimoire,
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     manifest: &Manifest,
 ) -> Result<Option<Vec<Option<Wad>>>> {
-    let lookup = vault.lookup();
+    let lookup = loadout.lookup();
     let checks: Vec<_> = manifest
         .entries
         .iter()

@@ -11,11 +11,11 @@ use std::{
 
 use crate::{
     error::Result,
-    net::Manifest,
-    vault::{
-        Vault, shelf,
+    loadout::{
+        Loadout, shelf,
         wad::{self, Wad},
     },
+    net::Manifest,
 };
 
 /// A file here with the name of one of the host's wads, but not its contents.
@@ -31,8 +31,8 @@ pub struct Outdated {
 impl Outdated {
     /// Whether the file is a download, kept under its hash, which is never renamed: replacing it
     /// puts the host's under its own hash instead, and the old one stays where it is.
-    pub fn is_download(&self, vault: &Vault) -> bool {
-        shelf::is_download(&self.path, &vault.downloads_dir())
+    pub fn is_download(&self, loadout: &Loadout) -> bool {
+        shelf::is_download(&self.path, &loadout.downloads_dir())
     }
 
     /// The file's name, for questions about it.
@@ -57,16 +57,20 @@ pub enum Choice {
 
 /// The files here with the name of one of the host's wads that `local` has no copy of. Each
 /// differs from the host's, since any of the right size was hashed while looking for a copy.
-pub fn outdated(vault: &mut Vault, manifest: &Manifest, local: &[Option<Wad>]) -> Vec<Outdated> {
+pub fn outdated(
+    loadout: &mut Loadout,
+    manifest: &Manifest,
+    local: &[Option<Wad>],
+) -> Vec<Outdated> {
     let mut found = Vec::new();
     for (entry_index, (entry, wad)) in manifest.entries.iter().zip(local).enumerate() {
         if wad.is_some() {
             continue;
         }
-        for path in vault.lookup().named(&entry.name) {
+        for path in loadout.lookup().named(&entry.name) {
             found.push(Outdated {
                 entry: entry_index,
-                volatile: is_volatile(vault, &path),
+                volatile: is_volatile(loadout, &path),
                 path,
             });
         }
@@ -75,8 +79,8 @@ pub fn outdated(vault: &mut Vault, manifest: &Manifest, local: &[Option<Wad>]) -
 }
 
 /// Whether any profile has the file at `path` as a volatile wad.
-fn is_volatile(vault: &Vault, path: &Path) -> bool {
-    vault
+fn is_volatile(loadout: &Loadout, path: &Path) -> bool {
+    loadout
         .profiles
         .iter()
         .flat_map(|profile| &profile.wads)
@@ -109,7 +113,7 @@ pub struct Settled {
 /// with their place in the manifest of `entries` wads). A download no profile ends up using is
 /// deleted again afterwards, since the host's is now where the old one was.
 pub fn settle(
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     entries: usize,
     outdated: &[Outdated],
     choices: &[Choice],
@@ -126,7 +130,7 @@ pub fn settle(
         else {
             continue;
         };
-        match apply(vault, outdated, theirs, choice) {
+        match apply(loadout, outdated, theirs, choice) {
             Ok(Some(placed)) => {
                 settled.placed[outdated.entry].get_or_insert(placed);
             }
@@ -137,10 +141,10 @@ pub fn settle(
             )),
         }
     }
-    let downloads = vault.downloads_dir();
+    let downloads = loadout.downloads_dir();
     for (_, theirs) in downloaded {
         let path = Path::new(&theirs.path);
-        let used = vault
+        let used = loadout
             .profiles
             .iter()
             .flat_map(|profile| &profile.wads)
@@ -157,7 +161,7 @@ pub fn settle(
 /// (staying volatile or not); renamed, it follows the old file to its new name. Returns the
 /// host's wad where it ended up, or `None` if skipped.
 pub fn apply(
-    vault: &mut Vault,
+    loadout: &mut Loadout,
     outdated: &Outdated,
     theirs: &Wad,
     choice: &Choice,
@@ -165,9 +169,9 @@ pub fn apply(
     let path = &outdated.path;
     match choice {
         Choice::Skip => return Ok(None),
-        Choice::Replace if outdated.is_download(vault) => {
+        Choice::Replace if outdated.is_download(loadout) => {
             // 📦 a download is kept under its hash, so the host's stays under its own
-            vault.upgrade_wad(path, theirs)?;
+            loadout.upgrade_wad(path, theirs)?;
             return Ok(Some(theirs.clone()));
         }
         Choice::Replace => {
@@ -186,10 +190,10 @@ pub fn apply(
                 return Err(io::Error::from(io::ErrorKind::AlreadyExists).into());
             }
             fs::rename(path, &renamed)?;
-            let followed = vault.follow_wad(path, &renamed);
+            let followed = loadout.follow_wad(path, &renamed);
             if let Err(error) = shelf::copy(Path::new(&theirs.path), path) {
                 if fs::rename(&renamed, path).is_ok() {
-                    let _ = vault.follow_wad(&renamed, path);
+                    let _ = loadout.follow_wad(&renamed, path);
                 }
                 return Err(error.into());
             }
@@ -201,7 +205,7 @@ pub fn apply(
         ..Wad::new(path.as_os_str().into(), theirs.hash.clone(), theirs.size)
     };
     if *choice == Choice::Replace {
-        vault.upgrade_wad(path, &placed)?;
+        loadout.upgrade_wad(path, &placed)?;
     }
     Ok(Some(placed))
 }
@@ -217,27 +221,27 @@ pub fn backup(path: &Path) -> PathBuf {
 mod tests {
     use super::*;
     use crate::{
+        loadout::{profile::Profile, scribe::tests::Altar},
         net::Entry,
-        vault::{profile::Profile, scribe::tests::Altar},
     };
 
-    /// A vault in `altar` with one profile, `p`, holding the wad at `path` (volatile or not).
-    fn vault_with(altar: &Altar, path: &Path, volatile: bool) -> Vault {
-        let mut vault = Vault::new(altar.file("config"), altar.file("data"));
+    /// A loadout in `altar` with one profile, `p`, holding the wad at `path` (volatile or not).
+    fn loadout_with(altar: &Altar, path: &Path, volatile: bool) -> Loadout {
+        let mut loadout = Loadout::new(altar.file("config"), altar.file("data"));
         let wad = Wad {
             volatile,
             ..Wad::from_path(path).unwrap()
         };
-        vault
+        loadout
             .insert(&mut 0, Profile::new("p".into(), vec![wad]))
             .unwrap();
-        vault
+        loadout
     }
 
-    /// The host's version of a wad, downloaded under its hash in `vault`'s downloads.
-    fn downloaded(vault: &Vault, name: &str, contents: &[u8]) -> Wad {
+    /// The host's version of a wad, downloaded under its hash in `loadout`'s downloads.
+    fn downloaded(loadout: &Loadout, name: &str, contents: &[u8]) -> Wad {
         let hash = blake3::hash(contents).to_hex().to_string();
-        let dir = vault.downloads_dir().join(&hash);
+        let dir = loadout.downloads_dir().join(&hash);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join(name), contents).unwrap();
         Wad::from_path(&dir.join(name)).unwrap()
@@ -260,11 +264,11 @@ mod tests {
         let mine = altar.file("wads/brutal.pk3");
         fs::create_dir_all(mine.parent().unwrap()).unwrap();
         fs::write(&mine, b"old").unwrap();
-        let mut vault = vault_with(&altar, &mine, true);
-        let theirs = downloaded(&vault, "brutal.pk3", b"newer");
+        let mut loadout = loadout_with(&altar, &mine, true);
+        let theirs = downloaded(&loadout, "brutal.pk3", b"newer");
         let manifest = manifest_of(&theirs);
         assert_eq!(
-            outdated(&mut vault, &manifest, &[None]),
+            outdated(&mut loadout, &manifest, &[None]),
             [Outdated {
                 entry: 0,
                 path: mine,
@@ -272,7 +276,7 @@ mod tests {
             }]
         );
         // 🟰 a wad that is already here has nothing to bring up to date
-        assert!(outdated(&mut vault, &manifest, &[Some(theirs)]).is_empty());
+        assert!(outdated(&mut loadout, &manifest, &[Some(theirs)]).is_empty());
     }
 
     #[test]
@@ -280,11 +284,11 @@ mod tests {
         let altar = Altar::new("upgrade-replace");
         let mine = altar.file("brutal.pk3");
         fs::write(&mine, b"old").unwrap();
-        let mut vault = vault_with(&altar, &mine, true);
-        let theirs = downloaded(&vault, "brutal.pk3", b"newer");
-        let outdated = outdated(&mut vault, &manifest_of(&theirs), &[None]);
+        let mut loadout = loadout_with(&altar, &mine, true);
+        let theirs = downloaded(&loadout, "brutal.pk3", b"newer");
+        let outdated = outdated(&mut loadout, &manifest_of(&theirs), &[None]);
         let settled = settle(
-            &mut vault,
+            &mut loadout,
             1,
             &outdated,
             &[Choice::Replace],
@@ -293,7 +297,7 @@ mod tests {
         assert!(settled.problems.is_empty());
         assert_eq!(fs::read(&mine).unwrap(), b"newer");
         assert_eq!(fs::read(backup(&mine)).unwrap(), b"old");
-        let wad = &vault.profiles[0].wads[0];
+        let wad = &loadout.profiles[0].wads[0];
         assert_eq!(
             (wad.hash.as_str(), wad.volatile),
             (theirs.hash.as_str(), true)
@@ -308,7 +312,7 @@ mod tests {
         // 🧹 the download did its job and isn't used by anything
         assert!(!Path::new(&theirs.path).exists());
         // ... and the profile is saved that way
-        let saved = Vault::new(altar.file("config"), altar.file("data"));
+        let saved = Loadout::new(altar.file("config"), altar.file("data"));
         assert_eq!(saved.profiles[0].wads[0].hash, theirs.hash);
     }
 
@@ -317,12 +321,12 @@ mod tests {
         let altar = Altar::new("upgrade-rename");
         let mine = altar.file("brutal.pk3");
         fs::write(&mine, b"old").unwrap();
-        let mut vault = vault_with(&altar, &mine, false);
-        let old_hash = vault.profiles[0].wads[0].hash.clone();
-        let theirs = downloaded(&vault, "brutal.pk3", b"newer");
-        let outdated = outdated(&mut vault, &manifest_of(&theirs), &[None]);
+        let mut loadout = loadout_with(&altar, &mine, false);
+        let old_hash = loadout.profiles[0].wads[0].hash.clone();
+        let theirs = downloaded(&loadout, "brutal.pk3", b"newer");
+        let outdated = outdated(&mut loadout, &manifest_of(&theirs), &[None]);
         let settled = settle(
-            &mut vault,
+            &mut loadout,
             1,
             &outdated,
             &[Choice::Rename("brutal_old.pk3".into())],
@@ -331,7 +335,7 @@ mod tests {
         assert!(settled.problems.is_empty());
         assert_eq!(fs::read(&mine).unwrap(), b"newer");
         assert_eq!(fs::read(altar.file("brutal_old.pk3")).unwrap(), b"old");
-        let wad = &vault.profiles[0].wads[0];
+        let wad = &loadout.profiles[0].wads[0];
         assert_eq!(Path::new(&wad.path), altar.file("brutal_old.pk3"));
         assert_eq!(wad.hash, old_hash);
         let placed = settled.placed[0].as_ref().unwrap();
@@ -347,11 +351,11 @@ mod tests {
         let mine = altar.file("brutal.pk3");
         fs::write(&mine, b"old").unwrap();
         fs::write(altar.file("taken.pk3"), b"taken").unwrap();
-        let mut vault = vault_with(&altar, &mine, false);
-        let theirs = downloaded(&vault, "brutal.pk3", b"newer");
-        let outdated = outdated(&mut vault, &manifest_of(&theirs), &[None]);
+        let mut loadout = loadout_with(&altar, &mine, false);
+        let theirs = downloaded(&loadout, "brutal.pk3", b"newer");
+        let outdated = outdated(&mut loadout, &manifest_of(&theirs), &[None]);
         let settled = settle(
-            &mut vault,
+            &mut loadout,
             1,
             &outdated,
             &[Choice::Rename("taken.pk3".into())],
@@ -366,23 +370,23 @@ mod tests {
     #[test]
     fn replacing_a_download_points_its_profiles_at_the_hosts_and_keeps_the_old_one() {
         let altar = Altar::new("upgrade-download");
-        let probe = Vault::new(altar.file("config"), altar.file("data"));
+        let probe = Loadout::new(altar.file("config"), altar.file("data"));
         let old = downloaded(&probe, "brutal.pk3", b"old");
-        let mut vault = vault_with(&altar, Path::new(&old.path), false);
-        let theirs = downloaded(&vault, "brutal.pk3", b"newer");
+        let mut loadout = loadout_with(&altar, Path::new(&old.path), false);
+        let theirs = downloaded(&loadout, "brutal.pk3", b"newer");
         // only the old download is in a dir any profile uses, so only it is outdated
-        let outdated = outdated(&mut vault, &manifest_of(&theirs), &[None]);
+        let outdated = outdated(&mut loadout, &manifest_of(&theirs), &[None]);
         assert_eq!(outdated.len(), 1);
-        assert!(outdated[0].is_download(&vault));
+        assert!(outdated[0].is_download(&loadout));
         let settled = settle(
-            &mut vault,
+            &mut loadout,
             1,
             &outdated,
             &[Choice::Replace],
             &[(0, theirs.clone())],
         );
         assert!(settled.problems.is_empty());
-        assert_eq!(vault.profiles[0].wads[0].path, theirs.path);
+        assert_eq!(loadout.profiles[0].wads[0].path, theirs.path);
         assert!(Path::new(&old.path).exists() && Path::new(&theirs.path).exists());
     }
 
