@@ -436,6 +436,40 @@ impl Vault {
         Ok(())
     }
 
+    /// Puts `profile` in place of the profile at `replaced`, which has its name: that one is
+    /// deleted first, saves and all, so the two never share a file or a data dir. A new profile
+    /// (`edited` is `None`) takes the replaced one's place in the list; an edited one (from the
+    /// profile at `edited`) keeps its own place and moves its saves over. Returns where `profile`
+    /// ended up.
+    ///
+    /// If the replaced profile can't be deleted, nothing changes. If it can but `profile` then
+    /// can't be saved, the replaced profile stays deleted.
+    pub fn supplant(
+        &mut self,
+        replaced: usize,
+        edited: Option<usize>,
+        profile: Profile,
+    ) -> Result<usize> {
+        let mut removed = replaced;
+        self.remove(&mut removed)?;
+        match edited {
+            Some(edited) => {
+                let index = if replaced < edited {
+                    edited - 1
+                } else {
+                    edited
+                };
+                self.replace(index, profile)?;
+                Ok(index)
+            }
+            None => {
+                let mut index = replaced;
+                self.insert(&mut index, profile)?;
+                Ok(replaced)
+            }
+        }
+    }
+
     /// Deletes every profile, each with its file, backup and data dir (saves and all). The
     /// emptied list is saved first, so a failed save leaves every profile as it was.
     pub fn remove_all(&mut self) -> Result<()> {
@@ -995,6 +1029,51 @@ mod tests {
         );
         // and it survives a restart
         assert_eq!(self::vault(&altar).profiles, [renamed]);
+    }
+
+    #[test]
+    fn a_new_profile_replacing_one_of_its_name_takes_its_place_and_not_its_saves() {
+        let (altar, profile) = upgraded_altar("vault-supplant-new");
+        let mut vault = vault(&altar);
+        profile.write(&vault.config_dir, &vault.data_dir).unwrap();
+        let mut index = 1;
+        vault.insert(&mut index, named("second")).unwrap();
+        fs::write(altar.file("data/brutal/saves/slot1"), b"old save").unwrap();
+        let replacement = Profile {
+            wads: vec![Wad::new("/wads/new.pk3".into(), "cd".repeat(32), 0)],
+            ..named("brutal")
+        };
+
+        assert_eq!(vault.supplant(0, None, replacement.clone()).unwrap(), 0);
+        assert_eq!(vault.profiles, [replacement.clone(), named("second")]);
+        assert_eq!(vault.config.profile_names, ["brutal", "second"]);
+        assert!(!altar.file("data/brutal/saves/slot1").exists());
+        assert_eq!(self::vault(&altar).profiles, [replacement, named("second")]);
+    }
+
+    #[test]
+    fn an_edited_profile_renamed_over_another_keeps_its_place_and_its_saves() {
+        let (altar, profile) = upgraded_altar("vault-supplant-edited");
+        let mut vault = vault(&altar);
+        profile.write(&vault.config_dir, &vault.data_dir).unwrap();
+        let mut index = 1;
+        vault.insert(&mut index, named("second")).unwrap();
+        vault.insert(&mut index, named("third")).unwrap();
+        fs::write(altar.file("data/brutal/saves/slot1"), b"replaced").unwrap();
+        fs::write(altar.file("data/third/saves/slot1"), b"kept").unwrap();
+        let renamed = named("brutal");
+
+        // the replaced profile was in front, so the edited one moves up a place with the list
+        assert_eq!(vault.supplant(0, Some(2), renamed.clone()).unwrap(), 1);
+        assert_eq!(vault.profiles, [named("second"), renamed.clone()]);
+        assert_eq!(vault.config.profile_names, ["second", "brutal"]);
+        assert!(!altar.file("config/.profiles/third.rite").exists());
+        assert!(!altar.file("data/third").exists());
+        assert_eq!(
+            fs::read(altar.file("data/brutal/saves/slot1")).unwrap(),
+            b"kept"
+        );
+        assert_eq!(self::vault(&altar).profiles, [named("second"), renamed]);
     }
 
     #[test]

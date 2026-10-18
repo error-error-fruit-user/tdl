@@ -71,6 +71,8 @@ pub struct Editor<'a> {
     /// What the wads screen (`L`) works on, handed back to the vault when the editor closes, so it
     /// keeps the wad dirs and follows any files moved.
     shelf: Shelf,
+    /// The profile whose name this one was saved under, after the user agreed to replace it.
+    replacing: Option<usize>,
 }
 
 impl<'a> Editor<'a> {
@@ -115,18 +117,24 @@ impl<'a> Editor<'a> {
         ["U/W/I/G", "Select UZDoom/Base Wad/Ini/Args"],
     ];
 
-    /// Creates a profile. `None` if cancelled or left empty.
-    pub fn summon_blank(grimoire: &mut Grimoire, vault: &mut Vault) -> Result<Option<Profile>> {
-        Self::summon_with(grimoire, vault, Vec::new())
+    /// Creates a profile and puts it in at `index` (see [`Vault::insert`]), or in place of the
+    /// profile it replaces, where `index` then points. Nothing if cancelled or left empty.
+    pub fn summon_blank(
+        grimoire: &mut Grimoire,
+        vault: &mut Vault,
+        index: &mut usize,
+    ) -> Result<()> {
+        Self::summon_with(grimoire, vault, index, Vec::new())
     }
 
-    /// Creates a profile that starts out with `wads`, such as the ones on the clipboard. `None` if
-    /// cancelled or left empty.
+    /// Like [`Editor::summon_blank`], with a profile that starts out with `wads`, such as the ones
+    /// on the clipboard.
     pub fn summon_with(
         grimoire: &mut Grimoire,
         vault: &mut Vault,
+        index: &mut usize,
         wads: Vec<Wad>,
-    ) -> Result<Option<Profile>> {
+    ) -> Result<()> {
         let mut editor = Editor::new(&vault.profiles, &vault.data_dir);
         if !wads.is_empty() {
             editor.faults = check_wads(&wads);
@@ -136,18 +144,40 @@ impl<'a> Editor<'a> {
         editor.clipboard = vault.clipboard.clone();
         editor.shelf = vault.shelf();
         let profile = editor.invoke(grimoire)?;
-        vault.clipboard = editor.clipboard;
-        if vault.restock(editor.shelf).is_err() {
+        let Editor {
+            clipboard,
+            shelf,
+            replacing,
+            ..
+        } = editor;
+        vault.clipboard = clipboard;
+        let saved = match (profile, replacing) {
+            (Some(profile), Some(replaced)) => vault
+                .supplant(replaced, None, profile)
+                .map(|landed| *index = landed),
+            (Some(profile), None) => vault.insert(index, profile),
+            (None, _) => Ok(()),
+        };
+        if saved.is_err() {
             Warning::save_failed(grimoire)?;
         }
-        Ok(profile)
+        if vault.restock(shelf).is_err() {
+            Warning::save_failed(grimoire)?;
+        }
+        Ok(())
     }
 
-    /// Edits `vault.profiles[index]` and saves the result. Cancelling keeps the original.
-    pub fn summon_existing(grimoire: &mut Grimoire, vault: &mut Vault, index: usize) -> Result<()> {
+    /// Edits `vault.profiles[index]` and saves the result. Cancelling keeps the original. A profile
+    /// saved under the name of another, which it replaces, can end up one place up, as `index` says.
+    pub fn summon_existing(
+        grimoire: &mut Grimoire,
+        vault: &mut Vault,
+        index: &mut usize,
+    ) -> Result<()> {
+        let edited = *index;
         // 👀 a watched dir's new wads are in before the edit starts
-        watch::refresh_saved(grimoire, vault, index)?;
-        let mut editor = Editor::edit(&vault.profiles, &vault.data_dir, index);
+        watch::refresh_saved(grimoire, vault, edited)?;
+        let mut editor = Editor::edit(&vault.profiles, &vault.data_dir, edited);
         editor.clipboard = vault.clipboard.clone();
         editor.shelf = vault.shelf();
         let profile = editor.invoke(grimoire)?;
@@ -155,13 +185,20 @@ impl<'a> Editor<'a> {
             clipboard,
             shelf,
             original,
+            replacing,
             ..
         } = editor;
         vault.clipboard = clipboard;
         if let Some(mut profile) = profile {
             // 🙈 a wad taken out of a watched dir's profile stays out
             profile.note_dismissed(&original);
-            if vault.replace(index, profile).is_err() {
+            let saved = match replacing {
+                Some(replaced) => vault
+                    .supplant(replaced, Some(edited), profile)
+                    .map(|landed| *index = landed),
+                None => vault.replace(edited, profile),
+            };
+            if saved.is_err() {
                 Warning::save_failed(grimoire)?;
             }
         }
@@ -189,6 +226,7 @@ impl<'a> Editor<'a> {
             selection: Selection::default(),
             clipboard: Clipboard::default(),
             shelf: Shelf::default(),
+            replacing: None,
         }
     }
 
@@ -229,10 +267,16 @@ impl<'a> Editor<'a> {
 
     /// Whether another profile already has this name. The profile being edited doesn't count.
     fn name_is_taken(&self) -> bool {
+        self.taken_by().is_some()
+    }
+
+    /// The other profile that already has this name, if one does. The profile being edited
+    /// doesn't count.
+    fn taken_by(&self) -> Option<usize> {
         self.profiles
             .iter()
             .enumerate()
-            .any(|(i, p)| Some(i) != self.skipped_index && p.name == self.profile.name)
+            .position(|(i, p)| Some(i) != self.skipped_index && p.name == self.profile.name)
     }
 
     /// Gives the profile an ini of its own in its data dir, which needs a name that is free.
@@ -393,8 +437,9 @@ impl<'a> Editor<'a> {
         self.profile != self.original
     }
 
-    /// Closes the editor with the profile, if it has a name no other profile has; otherwise says
-    /// what is wrong and stays. A new profile left completely empty is simply dropped.
+    /// Closes the editor with the profile, if it has a name; otherwise says so and stays. A name
+    /// another profile has asks whether to replace that one, or go back to the editor. A new
+    /// profile left completely empty is simply dropped.
     fn save(&mut self, grimoire: &mut Grimoire) -> Result<Phase<Option<Profile>>> {
         if self.profile.name.is_empty() {
             if self.profile.wads.is_empty()
@@ -407,9 +452,15 @@ impl<'a> Editor<'a> {
             Warning::empty_profile_name(grimoire)?;
             return Ok(Phase::Render);
         }
-        if self.name_is_taken() {
-            Warning::profile_already_exists(grimoire)?;
-            return Ok(Phase::Render);
+        if let Some(taken) = self.taken_by() {
+            let question = format!(
+                "'{}' already exists. Replace it? (its saves are deleted)",
+                self.profile.name
+            );
+            if !Dialog::summon(grimoire, &question)? {
+                return Ok(Phase::Render);
+            }
+            self.replacing = Some(taken);
         }
         Ok(Phase::Return(Some(self.profile.clone())))
     }

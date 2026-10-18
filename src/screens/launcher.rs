@@ -1063,11 +1063,7 @@ impl Launcher {
     fn paste_wads(&mut self, grimoire: &mut Grimoire, wads: Vec<Wad>) -> Result<()> {
         let mut index = self.cursor();
         if index == self.vault.profiles.len() {
-            if let Some(profile) = Editor::summon_with(grimoire, &mut self.vault, wads)?
-                && self.vault.insert(&mut index, profile).is_err()
-            {
-                Warning::save_failed(grimoire)?;
-            }
+            Editor::summon_with(grimoire, &mut self.vault, &mut index, wads)?;
             self.table_state.select(Some(index));
             return Ok(());
         }
@@ -1356,11 +1352,7 @@ impl Ritual for Launcher {
                     self.launch_profile(grimoire, index)?;
                     Ok(Phase::Render)
                 } else {
-                    if let Some(profile) = Editor::summon_blank(grimoire, &mut self.vault)?
-                        && self.vault.insert(index, profile).is_err()
-                    {
-                        Warning::save_failed(grimoire)?;
-                    }
+                    Editor::summon_blank(grimoire, &mut self.vault, index)?;
                     Ok(Phase::Render)
                 }
             }
@@ -1424,11 +1416,7 @@ impl Ritual for Launcher {
                 Ok(Phase::Render)
             }
             KeyCode::Char('a') => {
-                if let Some(profile) = Editor::summon_blank(grimoire, &mut self.vault)?
-                    && self.vault.insert(index, profile).is_err()
-                {
-                    Warning::save_failed(grimoire)?;
-                }
+                Editor::summon_blank(grimoire, &mut self.vault, index)?;
                 Ok(Phase::Render)
             }
             KeyCode::Char('y') => Ok(Phase::render_if(self.copy_profiles(false))),
@@ -1462,7 +1450,7 @@ impl Ritual for Launcher {
             }
             KeyCode::Char('e') => {
                 if *index != self.vault.profiles.len() {
-                    Editor::summon_existing(grimoire, &mut self.vault, *index)?;
+                    Editor::summon_existing(grimoire, &mut self.vault, index)?;
                     Ok(Phase::Render)
                 } else {
                     Ok(Phase::Prompt)
