@@ -2353,7 +2353,10 @@ mod tests {
             [standard.join("global.rite"), standard.join("profiles")]
         );
         assert!(!launcher.loadout.uac_writable, "nothing is saved over them");
-        assert_eq!(fs::read(standard.join("profiles/brutal.doom")).unwrap(), old);
+        assert_eq!(
+            fs::read(standard.join("profiles/brutal.doom")).unwrap(),
+            old
+        );
         assert_eq!(fs::read(standard.join("global.rite")).unwrap(), b"old");
     }
 }

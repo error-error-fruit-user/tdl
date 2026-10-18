@@ -17,7 +17,8 @@ A terminal launcher for [UZDoom](https://github.com/UZDoom/UZDoom). Group your w
 - **Copy, cut and paste** profiles and wads, one or many at a time, with `Shift+V`/`M` to select, `Y`, `X` and `P`
 - **Wads screen** (`L`): every wad in every wad dir and the downloads, by dir or all in one list, to copy or move between dirs or paste into a profile
 - **Per-profile saves** and a `session.log` of UZDoom's output
-- **Status at a glance**: a panel under the launcher shows what the selected profile would run with (UZDoom, base wad, ini, wads) and whether anything is broken, with the global settings (UZDoom, base wad, UZDoom arguments) beside it
+- **Status at a glance**: a panel under the launcher shows what the selected profile would run with (UZDoom, base wad, ini, wads) and whether anything is broken, with the global settings (UZDoom, base wad, ini, UZDoom arguments) beside it
+- **Themes**: every color, border and glyph comes from a `theme.toml` you can change, or the built-in hellfire one
 - **Placeholders, not surprises**: a wad that moved is shown in the editor with what's wrong, and only that profile is held back from launching
 - **Fits any terminal** from 40×20 up: every window is sized from what it holds, and long lists scroll
 
@@ -35,14 +36,15 @@ The profiles here are examples made for the screenshots.
 | **Searching.** `/` and a name; a `*` in front looks in the wads instead. Nothing moves until `Enter`. | **Selecting and copying.** `Shift+V` and `M` pick rows; the row under the panel says what is selected and what is copied. |
 | ![The wads screen: two wad dirs and the downloads, each with its wads and their sizes](docs/screenshots/wads.png) | ![Every wad in one list, the two brutalv22.pk3 told apart by their dirs](docs/screenshots/every-wad.png) |
 | **Wads screen.** `L`: every wad dir and the downloads, each with every wad in it, to copy or move between dirs or paste into a profile. | **Every wad.** `Tab` on the wads screen: one list by name, where wads with the same name are told apart by their dirs. |
-| ![The settings: splash, pride, music, quips, song, UZDoom arguments and splash quip](docs/screenshots/settings.png) | |
-| **Settings.** `O` in the launcher: the splash and the pride splash, the music, quips and song, the UZDoom arguments and the splash quip, the same in every loadout. | |
+| ![The settings: splash, pride, music, quips, song, theme, ini, UZDoom arguments and splash quip](docs/screenshots/settings.png) | |
+| **Settings.** `O` in the launcher: the splash and the pride splash, the music, quips and song, the theme, the ini, the UZDoom arguments and the splash quip, the same in every loadout. | |
 
 ## Requirements
 
 - A recent **nightly** Rust toolchain (the project uses unstable features)
 - [UZDoom](https://github.com/UZDoom/UZDoom) installed
 - A Doom base wad (e.g. `DOOM2.WAD`, or the free [Freedoom](https://freedoom.github.io/))
+- Python 3.8 or later, only to [upgrade the files of a tdl before 1.0.0](#upgrading-from-before-100)
 
 ## Install
 
@@ -60,7 +62,7 @@ On first run, press `U` to select your UZDoom executable and `W` to select a bas
 ### Command line
 
 ```sh
-tdl [--loadout <dir> | --loadout-once <dir> | --forget-loadout | --forget-loadout-once] [--wads <dir>... | --wads-once <dir>... | --forget-wads | --forget-wads-once] [--unseal <scroll> | --unseal-delete <scroll> | --unseal-delete-force <scroll>] [--no-splash] [--splash-quip <quip> | --no-quips] [[--music <song>] [--keep-music] | --no-music] [--uzdoom <file>] [--base-wad <file>] [--with-pride]
+tdl [--session] [<dir> | --loadout <dir> | --keep-loadout <dir> | --forget-loadout | --keep-forget-loadout] [--wads <dir>... | --keep-wads <dir>... | --keep-loadout-wads <dir>... | --forget-wads | --keep-forget-wads] [--uzdoom <file> | --keep-uzdoom <file>] [--base-wad <file> | --keep-base-wad <file>] [--ini <file> | --keep-ini <file>] [--theme <file> | --keep-theme <file>] [--unseal <scroll> | --unseal-delete <scroll> | --unseal-delete-force <scroll>] [--no-splash] [--splash-quip <quip> | --no-quips] [[--music <song>] [--keep-music] | --no-music] [--with-pride]
 tdl launch|host|join ...                  # see Commands below
 tdl --seal <scroll> [--with-settings]
 tdl --list-quips
@@ -68,18 +70,28 @@ tdl --list-quips
 
 `tdl --help` (or `tdl host --help`, and so on) lists everything, and `tdl --version` says which tdl it is. A mistyped option is answered with the closest real one.
 
-- `--loadout <dir>` keeps everything in `<dir>/config` and `<dir>/data` instead of the standard dirs. tdl asks whether to open that loadout every time it starts.
-- `--loadout-once <dir>` opens a loadout the same way, just for this run, without asking.
+#### Keeping what you pass
+
+What you give tdl on the command line (a loadout, wad dirs, a UZDoom, a base wad, an ini, a theme) is used for the run, and then tdl asks whether to keep it. Each of those flags comes three ways:
+
+- the plain flag (`--uzdoom <file>`) uses it and **asks** whether to keep it;
+- with `--session` anywhere on the command line, every plain flag is **just for this run**: nothing is asked, and nothing is kept. Forgetting is just for the run too;
+- its `--keep-` flag (`--keep-uzdoom <file>`) uses it and **keeps it without asking**, even with `--session`, so `tdl --session --keep-theme blue.toml --uzdoom ./uzdoom-dev` keeps the theme but tries the UZDoom build only once.
+
+With `--headless` and `--seal` there are no windows to ask in, so the plain flags are just for the run, and only the `--keep-` flags keep anything.
+
+- `--loadout <dir>` keeps everything in `<dir>/config` and `<dir>/data` instead of the standard dirs, and asks whether to open that loadout every time tdl starts. `tdl <dir>` on its own is the same. `--keep-loadout <dir>` opens it every time without asking.
+- `--forget-loadout` opens the standard loadout, and asks whether to stop opening the one remembered from `--loadout`. `--keep-forget-loadout` stops opening it without asking; with `--session`, `--forget-loadout` opens the standard loadout just for this run.
+- `--wads <dir>` (as many times as you like) says where your wads are: file pickers open there instead of the current directory, and joining looks there for wads you already have. tdl asks whether to keep the dirs for this **[S]ession** only, **[G]lobal**ly for every loadout, or for this **[L]oadout**. Kept dirs are used whenever tdl starts without `--wads`: the loadout's own first, then the global ones. `--keep-wads <dir>` keeps them for every loadout without asking, and `--keep-loadout-wads <dir>` for this loadout.
+- `--forget-wads` looks for wads only in the downloads this run, and asks whether to forget the wad dirs kept **[G]lobal**ly, for this **[L]oadout**, or **[B]oth**. `--keep-forget-wads` forgets them all without asking.
+- `--uzdoom <file>`, `--base-wad <file>` and `--ini <file>` play with that UZDoom, base wad or UZDoom ini for the run, over every profile's own and the global one (the launcher's panels mark them **session**), for trying another UZDoom build, IWAD or config quickly. tdl then asks whether to keep each as the global one, used by every profile without its own. `--keep-uzdoom`, `--keep-base-wad` and `--keep-ini` keep it without asking. A file that isn't there stops tdl before it starts.
+- `--theme <file>` wears the theme in that `theme.toml` (see [Themes](#themes)), from the first window on, and asks whether to keep wearing it; `--keep-theme <file>` keeps it without asking. A theme tdl can't wear stops it before it starts, and says what is wrong with it.
 - `--unseal <scroll>` imports a shared `.scroll` as soon as tdl starts, just like `I` in the launcher, looking for its wads in the wad dirs: `tdl --unseal shared.scroll --wads ~/wads`.
 - `--unseal-delete <scroll>` unseals a scroll in place of the loadout's profiles: every profile is deleted first, with its saved games and logs, and the scroll's go in. The downloaded wads stay, so nothing has to be downloaded again, and so do your global settings. It asks first; `--unseal-delete-force <scroll>` doesn't. Restoring a backup made with `--seal` is `tdl --unseal-delete-force backup.scroll`.
 - `--splash-quip <quip>` shows your own quip under the splash logo instead of a random one, just for this run: `tdl --splash-quip "Rip and tear, bestie!"`. Every `#<number>` in it is replaced by that built-in quip, counting from 1 (`tdl --list-quips` prints them all with their numbers): `#12` is quip 12 alone, and `#12, hun!` is quip 12 with `, hun!` right after it, no space added. Write `##` for a plain `#` in front of digits. It plays the splash even if the **splash** setting is off, and can't go with `--no-splash`. The progress windows keep their usual quips. `--no-quips` leaves the quips out of every window for this run, the same as the **quips** setting.
 - `--music <song>` plays your own song (wav, mp3, flac or ogg) instead of "Inevitable Doom". It is checked before tdl starts, so a file it can't play is reported right away. `--keep-music` keeps the music going in the launcher after the splash, as the **music** setting does. To use your song every time, pick it in the **song** setting. `--no-music` plays no music at all for this run, not even on the splash, and can't go with the other two.
-- `--uzdoom <file>` and `--base-wad <file>` play with that UZDoom or base wad for this run only, over every profile's own and the global one, for trying another UZDoom build or IWAD quickly. They are never saved and never asked about; the launcher's panels mark them **session**. A file that isn't there stops tdl before it starts.
 - `--seal <scroll>` seals every profile in the loadout into a new `.scroll`, with no windows, and closes: `tdl --seal backup.scroll`. It never writes over a file that is already there. `--with-settings` seals your global settings in too (never your song); whoever unseals it gets them in place of their own.
 - `--with-pride` plays the pride splash for the run (the **pride** setting plays it every time): a fire that burns through every color of the rainbow, under the logo in the whole trans flag, a stripe a row: blue, pink, white, pink, blue. Without it the logo cools a step a row, from white-hot flame at the top to blood at the bottom.
-- `--forget-loadout` opens the standard loadout, and asks whether to stop opening the one remembered from `--loadout`. `--forget-loadout-once` opens the standard loadout just for this run, and asks nothing.
-- `--wads <dir>` (as many times as you like) says where your wads are: file pickers open there instead of the current directory, and joining looks there for wads you already have. tdl asks whether to keep the dirs for this **[S]ession** only, **[G]lobal**ly for every loadout, or for this **[V]ault**. Kept dirs are used whenever tdl starts without `--wads`: the loadout's own first, then the global ones. `--wads-once <dir>` uses the dirs the same way, just for this run, without asking.
-- `--forget-wads` looks for wads only in the downloads this run, and asks whether to forget the wad dirs kept **[G]lobal**ly, for this **[V]ault**, or **[B]oth**. `--forget-wads-once` leaves them out just for this run, and asks nothing.
 
 #### Commands
 
@@ -91,7 +103,7 @@ tdl host brutal_doom --players 4 --coop --map MAP07  # the host form, filled in 
 tdl join 10.0.0.2 --code abc234 --port 9000           # the join form, filled in from these
 ```
 
-- `host` opens the host form for the profile, filled in from its saved host defaults and changed by `--players` (2–8), `--coop` or `--deathmatch`, `--map`, `--port`, `--code`, and `--share-ini` or `--keep-ini` (whether joiners can play with your ini, see Multiplayer); `Enter` starts the game.
+- `host` opens the host form for the profile, filled in from its saved host defaults and changed by `--players` (2–8), `--coop` or `--deathmatch`, `--map`, `--port`, `--code`, and `--share-ini` or `--no-share-ini` (whether joiners can play with your ini, see Multiplayer); `Enter` starts the game.
 - `join` opens the join form, filled in with the IP, `--code` and `--port` (8080 if not given), then finds or downloads a profile. With `--always-download` the wads you don't have are downloaded without asking first, with `--host-ini` you play with the host's ini, if it shares it, and with `--host-ini-with-keys` its key bindings too (see Multiplayer).
 - `--headless`, with `launch`, `host` or `join`, shows no forms and no windows at all: just plain lines in the terminal, so `join` needs `--code`. Joining still asks `[Y/N]` before downloading wads that aren't installed (no answer, or no terminal to ask on, is no), unless `--always-download` is given, and asks `[r/n/S]` about a wad of yours that isn't the host's version (see Multiplayer; no answer is skip, and `--always-download` replaces it without asking); a profile made for it is named after the host (`joined_10_0_0_2`). Anything that stops the game ends tdl with an error code, and `Ctrl+C` stops a game or a download cleanly, leaving any finished downloads for next time.
 
@@ -122,7 +134,7 @@ tdl join 10.0.0.2 --code abc234 --port 9000           # the join form, filled in
 | `Esc` | Save and quit |
 | `F1` / `?` | Show the keys for the current screen (`F1` works everywhere, even where `?` is typed as text) |
 
-Inside the profile editor, `Enter` saves and leaves; `Esc` leaves too, but if the profile changed it first asks whether to **[S]ave**, **[D]iscard**, or go **[B]ack**. Saving under a name another profile has asks whether to replace that profile (deleting it and its saves; an edited profile keeps its place and its own saves), or go back to the editor. `Tab` switches between the name and the wad list, where `A` adds a wad, `F` imports a dir, `D` removes one, `}`/`{` reorder, `U`/`W`/`I` set the profile's own UZDoom, base wad and ini, and `G` its own UZDoom arguments (used instead of the global ones from the settings; left empty, the global ones count). `/` searches the wads by file name (never by dir) and `;`/`,` step through the matches. `Shift+V` and `M` select wads, `Y` copies the selected ones (or the one under the cursor), `Shift+Y` copies every wad, `X` cuts (copies, then takes them out), and `P` pastes in front of the cursor; copied profiles paste as all their wads. `N` renames a wad's file (see [the wads screen](#the-wads-screen)), `L` opens the wads screen, and `T` makes the profile watch a dir, or stop watching one.
+Inside the profile editor, `Enter` saves and leaves; `Esc` leaves too, but if the profile changed it first asks whether to **[S]ave**, **[D]iscard**, or go **[B]ack**. Saving under a name another profile has asks whether to replace that profile (deleting it and its saves; an edited profile keeps its place and its own saves), or go back to the editor. `Tab` switches between the name and the wad list, where `A` adds a wad, `F` imports a dir, `D` removes one, `}`/`{` reorder, `U`/`W`/`I` set the profile's own UZDoom, base wad and ini (for the ini, **Global** is the one from the settings, or UZDoom's usual one), and `G` its own UZDoom arguments (used instead of the global ones from the settings; left empty, the global ones count). `/` searches the wads by file name (never by dir) and `;`/`,` step through the matches. `Shift+V` and `M` select wads, `Y` copies the selected ones (or the one under the cursor), `Shift+Y` copies every wad, `X` cuts (copies, then takes them out), and `P` pastes in front of the cursor; copied profiles paste as all their wads. `N` renames a wad's file (see [the wads screen](#the-wads-screen)), `L` opens the wads screen, and `T` makes the profile watch a dir, or stop watching one.
 
 ### Profiles that watch a dir
 
@@ -167,13 +179,15 @@ Pasting a wad whose file name the profile already has asks the same three things
 
 ### Settings
 
-`O` in the launcher opens the settings. Everything here, like UZDoom and the base wad (`U` and `W`), is kept in `uac.rite`, so it is the same whichever loadout is open; a loadout only keeps its profiles and its own wad dirs. `↑`/`↓` (or `Tab`) move between the rows, `J`/`K` or `←`/`→` switch a choice, `Enter` saves. `Esc` leaves, and if anything changed it first asks whether to **[S]ave** it, **[D]iscard** it, or go **[B]ack** to the form.
+`O` in the launcher opens the settings. Everything here, like UZDoom and the base wad (`U` and `W`), is kept in `uac.rite` (in the standard config dir; see [DATA_LAYOUT.md](DATA_LAYOUT.md)), so it is the same whichever loadout is open; a loadout only keeps its profiles and its own wad dirs. `↑`/`↓` (or `Tab`) move between the rows, `J`/`K` or `←`/`→` switch a choice, `Enter` saves. `Esc` leaves, and if anything changed it first asks whether to **[S]ave** it, **[D]iscard** it, or go **[B]ack** to the form.
 
 - **splash**: whether the fire splash plays when tdl starts.
 - **pride**: **on** plays the pride splash every time, as `--with-pride` does for one run, from the next start on.
 - **music**: **off** (no music at all, as `--no-music` does for one run), **splash only** (it fades out with the splash), or **keeps playing** in the launcher (as `--keep-music` does for one run). `J`/`→` goes to the next choice and `K`/`←` back.
 - **quips**: **hidden** leaves the quips out of every window, the splash screen and the waiting windows alike, for every loadout. `--splash-quip` still shows its quip on the splash.
 - **song**: a song of your own (wav, mp3, flac or ogg) to play instead of "Inevitable Doom", for every loadout. `Enter` opens a file picker, and `Backspace` goes back to the built-in track. A new song plays straight away if the music is playing. `--music` still wins at startup, and a song that has gone missing is mentioned at startup and the built-in track plays instead.
+- **theme**: the [theme](#themes) tdl wears. `Enter` asks for **[B]uilt-in**, **[N]ew** (the built-in theme written out to `theme.toml` in the standard config dir, for you to change; one already there is kept as it is) or **[S]elect** (a `.toml` file of your own), and `Backspace` goes back to the built-in one. A theme tdl can't wear is said, and the theme stays as it was. The new one is worn as soon as the settings are saved. `--theme` still wins for the run it's given.
+- **ini**: the UZDoom ini every profile without its own plays with (the editor's `I` → **Global**), instead of UZDoom's usual one. `Enter` opens a file picker, and `Backspace` goes back to UZDoom's own. `--ini` still wins for the run it's given.
 - **uzdoom args**: extra arguments passed to UZDoom on every launch, host and join, before the wads, such as `-nomusic +vid_fps 1`. They are split at spaces; quotes aren't understood.
 - **splash quip**: the quip under the splash logo every time tdl starts, for every loadout. Leave it empty for a random one, or type it the same way as `--splash-quip`: `#12` for built-in quip 12, your own words, or both (`#12, hun!`). `--splash-quip` still wins for the run it's given. In this field `?` is typed like any letter, so only `F1` shows its keys.
 
@@ -185,9 +199,9 @@ Sealing also asks whether to seal in your global settings: the music, whether qu
 
 ### Multiplayer
 
-The host serves its wad list on port **8080** (or the port set in the host form, which is remembered) while the game runs, so that port must be reachable by joiners. Every game gets a **join code**: type your own in the host form as a password, or leave it empty for a random one. tdl shows the port and code before the game starts. Without the code, nobody can fetch the wad list or the wads. The host form's **ini** switch (`←`/`→`) shares the ini you host with: the profile's own, or else UZDoom's usual one if tdl finds it (`~/.config/uzdoom/uzdoom.ini` on Linux, `~/Library/Preferences/uzdoom.ini` on macOS, and on Windows `uzdoom_portable.ini` beside UZDoom, then `Documents/My Games/UZDoom/uzdoom.ini`, then `uzdoom.ini` beside UZDoom). It is served behind the join code too, as it was when the game started, for joiners who choose to play with it; with none to share, tdl says so and hosts without it. It is off unless you turn it on. The host form's **save as default** button stores the current settings for that profile, so its next game starts from them, and **clear default** removes them. Both ask first.
+The host serves its wad list on port **8080** (or the port set in the host form, which is remembered) while the game runs, so that port must be reachable by joiners. Every game gets a **join code**: type your own in the host form as a password, or leave it empty for a random one. tdl shows the port and code before the game starts. Without the code, nobody can fetch the wad list or the wads. The host form's **ini** switch (`←`/`→`) shares the ini you host with: the profile's own, else the global one from the settings, or else UZDoom's usual one if tdl finds it (`~/.config/uzdoom/uzdoom.ini` on Linux, `~/Library/Preferences/uzdoom.ini` on macOS, and on Windows `uzdoom_portable.ini` beside UZDoom, then `Documents/My Games/UZDoom/uzdoom.ini`, then `uzdoom.ini` beside UZDoom). It is served behind the join code too, as it was when the game started, for joiners who choose to play with it; with none to share, tdl says so and hosts without it. It is off unless you turn it on. The host form's **save as default** button stores the current settings for that profile, so its next game starts from them, and **clear default** removes them. Both ask first.
 
-Joiners enter the host's IP, the port (empty means 8080) and the code, and pick whose **ini** to play with (`←`/`→`): **yours**, **the host's**, or **the host's + its keys**, if the host shares it (if it doesn't, tdl says so and uses yours). The host's ini comes from someone else, so only its settings are taken: whatever names files or dirs (wads to autoload, scripts to run, where to look or save) and the key bindings and aliases, which can run any command, are left out, and so are your player, screen, sound and controls. Those come from your own ini (the profile's, or UZDoom's usual one), so you keep your name, color and keys. The result is written to `host.ini` in the profile's data dir and played with for that game only; the profile's own ini is never touched.
+Joiners enter the host's IP, the port (empty means 8080) and the code, and pick whose **ini** to play with (`←`/`→`): **yours**, **the host's**, or **the host's + its keys**, if the host shares it (if it doesn't, tdl says so and uses yours). The host's ini comes from someone else, so only its settings are taken: whatever names files or dirs (wads to autoload, scripts to run, where to look or save) and the key bindings and aliases, which can run any command, are left out, and so are your player, screen, sound and controls. Those come from your own ini (the profile's, the global one, or UZDoom's usual one), so you keep your name, color and keys. The result is written to `host.ini` in the profile's data dir and played with for that game only; the profile's own ini is never touched.
 
 **The host's + its keys** also brings over the host's key bindings, for the keys a mod leaves unbound and its players bind themselves, so you can start playing without setting them up. A binding only goes on a key you haven't bound, and only for something you have no key for yet. Bindings that could reach a file (`logfile`, `exec`, `record` and the like, or a setting that names a file), rebind keys, define aliases, or run one of the host's own aliases are never brought over.
 
@@ -215,19 +229,52 @@ tdl --loadout /path/to/dir   # uses /path/to/dir/config and /path/to/dir/data
 
 The fire splash plays until you press a key; `tdl --no-splash` goes straight to the launcher, and the **splash** setting (`O` in the launcher) turns it off (or back on) for good. The screen and music fade in, and fade out again when you press a key. The splash plays "Inevitable Doom", or your own song with `--music <song>`; `--keep-music`, or the **music** setting, keeps it going in the launcher.
 
-## Tuning the look
+### Upgrading from before 1.0.0
 
-Everything visual lives in a few small files, so it can be changed without touching the screens:
+tdl 1.0.0 renamed a few things (the vault is now the **loadout**, and `global.rite` is `uac.rite`), and no longer reads the files of earlier tdls itself. If it finds any, it says which, changes nothing, and closes. Close tdl and run the script that comes with it (from the release, or the repository):
+
+```sh
+python3 upgrade_legacy.py                        # the standard dirs, and the loadout tdl opens by default
+python3 upgrade_legacy.py --loadout /path/to/dir # also a loadout you open with --loadout (was --vault)
+python3 upgrade_legacy.py --scroll old.scroll    # a .scroll from tdl 0.6.0
+python3 upgrade_legacy.py --dry-run              # only say what would be done
+```
+
+It upgrades the global settings, every loadout's config and profiles (their backups too, and the old `.doom` files and `profiles` dir), and the settings a loadout's config kept before they all went global, each one only if the global settings don't have it yet. Every file it upgrades is kept beside the new one as `<file>.legacy`; nothing is deleted, and running it again is harmless. The `-once` flags became `--session` (see [Keeping what you pass](#keeping-what-you-pass)), and `tdl host --keep-ini` is `--no-share-ini`.
+
+## Themes
+
+Every color, border and glyph tdl draws comes from its theme: the built-in one (hot metal, old blood and toxic waste), or a `theme.toml` of your own. Pick **New** for the **theme** setting and tdl writes the built-in theme out to `theme.toml` in the standard config dir (`~/.config/tdl/theme.toml` on Linux) and wears it; change anything in it, and tdl wears it from the next start (or pick it again in the settings). A theme only needs what it changes: anything it leaves out is the built-in theme's. `tdl --theme <file>` tries one for a run.
+
+```toml
+[colors]
+background = "reset"        # the terminal's own background
+screen = "#3a7bd5"          # the launcher's and the editor's border
+key = "lightcyan"
+
+[styles]
+cursor = { fg = "black", bg = "#3a7bd5", bold = true }
+
+[borders]
+window = "rounded"          # plain, rounded, double, thick, quadrant_inside or quadrant_outside
+
+[glyphs]
+broken_mark = "x"
+```
+
+A color is `"#rrggbb"`, a terminal color's name (`"red"`, `"lightmagenta"`, `"darkgray"`…), a palette number (`"0"` to `"255"`), or `"reset"` for the terminal's own. The sections are `[colors]` (every role: text, borders, good, bad, changed and the rest), `[styles]` (the cursor, selected and broken rows, headings and the badges), `[borders]`, `[glyphs]`, `[splash]` (the logo's rows, its shadow, the tagline, the hint's and the quip's pulses, and the fire's colors from cold to white hot, as many as you like), `[pride]` (the logo's stripes on the pride splash) and `[help]` (the colors of `tdl --help`). The written-out `theme.toml` lists every one with the built-in value. A theme with a mistake in it (a misspelled name, a color tdl doesn't know) is said at startup, with where the mistake is, and the built-in theme is worn instead.
+
+### Tuning the rest
+
+The rest of the look lives in a few small files, so it can be changed without touching the screens:
 
 | File | What's in it |
 | --- | --- |
-| `src/theme.rs` | The palette (blood, hellfire, bone, nukage…), what each part of the interface is drawn with, border styles, the status glyphs, and the trans flag's colors for the pride splash |
+| `src/theme.rs` | The built-in theme: the palette (blood, hellfire, bone, nukage…), what each part of the interface is drawn with, border styles, the status glyphs, the fire's colors and the trans flag's colors for the pride splash |
 | `src/layout.rs` | The smallest terminal size, margins, padding, how far the launcher and editor grow into free space (`GROW_PERCENT`, `MAX_GROWN_WIDTH`), and how windows are centered and stacked |
-| `src/screens/splash.rs` | The startup logo and the color of each of its rows (flame to blood, or the trans flag's stripes), tagline, the "press any key" hint and how fast it pulses, and how fast the pride fire goes round the rainbow |
-| `src/widgets/fire.rs` | The fire itself: its palette, its rainbow, and how high the flames reach |
+| `src/screens/splash.rs` | The startup logo, tagline, the "press any key" hint and how fast it pulses, and how fast the pride fire goes round the rainbow |
+| `src/widgets/fire.rs` | The fire itself: its rainbow, and how high the flames reach |
 | `src/popups.rs` | How wide popup text gets before it wraps |
-
-Setting `BACKGROUND` in `theme.rs` to `Color::Reset` keeps your terminal's own background.
 
 ## Recording the demo and the screenshots
 

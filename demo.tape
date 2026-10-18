@@ -20,7 +20,7 @@ Set TypingSpeed 0
 # Start out of sight, on a throwaway loadout and home, so nothing of yours (loadouts, settings, your
 # song) is read or written, and the splash looks the same for everyone.
 Hide
-Type "mkdir -p /tmp/tdl-splash/home && clear && HOME=/tmp/tdl-splash/home ./target/release/tdl --splash-quip '#17' --loadout-once /tmp/tdl-splash/loadout --no-music" Enter
+Type "mkdir -p /tmp/tdl-splash/home && clear && HOME=/tmp/tdl-splash/home ./target/release/tdl --splash-quip '#17' --session --loadout /tmp/tdl-splash/loadout --no-music" Enter
 Sleep 2000ms
 Show
 

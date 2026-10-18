@@ -19,7 +19,7 @@ Set Padding 10
 Set TypingSpeed 0
 
 Hide
-Type "mkdir -p /tmp/tdl-shots/home && clear && HOME=/tmp/tdl-shots/home ./target/release/tdl --loadout-once /tmp/tdl-shots/loadout --wads-once /tmp/tdl-shots/wads --wads-once /tmp/tdl-shots/mods --no-splash --no-music" Enter
+Type "mkdir -p /tmp/tdl-shots/home && clear && HOME=/tmp/tdl-shots/home ./target/release/tdl --session --loadout /tmp/tdl-shots/loadout --wads /tmp/tdl-shots/wads --wads /tmp/tdl-shots/mods --no-splash --no-music" Enter
 Sleep 1s
 Show
 
