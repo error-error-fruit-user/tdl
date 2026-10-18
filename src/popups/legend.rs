@@ -7,7 +7,7 @@ use ratatui::{
 use crate::{
     error::Result,
     layout, popups,
-    ritual::{Grimoire, Page, Phase, Ritual, Tea},
+    ritual::{Grimoire, Page, Phase, Ritual},
     theme,
 };
 
@@ -150,7 +150,7 @@ impl Ritual for Legend<'_> {
         );
     }
 
-    fn prompt(&mut self, _: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Tea<Self>>> {
+    fn prompt(&mut self, _: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Return>> {
         Ok(self.turn(key_code))
     }
 }

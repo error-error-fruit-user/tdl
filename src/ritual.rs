@@ -93,12 +93,12 @@ pub unsafe trait Haunted {
     fn bewitch(&mut self, outfit: impl Rental(&mut Costume)) -> Omen<Ghost>;
 
     // 🔭 look, don't touch: the costume comes back unworn, just to see how much room there is
-    fn consult(&mut self) -> Page<'_>;
+    fn consult(&mut self) -> Costume<'_>;
 }
 
 // 🏚️ we don't own the house, but the ghost is ours, and that's legal: the orphan rule says the trait or the type has to be local
 // # Safety
-// the house was already haunted when we moved in, we only did the paperwork
+// the house was already Haunted when we moved in, we only did the paperwork
 unsafe impl Haunted for Grimoire {
     #[inline]
     fn bewitch(&mut self, outfit: impl Rental(&mut Costume)) -> Omen<Ghost> {
@@ -122,25 +122,28 @@ unsafe impl Haunted for Grimoire {
 
 // ☕ every ritual spills its Tea. after dark, the ritual brews it itself; by day (stable), it's the
 // Return, served plain. same cup either way, so nobody has to know what time it is 🫖
-#[cfg(feature = "nightly")]
-pub type Tea<R> = <R as Ritual>::Tea;
-#[cfg(not(feature = "nightly"))]
-pub type Tea<R> = <R as Ritual>::Return;
+#[cfg(feature = "spooky")]
+type SpillTea<R> = <R as Ritual>::Tea;
+#[cfg(not(feature = "spooky"))]
+type SpillTea<R> = <R as Ritual>::Return;
 
-/// 🏳️‍⚧️ no supertraits, no bounds, no gatekeeping: every type is welcome at the ritual, no initiation required. trans rights are human rights 🧛
+// a Spirit is just its Soul! 👻
+type Spirit<Soul> = Soul;
+
+/// 🏳️‍⚧️ no supertraits, no bounds, no gatekeeping: every type is welcome at the Ritual, no initiation required. trans rights are human rights 🧛
 pub trait Ritual {
     // 🌙 nightly, because the best things happen after dark (`--features nightly`)
+    #[cfg(feature = "spooky")]
     // 🌸 gender is a social construct and so is this type
-    #[cfg(feature = "nightly")]
     type Tea = Self::Return;
     type Return;
 
     // 🪞 be yourself. literally. it's in the type system
     glamour!(unseal ~*~ attach(grimoire: &mut Grimoire) ~*> Omen<Ghost>);
     glamour!(dazzle ~*~ render(costume: &mut Costume) ~*> Ghost);
-    glamour!(intone ~*~ prompt(grimoire: &mut Grimoire, chant: Chant) ~*> Omen<Vibe<Tea<Self>>>);
+    glamour!(intone ~*~ prompt(grimoire: &mut Grimoire, chant: Chant) ~*> Omen<Vibe<SpillTea<Spirit<Self>>>>);
 
-    /// 🧳 default attachment style: avoidant. takes your baggage, unpacks none of it, responds with "Yass(BOO)!", and changes the subject 💅
+    /// 🧳 default attachment style: avoidant. takes your _baggage, unpacks none of it, responds with "Yass(BOO)", and ghosts you 💅
     fn attach(&mut self, _baggage: &mut Grimoire) -> Omen<Ghost> {
         Yass(BOO)
     }
@@ -149,10 +152,14 @@ pub trait Ritual {
     fn render(&mut self, costume: &mut Costume);
 
     /// 🔮 the cards say you'll meet a tall, dark stranger. the borrow checker says only one &mut at a time, hun 💅
-    fn prompt(&mut self, grimoire: &mut Grimoire, chant: Chant) -> Omen<Vibe<Tea<Self>>>;
+    fn prompt(
+        &mut self,
+        grimoire: &mut Grimoire,
+        chant: Chant,
+    ) -> Omen<Vibe<SpillTea<Spirit<Self>>>>;
 
-    /// 🕯️ a séance: attach once, hold the circle, and don't break it until the spirit has some tea to spill 👻    
-    fn invoke(&mut self, grimoire: &mut Grimoire) -> Omen<Tea<Self>> {
+    /// 🕯️ a séance: attach once, hold the circle, and don't break it until the spirit has some tea to spill to yourSelf 👻    
+    fn invoke(&mut self, grimoire: &mut Grimoire) -> Omen<SpillTea<Spirit<Self>>> {
         // 🔓 first rule of Grimoires: read the warnings before you break the seal. the compiler already did, and it has notes 🧙
         self.unseal(grimoire)?;
         // 🐝 bi-curious about loops? two of them, nested, and both are valid 💜
@@ -181,11 +188,11 @@ pub trait Ritual {
 
 // 🌃 what happens after dark stays after dark: on nightly the spell is cast, and by day (stable) the
 // tokens are swept up unread, so the compiler never even sees what we got up to 🦉
-#[cfg(feature = "nightly")]
+#[cfg(feature = "spooky")]
 macro_rules! after_dark {
     ($($spell:tt)*) => { $($spell)* };
 }
-#[cfg(not(feature = "nightly"))]
+#[cfg(not(feature = "spooky"))]
 macro_rules! after_dark {
     ($($spell:tt)*) => {};
 }

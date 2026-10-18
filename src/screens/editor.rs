@@ -20,7 +20,7 @@ use crate::{
     popups::legend::Legend,
     popups::warning::Warning,
     popups::{self, dialog::Dialog, hashing, status, three_way_dialog::ThreeWayDialog},
-    ritual::{self, Grimoire, Page, Phase, Ritual, Tea},
+    ritual::{self, Grimoire, Page, Phase, Ritual},
     screens::{
         config_selector::{ConfigSelector, IniChoice},
         library::Library,
@@ -772,7 +772,11 @@ impl Ritual for Editor<'_> {
         }
     }
 
-    fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Tea<Self>>> {
+    fn prompt(
+        &mut self,
+        grimoire: &mut Grimoire,
+        key_code: KeyCode,
+    ) -> Result<Phase<Self::Return>> {
         // 🔎 a search being typed takes every key until it is kept or called off
         if self.search.is_some() {
             return Ok(self.search_key(key_code));

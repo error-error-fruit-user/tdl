@@ -7,7 +7,7 @@ use crate::{
     loadout::uac::{Music, SplashQuip, Uac},
     music, picker,
     popups::{legend::Legend, three_way_dialog::ThreeWayDialog, warning::Warning},
-    ritual::{Grimoire, Page, Phase, Ritual, Tea},
+    ritual::{Grimoire, Page, Phase, Ritual},
     theme::{self, Dressing, Theme, pride::Pride, splash::Splash},
     widgets::{
         form::{self, Field},
@@ -303,7 +303,11 @@ impl Ritual for SettingsForm {
         form::draw(page, Self::TITLE, Self::border_color(), &fields, self.focus);
     }
 
-    fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Tea<Self>>> {
+    fn prompt(
+        &mut self,
+        grimoire: &mut Grimoire,
+        key_code: KeyCode,
+    ) -> Result<Phase<Self::Return>> {
         // ❓ a quip may well end in `?`, so there the legend is on F1 instead
         let legend = match (self.focus, key_code) {
             (Self::QUIP, KeyCode::F(1)) => Some(Self::QUIP_LEGEND),

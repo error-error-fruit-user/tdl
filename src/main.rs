@@ -1,5 +1,5 @@
 #![cfg_attr(
-    feature = "nightly",
+    feature = "spooky",
     feature(
         associated_type_defaults,
         auto_traits,
@@ -9,7 +9,7 @@
         yeet_expr
     )
 )]
-#![cfg_attr(all(test, feature = "nightly"), feature(try_blocks))]
+#![cfg_attr(all(test, feature = "spooky"), feature(try_blocks))]
 
 use std::{io::Write, path::PathBuf};
 

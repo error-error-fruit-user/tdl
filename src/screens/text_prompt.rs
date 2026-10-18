@@ -3,7 +3,7 @@ use ratatui::{crossterm::event::KeyCode, style::Color};
 use crate::{
     error::Result,
     popups::legend::Legend,
-    ritual::{Grimoire, Page, Phase, Ritual, Tea},
+    ritual::{Grimoire, Page, Phase, Ritual},
     theme,
     widgets::{
         form::{self, Field},
@@ -84,7 +84,11 @@ impl Ritual for TextPrompt<'_> {
         form::draw(page, self.title, Self::border_color(), &fields, 0);
     }
 
-    fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Tea<Self>>> {
+    fn prompt(
+        &mut self,
+        grimoire: &mut Grimoire,
+        key_code: KeyCode,
+    ) -> Result<Phase<Self::Return>> {
         if key_code == KeyCode::F(1) {
             Legend::summon(grimoire, Self::LEGEND)?;
             return Ok(Phase::Render);

@@ -3,7 +3,7 @@ use ratatui::{crossterm::event::KeyCode, style::Color};
 use crate::{
     error::Result,
     popups::{legend::Legend, warning::Warning},
-    ritual::{Grimoire, Page, Phase, Ritual, Tea},
+    ritual::{Grimoire, Page, Phase, Ritual},
     tag, theme,
     widgets::{
         form::{self, Field},
@@ -161,7 +161,11 @@ impl<F: Fn(&str) -> bool> Ritual for WadNamer<F> {
         form::draw(page, &self.title, Self::border_color(), &fields, 0);
     }
 
-    fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Tea<Self>>> {
+    fn prompt(
+        &mut self,
+        grimoire: &mut Grimoire,
+        key_code: KeyCode,
+    ) -> Result<Phase<Self::Return>> {
         match key_code {
             KeyCode::Enter => match self.check() {
                 Ok(name) => Ok(Phase::Return(Some(name))),
