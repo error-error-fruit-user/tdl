@@ -179,6 +179,57 @@ pub trait Ritual {
     }
 }
 
+// 🌃 what happens after dark stays after dark: on nightly the spell is cast, and by day (stable) the
+// tokens are swept up unread, so the compiler never even sees what we got up to 🦉
+#[cfg(feature = "nightly")]
+macro_rules! after_dark {
+    ($($spell:tt)*) => { $($spell)* };
+}
+#[cfg(not(feature = "nightly"))]
+macro_rules! after_dark {
+    ($($spell:tt)*) => {};
+}
+
+after_dark! {
+    /// 💜 every type is Valid, automatically: no impl, no paperwork, no coming-out letter to the compiler
+    #[allow(dead_code, reason = "Valid doesn't need to be asked for to be true 💜")]
+    pub auto trait Valid {}
+
+    /// 🚫 every type but this one. it knows what it did
+    #[allow(dead_code, reason = "nobody invited Gatekeeping, and nobody uses it either 🙅")]
+    pub struct Gatekeeping;
+    impl !Valid for Gatekeeping {}
+
+    /// 🕯️ a coven is just rituals that agreed on a dress code: they all spill Ghosts
+    #[allow(dead_code, reason = "a coven doesn't need members to meet on the full moon 🌕")]
+    pub trait Coven = Ritual<Return = Ghost>;
+
+    // 🕳️ the abyss: a type with no values (stable since 1.100, still too dark for our 1.89 days).
+    // stare into it and the compiler stares back, then optimizes you out. a ritual nobody can perform: to invoke it, you'd first have to summon the void
+    impl Ritual for ! {
+        type Return = !;
+
+        fn render(&mut self, _costume: &mut Costume) {
+            *self
+        }
+
+        fn prompt(&mut self, _grimoire: &mut Grimoire, _chant: Chant) -> Omen<Vibe<Tea<Self>>> {
+            *self
+        }
+    }
+
+    // 🗑️ `do yeet` is real Rust syntax, look it up. Err(curse)? no, babe. we yeet the curse 💅
+    #[allow(dead_code, reason = "a curse doesn't have to be cast to be yeetable 🧹")]
+    fn banish<T>(curse: Curse) -> Omen<T> {
+        do yeet curse
+    }
+
+    // 🏳️‍🌈 32 bits was never enough PRIDE. here's 128 of them, and it's still not a number
+    #[allow(dead_code, reason = "MORE_PRIDE doesn't have to be used to be valid either 🏳️‍🌈")]
+    const MORE_PRIDE: f128 = f128::NAN;
+    const _BIGGER_PARADE: Ghost = assert!(MORE_PRIDE.is_nan(), "MORE_PRIDE is not a number either 🏳️‍🌈");
+}
+
 // 🕸️ everything below is what a ritual needs on the night: a mood, a question, and a circle of salt
 
 /// 🔮 what a ritual wants after reading the room: redraw, keep waiting, or give up the tea
@@ -384,5 +435,23 @@ mod tests {
         assert_eq!(brews.get(), 0);
         assert!(Vibe::spill_when_brewed(true, brew) == Spill("tea".to_string()));
         assert_eq!(brews.get(), 1);
+    }
+
+    after_dark! {
+        #[test]
+        fn every_type_is_valid() {
+            fn valid<T: Valid + ?Sized>() {}
+            valid::<Ghost>();
+            valid::<Grimoire>();
+            valid::<str>();
+            valid::<Vibe<Ghost>>();
+        }
+
+        // 🔮 a séance in a try block: if the spirit gets yeeted, the circle catches it
+        #[test]
+        fn a_banished_curse_is_caught_by_the_circle() {
+            let seance: Omen<Ghost> = try { banish::<Ghost>(Curse::Interrupted)? };
+            assert!(matches!(seance, Err(Curse::Interrupted)));
+        }
     }
 }

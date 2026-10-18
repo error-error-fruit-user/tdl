@@ -6,7 +6,8 @@ rust-version = "1.89"
 license = "0BSD"
 
 [features]
-# Builds with nightly Rust's unstable features (`associated_type_defaults`, for `Ritual::Tea`):
+# Builds with nightly Rust's unstable features (`associated_type_defaults`, for `Ritual::Tea`, and
+# the ones `ritual.rs` only uses for fun inside `after_dark!`):
 # `cargo +nightly build --features nightly`. Without it, tdl builds on stable.
 nightly = []
 
