@@ -4,7 +4,7 @@
 
 A terminal launcher for [UZDoom](https://github.com/UZDoom/UZDoom). Group your wads into named profiles, launch them in one keypress, and host or join multiplayer games, with missing wads downloaded automatically from the host.
 
-![The tdl splash screen: the title over the Doom fire](demo.gif)
+![The tdl splash screen: the title over the Doom fire, with the quip "Hell on Earth, heaven in a terminal!"](demo.gif)
 
 ## Features
 
@@ -33,8 +33,8 @@ The profiles here are examples made for the screenshots.
 | **Inspecting a wad.** `Space` on a marked wad says what's wrong and how to fix it. | **Hosting.** Player count, mode, map, port and join code; an empty map lets UZDoom pick. |
 | ![The search line, looking for a wad by name with a star](docs/screenshots/search.png) | ![Two profiles selected, with one profile already copied](docs/screenshots/selection.png) |
 | **Searching.** `/` and a name; a `*` in front looks in the wads instead. Nothing moves until `Enter`. | **Selecting and copying.** `Shift+V` and `M` pick rows; the row under the panel says what is selected and what is copied. |
-| ![The settings: splash, music, quips, song, UZDoom arguments and splash quip](docs/screenshots/settings.png) | |
-| **Settings.** `O` in the launcher: the splash, the UZDoom arguments, the music, song and quips, the same in every vault. | |
+| ![The settings: splash, pride, music, quips, song, UZDoom arguments and splash quip](docs/screenshots/settings.png) | |
+| **Settings.** `O` in the launcher: the splash and the pride splash, the music, quips and song, the UZDoom arguments and the splash quip, the same in every vault. | |
 
 ## Requirements
 
@@ -58,7 +58,7 @@ On first run, press `U` to select your UZDoom executable and `W` to select a bas
 ### Command line
 
 ```sh
-tdl [--vault <dir> | --vault-once <dir> | --forget-vault | --forget-vault-once] [--wads <dir>... | --wads-once <dir>... | --forget-wads | --forget-wads-once] [--unseal <scroll> | --unseal-delete <scroll> | --unseal-delete-force <scroll>] [--no-splash] [--splash-quip <quip> | --no-quips] [[--music <song>] [--keep-music] | --no-music] [--uzdoom <file>] [--base-wad <file>]
+tdl [--vault <dir> | --vault-once <dir> | --forget-vault | --forget-vault-once] [--wads <dir>... | --wads-once <dir>... | --forget-wads | --forget-wads-once] [--unseal <scroll> | --unseal-delete <scroll> | --unseal-delete-force <scroll>] [--no-splash] [--splash-quip <quip> | --no-quips] [[--music <song>] [--keep-music] | --no-music] [--uzdoom <file>] [--base-wad <file>] [--with-pride]
 tdl launch|host|join ...                  # see Commands below
 tdl --seal <scroll> [--with-settings]
 tdl --list-quips
@@ -74,7 +74,7 @@ tdl --list-quips
 - `--music <song>` plays your own song (wav, mp3, flac or ogg) instead of "Inevitable Doom". It is checked before tdl starts, so a file it can't play is reported right away. `--keep-music` keeps the music going in the launcher after the splash, as the **music** setting does. To use your song every time, pick it in the **song** setting. `--no-music` plays no music at all for this run, not even on the splash, and can't go with the other two.
 - `--uzdoom <file>` and `--base-wad <file>` play with that UZDoom or base wad for this run only, over every profile's own and the global one, for trying another UZDoom build or IWAD quickly. They are never saved and never asked about; the launcher's panels mark them **session**. A file that isn't there stops tdl before it starts.
 - `--seal <scroll>` seals every profile in the vault into a new `.scroll`, with no windows, and closes: `tdl --seal backup.scroll`. It never writes over a file that is already there. `--with-settings` seals your global settings in too (never your song); whoever unseals it gets them in place of their own.
-- `--with-pride` plays the pride splash for the run (the **pride** setting plays it every time): a fire that burns through every color of the rainbow, under the logo in the trans flag's blue, pink and white.
+- `--with-pride` plays the pride splash for the run (the **pride** setting plays it every time): a fire that burns through every color of the rainbow, under the logo in the whole trans flag, a stripe a row: blue, pink, white, pink, blue. Without it the logo cools a step a row, from white-hot flame at the top to blood at the bottom.
 - `--forget-vault` opens the standard vault, and asks whether to stop opening the one remembered from `--vault`. `--forget-vault-once` opens the standard vault just for this run, and asks nothing.
 - `--wads <dir>` (as many times as you like) says where your wads are: file pickers open there instead of the current directory, and joining looks there for wads you already have. tdl asks whether to keep the dirs for this **[S]ession** only, **[G]lobal**ly for every vault, or for this **[V]ault**. Kept dirs are used whenever tdl starts without `--wads`: the vault's own first, then the global ones. `--wads-once <dir>` uses the dirs the same way, just for this run, without asking.
 - `--forget-wads` looks for wads only in the downloads this run, and asks whether to forget the wad dirs kept **[G]lobal**ly, for this **[V]ault**, or **[B]oth**. `--forget-wads-once` leaves them out just for this run, and asks nothing.
@@ -155,9 +155,9 @@ Pasting a wad whose file name the profile already has asks the same three things
 - **splash**: whether the fire splash plays when tdl starts.
 - **pride**: **on** plays the pride splash every time, as `--with-pride` does for one run, from the next start on.
 - **music**: **off** (no music at all, as `--no-music` does for one run), **splash only** (it fades out with the splash), or **keeps playing** in the launcher (as `--keep-music` does for one run). `J`/`→` goes to the next choice and `K`/`←` back.
-- **uzdoom args**: extra arguments passed to UZDoom on every launch, host and join, before the wads, such as `-nomusic +vid_fps 1`. They are split at spaces; quotes aren't understood.
-- **song**: a song of your own (wav, mp3, flac or ogg) to play instead of "Inevitable Doom", for every vault. `Enter` opens a file picker, and `Backspace` goes back to the built-in track. A new song plays straight away if the music is playing. `--music` still wins at startup, and a song that has gone missing is mentioned at startup and the built-in track plays instead.
 - **quips**: **hidden** leaves the quips out of every window, the splash screen and the waiting windows alike, for every vault. `--splash-quip` still shows its quip on the splash.
+- **song**: a song of your own (wav, mp3, flac or ogg) to play instead of "Inevitable Doom", for every vault. `Enter` opens a file picker, and `Backspace` goes back to the built-in track. A new song plays straight away if the music is playing. `--music` still wins at startup, and a song that has gone missing is mentioned at startup and the built-in track plays instead.
+- **uzdoom args**: extra arguments passed to UZDoom on every launch, host and join, before the wads, such as `-nomusic +vid_fps 1`. They are split at spaces; quotes aren't understood.
 - **splash quip**: the quip under the splash logo every time tdl starts, for every vault. Leave it empty for a random one, or type it the same way as `--splash-quip`: `#12` for built-in quip 12, your own words, or both (`#12, hun!`). `--splash-quip` still wins for the run it's given. In this field `?` is typed like any letter, so only `F1` shows its keys.
 
 ### Sharing profiles
@@ -200,7 +200,7 @@ Everything visual lives in a few small files, so it can be changed without touch
 | --- | --- |
 | `src/theme.rs` | The palette (blood, hellfire, bone, nukage…), what each part of the interface is drawn with, border styles, the status glyphs, and the trans flag's colors for the pride splash |
 | `src/layout.rs` | The smallest terminal size, margins, padding, how far the launcher and editor grow into free space (`GROW_PERCENT`, `MAX_GROWN_WIDTH`), and how windows are centered and stacked |
-| `src/screens/splash.rs` | The startup logo (and its trans flag stripes), tagline, the "press any key" hint and how fast it pulses, and how fast the pride fire goes round the rainbow |
+| `src/screens/splash.rs` | The startup logo and the color of each of its rows (flame to blood, or the trans flag's stripes), tagline, the "press any key" hint and how fast it pulses, and how fast the pride fire goes round the rainbow |
 | `src/widgets/fire.rs` | The fire itself: its palette, its rainbow, and how high the flames reach |
 | `src/popups.rs` | How wide popup text gets before it wraps |
 
@@ -212,7 +212,7 @@ Setting `BACKGROUND` in `theme.rs` to `Color::Reset` keeps your terminal's own b
 ./demo-screenshots.sh
 ```
 
-It builds the release binary, records ten seconds of the splash screen into `demo.gif` (`demo.tape`), then lays out the same example profiles the tests use and saves each screen the README shows to `docs/screenshots/` (`screenshots.tape`). It needs `vhs`, `ttyd` and `ffmpeg`. Both tapes run tdl on a throwaway vault with its home in `/tmp`, so your profiles and settings are never read or written, and those dirs are removed afterwards.
+It builds the release binary, records ten seconds of the splash screen into `demo.gif` (`demo.tape`, always with quip 17, so the demo is the same every time), then lays out the same example profiles the tests use and saves each screen the README shows to `docs/screenshots/` (`screenshots.tape`). It needs `vhs`, `ttyd` and `ffmpeg`. Both tapes run tdl on a throwaway vault with its home in `/tmp`, so your profiles and settings are never read or written, and those dirs are removed afterwards.
 
 ## Credits
 
