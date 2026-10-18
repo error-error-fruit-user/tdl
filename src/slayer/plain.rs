@@ -1,5 +1,5 @@
-//! `tdl host --headless` and `tdl join --headless`: the same as hosting and joining from the
-//! launcher, but with no windows at all, only plain lines in the terminal. The questions asked
+//! `tdl launch --headless`, `tdl host --headless` and `tdl join --headless`: the same as
+//! launching, hosting and joining from the launcher, but with no windows at all, only plain lines in the terminal. The questions asked
 //! are whether to download wads that aren't installed, and what to do with the joiner's own wads
 //! that have the names of the host's but not their contents; anything else that would be a
 //! question is said and gone along with, and anything that stops the game is an error, which ends
@@ -111,6 +111,24 @@ fn wait_for(mut game: Game) -> Outcome {
         }
         thread::sleep(Duration::from_millis(100));
     }
+}
+
+/// Plays the profile at `index`, and returns when the game ends.
+pub fn launch(vault: &Vault, index: usize) -> Outcome {
+    let profile = &vault.profiles[index];
+    let uzdoom = ready_to_play(vault, profile)?;
+    println!("Launching {}", profile.name);
+    let game = uzdoom::launch(
+        &uzdoom,
+        profile.base_wad(&vault.global).map(Wad::deref),
+        profile,
+        profile.uzdoom_args(&vault.global),
+        &vault.data_dir.join(&profile.name),
+    )
+    .map_err(|error| error.to_string())?;
+    wait_for(game)?;
+    println!("The game is over");
+    Ok(())
 }
 
 /// Hosts the profile at `index` with its host defaults, changed by `overrides`, and returns when

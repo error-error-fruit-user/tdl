@@ -61,7 +61,8 @@ pub struct Cli {
     pub base_wad: Option<String>,
     /// `launch`, `host` or `join`: something to do straight away, after which tdl closes.
     pub command: Option<Command>,
-    /// `--headless`: host or join with no forms or windows, only plain lines in the terminal.
+    /// `--headless`: launch, host or join with no forms or windows, only plain lines in the
+    /// terminal.
     pub headless: bool,
 }
 
@@ -383,6 +384,9 @@ enum Commands {
     Launch {
         /// The profile's name (case doesn't matter if only one fits)
         profile: String,
+        /// No windows, only plain lines in the terminal
+        #[arg(long)]
+        headless: bool,
     },
     /// Open the host form for a profile, filled in from its saved host defaults and these
     Host {
@@ -498,7 +502,13 @@ impl Cli {
         }
         let mut headless = false;
         let command = args.command.map(|command| match command {
-            Commands::Launch { profile } => Command::Launch { profile },
+            Commands::Launch {
+                profile,
+                headless: plain,
+            } => {
+                headless = plain;
+                Command::Launch { profile }
+            }
             Commands::Host {
                 profile,
                 players,
@@ -971,7 +981,8 @@ mod tests {
     }
 
     #[test]
-    fn headless_goes_with_host_and_join_only() {
+    fn headless_goes_with_launch_host_and_join_only() {
+        assert!(parse(&["launch", "p", "--headless"]).unwrap().headless);
         assert!(parse(&["host", "p", "--headless"]).unwrap().headless);
         assert!(
             parse(&["join", "10.0.0.2", "--code", "abc", "--headless"])
@@ -979,7 +990,7 @@ mod tests {
                 .headless
         );
         assert!(!parse(&["host", "p"]).unwrap().headless);
-        assert!(parse(&["launch", "p", "--headless"]).is_err());
+        assert!(!parse(&["launch", "p"]).unwrap().headless);
         assert!(parse(&["--headless"]).is_err());
     }
 

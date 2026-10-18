@@ -416,7 +416,7 @@ impl Launcher {
         let command = launcher
             .command
             .take()
-            .ok_or("--headless needs host or join")?;
+            .ok_or("--headless needs launch, host or join")?;
         let vault = &mut launcher.vault;
         vault.wad_dirs.retain(|dir| dir.is_dir());
         if let Some(uzdoom) = launcher.session_uzdoom.take() {
@@ -445,7 +445,12 @@ impl Launcher {
                     .ok_or("join --headless needs the host's join code: --code <code>")?;
                 plain::join(vault, &address, always_download)
             }
-            Command::Launch { .. } => Err("--headless only goes with host or join".to_string()),
+            Command::Launch { profile } => {
+                let index = find_profile(&vault.profiles, &profile)
+                    .ok_or(format!("There is no profile called '{profile}'"))?;
+                watch::refresh_plain(vault, index)?;
+                plain::launch(vault, index)
+            }
         }
     }
 
