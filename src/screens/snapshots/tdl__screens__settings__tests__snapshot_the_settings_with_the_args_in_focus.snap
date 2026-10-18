@@ -3,21 +3,21 @@ source: src/screens/settings.rs
 expression: "testing::draw(60, 20, |page| form.render(page))"
 ---
 
-         ┏━━━━━━━━━━━━━━[ settings ]━━━━━━━━━━━━━━┓
-         ┃                                        ┃
-         ┃      splash  shown                     ┃
-         ┃                                        ┃
-         ┃       pride  on                        ┃
-         ┃                                        ┃
-         ┃       music  splash only               ┃
-         ┃                                        ┃
-         ┃       quips  shown                     ┃
-         ┃                                        ┃
-         ┃        song  e1m1.ogg                  ┃
-         ┃                                        ┃
-         ┃ uzdoom args  -nomusic +vid_fps 1       ┃
-         ┃                                        ┃
-         ┃ splash quip  #2                        ┃
-         ┃                                        ┃
-         ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-                           [F1/?]
+       ┏━━━━━━━━━━━━━━━[ settings ]━━━━━━━━━━━━━━━━┓
+       ┃                                           ┃
+       ┃       pride  on                           ┃
+       ┃                                           ┃
+       ┃       music  splash only                  ┃
+       ┃                                           ┃
+       ┃       quips  shown                        ┃
+       ┃                                           ┃
+       ┃        song  e1m1.ogg                     ┃
+       ┃                                           ┃
+       ┃       theme  blue.toml                    ┃
+       ┃                                           ┃
+       ┃         ini  uzdoom's own, Enter to pick  ┃
+       ┃                                           ┃
+       ┃ uzdoom args  -nomusic +vid_fps 1          ┃
+       ┃                                           ┃
+       ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                          [F1/?]

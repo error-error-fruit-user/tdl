@@ -8,7 +8,7 @@ use crate::{
     music, picker,
     popups::{legend::Legend, three_way_dialog::ThreeWayDialog, warning::Warning},
     ritual::{Grimoire, Page, Phase, Ritual},
-    theme,
+    theme::{self, Theme},
     widgets::{
         form::{self, Field},
         text,
@@ -30,6 +30,10 @@ pub struct Settings {
     pub quip: String,
     /// A song of the player's own instead of the built-in track, for every loadout.
     pub song: Option<PathBuf>,
+    /// The `theme.toml` worn instead of the built-in theme.
+    pub theme: Option<PathBuf>,
+    /// The ini every profile without its own plays with, instead of UZDoom's usual one.
+    pub ini: Option<PathBuf>,
 }
 
 impl Settings {
@@ -43,6 +47,8 @@ impl Settings {
             quips: !global.no_quips,
             quip: global.splash_quip.typed(),
             song: global.song.as_ref().map(PathBuf::from),
+            theme: global.theme.as_ref().map(PathBuf::from),
+            ini: global.ini.as_ref().map(PathBuf::from),
         }
     }
 
@@ -57,6 +63,8 @@ impl Settings {
         global.no_quips = !self.quips;
         global.music = self.music;
         global.song = self.song.map(PathBuf::into_os_string);
+        global.theme = self.theme.map(PathBuf::into_os_string);
+        global.ini = self.ini.map(PathBuf::into_os_string);
         Ok(())
     }
 }
@@ -70,6 +78,8 @@ pub struct SettingsForm {
     focus: usize,
     /// Where the cursor is in the focused field, when it is one that is typed into.
     caret: usize,
+    /// Where a new theme is written: `theme.toml` in the standard config dir.
+    new_theme: PathBuf,
 }
 
 impl SettingsForm {
@@ -77,7 +87,7 @@ impl SettingsForm {
     fn border_color() -> Color {
         theme::worn().colors.screen
     }
-    const FIELDS: usize = 7;
+    const FIELDS: usize = 9;
     /// The longest the UZDoom arguments may get, so the field stays something that fits a window.
     const MAX_ARGS: usize = 120;
     /// The longest a quip may be typed; the splash cuts it shorter on a narrow terminal anyway.
@@ -87,10 +97,12 @@ impl SettingsForm {
     const PRIDE: usize = 1;
     /// The one toggle with three choices instead of two.
     const MUSIC: usize = 2;
-    /// Picked with a file dialog rather than typed.
+    /// Picked with a file dialog rather than typed, as are the theme and the ini.
     const SONG: usize = 4;
-    const ARGS: usize = 5;
-    const QUIP: usize = 6;
+    const THEME: usize = 5;
+    const INI: usize = 6;
+    const ARGS: usize = 7;
+    const QUIP: usize = 8;
     const TOGGLE_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Save"],
         ["Tab/↓, Backtab/↑", "Traverse"],
@@ -110,6 +122,18 @@ impl SettingsForm {
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
+    const THEME_LEGEND: &[[&str; 2]] = &[
+        ["Enter", "Built-in, New (Write It to theme.toml) or Select"],
+        ["Backspace", "Back to the Built-in Theme"],
+        ["Tab/↓, Backtab/↑", "Traverse"],
+        ["Esc", "Quit (Asks to Save Changes)"],
+    ];
+    const INI_LEGEND: &[[&str; 2]] = &[
+        ["Enter", "Pick an Ini"],
+        ["Backspace", "Back to UZDoom's Own"],
+        ["Tab/↓, Backtab/↑", "Traverse"],
+        ["Esc", "Quit (Asks to Save Changes)"],
+    ];
     const QUIP_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Save"],
         ["Tab/↓, Backtab/↑", "Traverse"],
@@ -122,18 +146,24 @@ impl SettingsForm {
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
 
-    pub fn new(settings: Settings) -> Self {
+    /// The form, starting from `settings`; a new theme would be written to `new_theme`.
+    pub fn new(settings: Settings, new_theme: PathBuf) -> Self {
         Self {
             original: settings.clone(),
             settings,
             focus: 0,
             caret: 0,
+            new_theme,
         }
     }
 
     /// The settings as they were left, or `None` if nothing is to be saved.
-    pub fn summon(grimoire: &mut Grimoire, settings: Settings) -> Result<Option<Settings>> {
-        Self::new(settings).invoke(grimoire)
+    pub fn summon(
+        grimoire: &mut Grimoire,
+        settings: Settings,
+        new_theme: PathBuf,
+    ) -> Result<Option<Settings>> {
+        Self::new(settings, new_theme).invoke(grimoire)
     }
 }
 
@@ -153,13 +183,15 @@ impl Ritual for SettingsForm {
         } else {
             "hidden"
         };
-        let song = self
-            .settings
-            .song
-            .as_deref()
-            .and_then(Path::file_name)
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let file_name = |path: &Option<PathBuf>| {
+            path.as_deref()
+                .and_then(Path::file_name)
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        };
+        let song = file_name(&self.settings.song);
+        let theme = file_name(&self.settings.theme);
+        let ini = file_name(&self.settings.ini);
         let fields = [
             Field {
                 label: "splash",
@@ -197,6 +229,20 @@ impl Ritual for SettingsForm {
                 caret: None,
             },
             Field {
+                label: "theme",
+                value: &theme,
+                placeholder: "built-in, Enter to change",
+                room: 24,
+                caret: None,
+            },
+            Field {
+                label: "ini",
+                value: &ini,
+                placeholder: "uzdoom's own, Enter to pick",
+                room: 24,
+                caret: None,
+            },
+            Field {
                 label: "uzdoom args",
                 value: &self.settings.uzdoom_args,
                 placeholder: "none",
@@ -221,6 +267,8 @@ impl Ritual for SettingsForm {
             (Self::QUIP, _) => None,
             (Self::ARGS, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::ARGS_LEGEND),
             (Self::SONG, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::SONG_LEGEND),
+            (Self::THEME, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::THEME_LEGEND),
+            (Self::INI, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::INI_LEGEND),
             (_, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::TOGGLE_LEGEND),
             _ => None,
         };
@@ -228,9 +276,15 @@ impl Ritual for SettingsForm {
             Legend::summon(grimoire, legend)?;
             return Ok(Phase::Render);
         }
-        // 🎶 on the song, Enter picks one instead of saving, the way a button is pressed
-        if self.focus == Self::SONG && key_code == KeyCode::Enter {
-            self.pick_song(grimoire)?;
+        // 🎶 on the song, the theme and the ini, Enter picks one instead of saving, the way a
+        // button is pressed
+        if key_code == KeyCode::Enter {
+            match self.focus {
+                Self::SONG => self.pick_song(grimoire)?,
+                Self::THEME => self.pick_theme(grimoire)?,
+                Self::INI => self.pick_ini(grimoire)?,
+                _ => return self.save(grimoire),
+            }
             return Ok(Phase::Render);
         }
         match key_code {
@@ -283,7 +337,50 @@ impl SettingsForm {
         Ok(())
     }
 
-    /// Every key but the legend's and picking a song, none of which needs the terminal.
+    /// Asks which theme to wear: the built-in one, a new one written out from it to change (an
+    /// existing `theme.toml` is kept as it is), or one picked from the disk. A theme that can't be
+    /// worn is said, and the theme stays as it was.
+    fn pick_theme(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+        let options = ["Built-in", "New", "Select"];
+        let path = match ThreeWayDialog::summon(grimoire, "Which theme to wear?", options)? {
+            Some(0) => {
+                self.settings.theme = None;
+                return Ok(());
+            }
+            Some(1) => {
+                if let Err(error) = Theme::write_built_in(&self.new_theme) {
+                    let problem = format!("Couldn't write {}: {error}", self.new_theme.display());
+                    return Warning::summon(grimoire, &problem);
+                }
+                self.new_theme.clone()
+            }
+            Some(_) => {
+                let start = self.settings.theme.as_deref().and_then(Path::parent);
+                match picker::file(grimoire, Some(("themes", &["toml"])), start)? {
+                    Some(path) => path,
+                    None => return Ok(()),
+                }
+            }
+            None => return Ok(()),
+        };
+        match Theme::read(&path) {
+            Ok(_) => self.settings.theme = Some(path),
+            Err(problem) => Warning::summon(grimoire, &problem)?,
+        }
+        Ok(())
+    }
+
+    /// Asks for the ini to play with, starting where the current one is.
+    fn pick_ini(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+        let start = self.settings.ini.as_deref().and_then(Path::parent);
+        if let Some(path) = picker::file(grimoire, Some(("config", &["ini"])), start)? {
+            self.settings.ini = Some(path);
+        }
+        Ok(())
+    }
+
+    /// Every key but the legend's and picking a song, a theme or an ini, none of which needs the
+    /// terminal.
     fn edit(&mut self, key_code: KeyCode) -> Phase<Option<Settings>> {
         match key_code {
             KeyCode::Enter => Phase::Return(Some(self.settings.clone())),
@@ -312,6 +409,12 @@ impl SettingsForm {
             }
             KeyCode::Backspace | KeyCode::Delete if self.focus == Self::SONG => {
                 Phase::render_if(self.settings.song.take().is_some())
+            }
+            KeyCode::Backspace | KeyCode::Delete if self.focus == Self::THEME => {
+                Phase::render_if(self.settings.theme.take().is_some())
+            }
+            KeyCode::Backspace | KeyCode::Delete if self.focus == Self::INI => {
+                Phase::render_if(self.settings.ini.take().is_some())
             }
             key_code => {
                 let (text, max) = match self.focus {
@@ -376,6 +479,8 @@ mod tests {
             quips: false,
             quip: "Rip and tear!".into(),
             song: Some("/songs/e1m1.ogg".into()),
+            theme: Some("/themes/blue.toml".into()),
+            ini: Some("/inis/mine.ini".into()),
         }
         .apply(&mut changed)
         .unwrap();
@@ -390,6 +495,12 @@ mod tests {
         );
         assert!(changed.no_quips);
         assert_eq!(changed.song, Some("/songs/e1m1.ogg".into()));
+        assert_eq!(changed.theme, Some("/themes/blue.toml".into()));
+        assert_eq!(changed.ini, Some("/inis/mine.ini".into()));
+        // and they come back the same way
+        let back = Settings::of(&changed);
+        assert_eq!(back.theme, Some("/themes/blue.toml".into()));
+        assert_eq!(back.ini, Some("/inis/mine.ini".into()));
     }
 
     #[test]
@@ -399,7 +510,7 @@ mod tests {
         assert_eq!(Music::Off.previous(), Music::Kept);
         assert_eq!(Music::Splash.previous(), Music::Off);
 
-        let mut form = SettingsForm::new(Settings::of(&Uac::default()));
+        let mut form = SettingsForm::new(Settings::of(&Uac::default()), PathBuf::new());
         form.focus = SettingsForm::MUSIC;
         assert!(form.edit(KeyCode::Char('k')) == Phase::Render);
         assert_eq!(form.settings.music, Music::Off);
@@ -423,10 +534,13 @@ mod tests {
 
     #[test]
     fn backspace_on_the_song_goes_back_to_the_built_in_track() {
-        let mut form = SettingsForm::new(Settings {
-            song: Some("/songs/e1m1.ogg".into()),
-            ..Settings::of(&Uac::default())
-        });
+        let mut form = SettingsForm::new(
+            Settings {
+                song: Some("/songs/e1m1.ogg".into()),
+                ..Settings::of(&Uac::default())
+            },
+            PathBuf::new(),
+        );
         form.focus = SettingsForm::SONG;
         assert!(
             form.edit(KeyCode::Char('x')) == Phase::Prompt,
@@ -438,8 +552,30 @@ mod tests {
     }
 
     #[test]
+    fn backspace_on_the_theme_and_the_ini_goes_back_to_the_built_in_and_uzdoom_s_own() {
+        let mut form = SettingsForm::new(
+            Settings {
+                theme: Some("/themes/blue.toml".into()),
+                ini: Some("/inis/mine.ini".into()),
+                ..Settings::of(&Uac::default())
+            },
+            PathBuf::new(),
+        );
+        for focus in [SettingsForm::THEME, SettingsForm::INI] {
+            form.focus = focus;
+            assert!(
+                form.edit(KeyCode::Char('x')) == Phase::Prompt,
+                "neither is typed"
+            );
+            assert!(form.edit(KeyCode::Backspace) == Phase::Render);
+            assert!(form.edit(KeyCode::Delete) == Phase::Prompt);
+        }
+        assert_eq!((form.settings.theme, form.settings.ini), (None, None));
+    }
+
+    #[test]
     fn the_quip_takes_question_marks_as_words() {
-        let mut form = SettingsForm::new(Settings::of(&Uac::default()));
+        let mut form = SettingsForm::new(Settings::of(&Uac::default()), PathBuf::new());
         form.focus = SettingsForm::QUIP;
         for c in "Minecraft?".chars() {
             assert!(form.edit(KeyCode::Char(c)) == Phase::Render);
@@ -449,7 +585,7 @@ mod tests {
 
     #[test]
     fn toggles_switch_and_the_args_take_any_character_including_spaces() {
-        let mut form = SettingsForm::new(Settings::of(&Uac::default()));
+        let mut form = SettingsForm::new(Settings::of(&Uac::default()), PathBuf::new());
         let keys: Vec<_> = [
             KeyCode::Char('j'),
             KeyCode::Tab,
@@ -458,6 +594,8 @@ mod tests {
             KeyCode::Char('j'),
             KeyCode::Tab,
             KeyCode::Char('j'),
+            KeyCode::Tab,
+            KeyCode::Tab,
             KeyCode::Tab,
             KeyCode::Tab,
         ]
@@ -476,13 +614,15 @@ mod tests {
                 quips: false,
                 quip: String::new(),
                 song: None,
+                theme: None,
+                ini: None,
             }
         );
     }
 
     #[test]
     fn a_change_is_noticed_and_changing_it_back_is_no_change() {
-        let mut form = SettingsForm::new(Settings::of(&Uac::default()));
+        let mut form = SettingsForm::new(Settings::of(&Uac::default()), PathBuf::new());
         assert!(!form.is_changed());
         let _ = form.edit(KeyCode::Char('j'));
         assert!(form.is_changed());
@@ -492,7 +632,7 @@ mod tests {
 
     #[test]
     fn escape_throws_the_changes_away() {
-        let mut form = SettingsForm::new(Settings::of(&Uac::default()));
+        let mut form = SettingsForm::new(Settings::of(&Uac::default()), PathBuf::new());
         assert_eq!(
             press(&mut form, &[KeyCode::Char('j'), KeyCode::Esc]),
             Some(None)
@@ -501,15 +641,20 @@ mod tests {
 
     #[test]
     fn snapshot_the_settings_with_the_args_in_focus() {
-        let mut form = SettingsForm::new(Settings {
-            splash: true,
-            pride: true,
-            music: Music::Splash,
-            uzdoom_args: "-nomusic +vid_fps 1".into(),
-            quips: true,
-            quip: "#2".into(),
-            song: Some("/songs/e1m1.ogg".into()),
-        });
+        let mut form = SettingsForm::new(
+            Settings {
+                splash: true,
+                pride: true,
+                music: Music::Splash,
+                uzdoom_args: "-nomusic +vid_fps 1".into(),
+                quips: true,
+                quip: "#2".into(),
+                song: Some("/songs/e1m1.ogg".into()),
+                theme: Some("/themes/blue.toml".into()),
+                ini: None,
+            },
+            PathBuf::new(),
+        );
         form.focus = SettingsForm::ARGS;
         assert_snapshot!(testing::draw(60, 20, |page| form.render(page)));
     }

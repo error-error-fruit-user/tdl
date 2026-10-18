@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use clap::{
-    Args as ClapArgs, CommandFactory, Parser, Subcommand,
+    ArgGroup, Args as ClapArgs, CommandFactory, Parser, Subcommand,
     builder::{NonEmptyStringValueParser, Styles, styling},
     error::ErrorKind,
 };
@@ -22,15 +22,19 @@ use crate::{
 pub struct Cli {
     /// Replaces the platform's standard config and data dirs.
     pub loadout: Option<String>,
-    /// The loadout came from `--loadout-once`: open it without asking to keep it.
-    pub loadout_once: bool,
-    /// `--forget-loadout` or `--forget-loadout-once`: the standard loadout instead of the remembered one.
+    /// Whether to open the loadout every time: asked (`--loadout`), not (with `--session`), or so
+    /// without asking (`--keep-loadout`).
+    pub keep_loadout: Keep,
+    /// `--forget-loadout` or `--keep-forget-loadout`: the standard loadout instead of the
+    /// remembered one.
     pub forget_loadout: Forget,
     /// Dirs the user keeps wads in, in the order given.
     pub wads: Vec<String>,
-    /// The wads came from `--wads-once`: use them without asking to keep them.
-    pub wads_once: bool,
-    /// `--forget-wads` or `--forget-wads-once`: no wad dirs but the downloads instead of the kept ones.
+    /// Whether and where to keep the wad dirs: asked (`--wads`), not (with `--session`), or
+    /// without asking, for every loadout (`--keep-wads`) or this one (`--keep-loadout-wads`).
+    pub keep_wads: Keep,
+    /// `--forget-wads` or `--keep-forget-wads`: no wad dirs but the downloads instead of the kept
+    /// ones.
     pub forget_wads: Forget,
     /// A scroll to import on startup.
     pub unseal: Option<String>,
@@ -55,10 +59,19 @@ pub struct Cli {
     pub quip: Option<String>,
     /// Leaves the quips out of every window for this run.
     pub no_quips: bool,
-    /// The UZDoom to play with for this run only, over every other.
+    /// The UZDoom to play with this run, over every other, and whether to keep it as the global
+    /// one, the same way as the loadout.
     pub uzdoom: Option<String>,
-    /// The base wad to play with for this run only, over every other.
+    pub keep_uzdoom: Keep,
+    /// The base wad to play with this run, over every other, the same way.
     pub base_wad: Option<String>,
+    pub keep_base_wad: Keep,
+    /// The ini to play with this run, over every other, the same way.
+    pub ini: Option<String>,
+    pub keep_ini: Keep,
+    /// The theme to wear this run, and whether to keep wearing it, the same way.
+    pub theme: Option<String>,
+    pub keep_theme: Keep,
     /// `launch`, `host` or `join`: something to do straight away, after which tdl closes.
     pub command: Option<Command>,
     /// `--headless`: launch, host or join with no forms or windows, only plain lines in the
@@ -74,8 +87,36 @@ pub struct Seal {
     pub with_settings: bool,
 }
 
-/// What `--forget-loadout` and `--forget-wads` ask for: to leave what was kept out of this run, and
-/// with the plain flag (not `-once`), to be asked whether to forget it for good.
+/// What to do about keeping something passed on the command line. The plain flag asks,
+/// `--session` makes it just for this run, and its `--keep-` flag keeps it without asking, even
+/// with `--session`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Keep {
+    /// Asked once tdl is up.
+    #[default]
+    Ask,
+    /// Just for this run: nothing is asked or kept.
+    Session,
+    /// Kept for every loadout (in `uac.rite`), without asking.
+    Global,
+    /// Kept for the loadout that is open, without asking: only `--keep-loadout-wads`.
+    Loadout,
+}
+
+impl Keep {
+    /// `--keep-<flag>` keeps it; else `--session` makes it just for this run; else it is asked.
+    fn from_flags(keep: bool, session: bool) -> Self {
+        match (keep, session) {
+            (true, _) => Self::Global,
+            (_, true) => Self::Session,
+            _ => Self::Ask,
+        }
+    }
+}
+
+/// What `--forget-loadout` and `--forget-wads` ask for: to leave what was kept out of this run,
+/// and then to ask whether to forget it for good (the plain flag), not to (with `--session`), or to
+/// forget it without asking (`--keep-forget-`).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Forget {
     #[default]
@@ -84,13 +125,16 @@ pub enum Forget {
     Once,
     /// Left out of this run, and the user is asked whether to forget it.
     Asking,
+    /// Forgotten for good, without asking.
+    ForGood,
 }
 
 impl Forget {
-    fn from_flags(asking: bool, once: bool) -> Self {
-        match (asking, once) {
-            (true, _) => Self::Asking,
-            (_, true) => Self::Once,
+    fn from_flags(forget: bool, for_good: bool, session: bool) -> Self {
+        match (forget, for_good, session) {
+            (_, true, _) => Self::ForGood,
+            (true, _, true) => Self::Once,
+            (true, _, false) => Self::Asking,
             _ => Self::Nothing,
         }
     }
@@ -173,9 +217,26 @@ impl Command {
 
 /// The help's headings and the options under them.
 const LOADOUT: &str = "Loadout";
+const GAME: &str = "Playing";
 const SHARING: &str = "Sharing";
-const SPLASH: &str = "Splash and music";
+const SPLASH: &str = "Looks and sound";
 const THIS_RUN: &str = "Just for this run";
+/// Every flag that opens or forgets a loadout, of which only one can be given (a group, in clap).
+const LOADOUT_FLAGS: [&str; 5] = [
+    "dir",
+    "loadout",
+    "keep_loadout",
+    "forget_loadout",
+    "keep_forget_loadout",
+];
+/// Every flag that gives or forgets wad dirs, of which only one kind can be given.
+const WADS_FLAGS: [&str; 5] = [
+    "wads",
+    "keep_wads",
+    "keep_loadout_wads",
+    "forget_wads",
+    "keep_forget_wads",
+];
 
 /// The arguments as clap reads them, turned into a [`Cli`] by [`Cli::parse`].
 #[derive(Parser, Debug)]
@@ -185,82 +246,144 @@ const THIS_RUN: &str = "Just for this run";
     about = "A terminal launcher for UZDoom: profiles of wads, one key to play, and multiplayer \
              that hands joiners the host's wads",
     styles = styles(),
-    max_term_width = 100
+    max_term_width = 100,
+    group = ArgGroup::new("loadouts").args(LOADOUT_FLAGS),
+    group = ArgGroup::new("wad_dirs").args(WADS_FLAGS)
 )]
 struct Args {
-    /// The loadout dir on its own, as before --loadout existed
-    #[arg(
-        value_name = "DIR",
-        conflicts_with_all = ["loadout", "loadout_once", "forget_loadout", "forget_loadout_once"]
-    )]
+    /// The loadout dir on its own, the same as --loadout DIR
+    #[arg(value_name = "DIR")]
     dir: Option<String>,
 
     /// Keep the config and data in DIR/config and DIR/data; tdl asks whether to open it
     /// every time
-    #[arg(long, value_name = "DIR", global = true, help_heading = LOADOUT)]
-    loadout: Option<String>,
-
-    /// Like --loadout, but just for this run: never asks to open it every time
     #[arg(
         long,
         value_name = "DIR",
         global = true,
-        conflicts_with = "loadout",
         help_heading = LOADOUT
     )]
-    loadout_once: Option<String>,
+    loadout: Option<String>,
 
-    /// Open the standard loadout, and ask whether to stop opening the one remembered from --loadout
+    /// Like --loadout, and open it every time without asking
     #[arg(
         long,
+        value_name = "DIR",
         global = true,
-        conflicts_with_all = ["loadout", "loadout_once"],
         help_heading = LOADOUT
     )]
+    keep_loadout: Option<String>,
+
+    /// Open the standard loadout, and ask whether to stop opening the one remembered from
+    /// --loadout
+    #[arg(long, global = true, help_heading = LOADOUT)]
     forget_loadout: bool,
 
-    /// Like --forget-loadout, but just for this run: opens the standard loadout and asks nothing
-    #[arg(
-        long,
-        global = true,
-        conflicts_with_all = ["loadout", "loadout_once", "forget_loadout"],
-        help_heading = LOADOUT
-    )]
-    forget_loadout_once: bool,
+    /// Like --forget-loadout, and stop opening the remembered one without asking
+    #[arg(long, global = true, help_heading = LOADOUT)]
+    keep_forget_loadout: bool,
 
     /// Where your wads are: file pickers open here, and joining looks here for wads it already
     /// has. Give it more than once for more dirs; tdl asks whether to keep them
-    #[arg(long, value_name = "DIR", global = true, help_heading = LOADOUT)]
-    wads: Vec<String>,
-
-    /// Like --wads, but just for this run: never asks to keep them
     #[arg(
         long,
         value_name = "DIR",
         global = true,
-        conflicts_with = "wads",
         help_heading = LOADOUT
     )]
-    wads_once: Vec<String>,
+    wads: Vec<String>,
+
+    /// Like --wads, and keep them for every loadout without asking
+    #[arg(
+        long,
+        value_name = "DIR",
+        global = true,
+        help_heading = LOADOUT
+    )]
+    keep_wads: Vec<String>,
+
+    /// Like --wads, and keep them for this loadout without asking
+    #[arg(
+        long,
+        value_name = "DIR",
+        global = true,
+        help_heading = LOADOUT
+    )]
+    keep_loadout_wads: Vec<String>,
 
     /// Look for wads only in the downloads this run, and ask whether to forget the wad dirs kept
     /// from --wads
-    #[arg(
-        long,
-        global = true,
-        conflicts_with_all = ["wads", "wads_once"],
-        help_heading = LOADOUT
-    )]
+    #[arg(long, global = true, help_heading = LOADOUT)]
     forget_wads: bool,
 
-    /// Like --forget-wads, but just for this run: asks nothing
+    /// Like --forget-wads, and forget every kept wad dir (this loadout's and every loadout's)
+    /// without asking
+    #[arg(long, global = true, help_heading = LOADOUT)]
+    keep_forget_wads: bool,
+
+    /// Play with this UZDoom over every profile's own and the global one; tdl asks whether to
+    /// keep it as the global one
     #[arg(
         long,
+        value_name = "FILE",
         global = true,
-        conflicts_with_all = ["wads", "wads_once", "forget_wads"],
-        help_heading = LOADOUT
+        value_parser = NonEmptyStringValueParser::new(),
+        conflicts_with = "keep_uzdoom",
+        help_heading = GAME
     )]
-    forget_wads_once: bool,
+    uzdoom: Option<String>,
+
+    /// Like --uzdoom, and keep it as the global one without asking
+    #[arg(
+        long,
+        value_name = "FILE",
+        global = true,
+        value_parser = NonEmptyStringValueParser::new(),
+        help_heading = GAME
+    )]
+    keep_uzdoom: Option<String>,
+
+    /// Play with this base wad, the same way
+    #[arg(
+        long,
+        value_name = "FILE",
+        global = true,
+        value_parser = NonEmptyStringValueParser::new(),
+        conflicts_with = "keep_base_wad",
+        help_heading = GAME
+    )]
+    base_wad: Option<String>,
+
+    /// Like --base-wad, and keep it as the global one without asking
+    #[arg(
+        long,
+        value_name = "FILE",
+        global = true,
+        value_parser = NonEmptyStringValueParser::new(),
+        help_heading = GAME
+    )]
+    keep_base_wad: Option<String>,
+
+    /// Play with this UZDoom ini, the same way
+    #[arg(
+        long,
+        value_name = "FILE",
+        global = true,
+        value_parser = NonEmptyStringValueParser::new(),
+        conflicts_with = "keep_ini",
+        help_heading = GAME
+    )]
+    ini: Option<String>,
+
+    /// Like --ini, and keep it as the global one without asking
+    #[arg(
+        long,
+        value_name = "FILE",
+        global = true,
+        value_parser = NonEmptyStringValueParser::new(),
+        help_heading = GAME
+    )]
+    keep_ini: Option<String>,
 
     /// Import a shared .scroll as soon as tdl starts, looking for its wads in the wad dirs.
     /// Global settings sealed in it replace yours
@@ -303,6 +426,27 @@ struct Args {
     /// them in place of their own
     #[arg(long, global = true, requires = "seal", help_heading = SHARING)]
     with_settings: bool,
+
+    /// Wear the theme in this theme.toml; tdl asks whether to keep wearing it
+    #[arg(
+        long,
+        value_name = "FILE",
+        global = true,
+        value_parser = NonEmptyStringValueParser::new(),
+        conflicts_with = "keep_theme",
+        help_heading = SPLASH
+    )]
+    theme: Option<String>,
+
+    /// Like --theme, and keep wearing it without asking
+    #[arg(
+        long,
+        value_name = "FILE",
+        global = true,
+        value_parser = NonEmptyStringValueParser::new(),
+        help_heading = SPLASH
+    )]
+    keep_theme: Option<String>,
 
     /// Go straight to the launcher
     #[arg(long, global = true, help_heading = SPLASH)]
@@ -352,25 +496,11 @@ struct Args {
     )]
     no_music: bool,
 
-    /// Play with this UZDoom instead of every profile's own and the global one; nothing is kept
-    #[arg(
-        long,
-        value_name = "FILE",
-        global = true,
-        value_parser = NonEmptyStringValueParser::new(),
-        help_heading = THIS_RUN
-    )]
-    uzdoom: Option<String>,
-
-    /// Play with this base wad, the same way
-    #[arg(
-        long,
-        value_name = "FILE",
-        global = true,
-        value_parser = NonEmptyStringValueParser::new(),
-        help_heading = THIS_RUN
-    )]
-    base_wad: Option<String>,
+    /// Nothing given on the command line is kept or asked about: the loadout, the wad dirs, UZDoom,
+    /// the base wad, the ini and the theme are just for this run, and forgetting is too. A
+    /// --keep- flag still keeps its own
+    #[arg(long, global = true, help_heading = THIS_RUN)]
+    session: bool,
 
     /// Play the pride splash: a fire that burns through every color of the rainbow, under the logo
     /// in the trans flag's
@@ -411,11 +541,11 @@ enum Commands {
         #[command(flatten)]
         connection: Connection,
         /// Serve the ini you host with too, for joiners who want to play with it
-        #[arg(long, conflicts_with = "keep_ini")]
+        #[arg(long, conflicts_with = "no_share_ini")]
         share_ini: bool,
         /// Keep your ini to yourself, even if the profile's host defaults share it
         #[arg(long)]
-        keep_ini: bool,
+        no_share_ini: bool,
         /// No form and no windows, only plain lines in the terminal
         #[arg(long)]
         headless: bool,
@@ -561,7 +691,7 @@ impl Cli {
                 map,
                 connection,
                 share_ini,
-                keep_ini,
+                no_share_ini,
                 headless: plain,
             } => {
                 headless = plain;
@@ -573,7 +703,7 @@ impl Cli {
                         map,
                         port: connection.port,
                         code: connection.code,
-                        share_ini: (share_ini || keep_ini).then_some(share_ini),
+                        share_ini: (share_ini || no_share_ini).then_some(share_ini),
                     },
                 }
             }
@@ -599,17 +729,35 @@ impl Cli {
                 }
             }
         });
+        let session = args.session;
+        // 🗝️ a --keep- flag gives its value the same as the plain one, and keeps it
+        let passed = |plain: Option<String>, kept: Option<String>| {
+            let keep = Keep::from_flags(kept.is_some(), session);
+            (kept.or(plain), keep)
+        };
+        let (loadout, keep_loadout) = passed(args.loadout.or(args.dir), args.keep_loadout);
+        let (uzdoom, keep_uzdoom) = passed(args.uzdoom, args.keep_uzdoom);
+        let (base_wad, keep_base_wad) = passed(args.base_wad, args.keep_base_wad);
+        let (ini, keep_ini) = passed(args.ini, args.keep_ini);
+        let (theme, keep_theme) = passed(args.theme, args.keep_theme);
+        let (wads, keep_wads) = if !args.keep_loadout_wads.is_empty() {
+            (args.keep_loadout_wads, Keep::Loadout)
+        } else if !args.keep_wads.is_empty() {
+            (args.keep_wads, Keep::Global)
+        } else {
+            (args.wads, Keep::from_flags(false, session))
+        };
         Ok(Self {
-            loadout_once: args.loadout_once.is_some(),
-            loadout: args.loadout_once.or(args.loadout).or(args.dir),
-            forget_loadout: Forget::from_flags(args.forget_loadout, args.forget_loadout_once),
-            wads_once: !args.wads_once.is_empty(),
-            wads: if args.wads_once.is_empty() {
-                args.wads
-            } else {
-                args.wads_once
-            },
-            forget_wads: Forget::from_flags(args.forget_wads, args.forget_wads_once),
+            loadout,
+            keep_loadout,
+            forget_loadout: Forget::from_flags(
+                args.forget_loadout,
+                args.keep_forget_loadout,
+                session,
+            ),
+            wads,
+            keep_wads,
+            forget_wads: Forget::from_flags(args.forget_wads, args.keep_forget_wads, session),
             unseal_delete: if args.unseal_delete_force.is_some() {
                 Some(Ask::Never)
             } else {
@@ -631,8 +779,14 @@ impl Cli {
             no_music: args.no_music,
             quip: args.splash_quip,
             no_quips: args.no_quips,
-            uzdoom: args.uzdoom,
-            base_wad: args.base_wad,
+            uzdoom,
+            keep_uzdoom,
+            base_wad,
+            keep_base_wad,
+            ini,
+            keep_ini,
+            theme,
+            keep_theme,
             command,
             headless,
         })
@@ -781,25 +935,56 @@ mod tests {
     }
 
     #[test]
-    fn forgetting_the_loadout_once_asks_nothing_and_goes_with_no_other_loadout_flag() {
-        let once = parse(&["--forget-loadout-once"]).unwrap();
+    fn forgetting_the_loadout_with_session_asks_nothing_and_goes_with_no_other_loadout_flag() {
+        let once = parse(&["--forget-loadout", "--session"]).unwrap();
         assert_eq!(once.forget_loadout, Forget::Once);
         assert_eq!(once.loadout, None);
-        assert!(parse(&["--forget-loadout-once", "--forget-loadout"]).is_err());
-        assert!(parse(&["--forget-loadout-once", "--loadout", "/v"]).is_err());
-        assert!(parse(&["--forget-loadout-once", "--loadout-once", "/v"]).is_err());
-        assert!(parse(&["/v", "--forget-loadout-once"]).is_err());
+        assert_eq!(
+            parse(&["--keep-forget-loadout"]).unwrap().forget_loadout,
+            Forget::ForGood
+        );
+        // --session doesn't stop a --keep- flag
+        assert_eq!(
+            parse(&["--session", "--keep-forget-loadout"])
+                .unwrap()
+                .forget_loadout,
+            Forget::ForGood
+        );
+        for flag in ["--forget-loadout", "--keep-forget-loadout"] {
+            assert!(parse(&[flag, "--loadout", "/v"]).is_err());
+            assert!(parse(&[flag, "--keep-loadout", "/v"]).is_err());
+            assert!(parse(&["/v", flag]).is_err());
+        }
+        assert!(parse(&["--forget-loadout", "--keep-forget-loadout"]).is_err());
+        // the old flags are gone
+        assert!(parse(&["--forget-loadout-once"]).is_err());
+        assert!(parse(&["--forget-vault"]).is_err());
     }
 
     #[test]
-    fn wads_for_once_are_used_the_same_but_marked_not_to_ask() {
-        let once = parse(&["--wads-once", "/a", "--wads-once=/b"]).unwrap();
-        assert_eq!(once.wads, ["/a", "/b"]);
-        assert!(once.wads_once);
-        assert!(!parse(&["--wads", "/a"]).unwrap().wads_once);
-        assert!(!parse(&[]).unwrap().wads_once);
-        assert!(parse(&["--wads-once"]).is_err());
-        assert!(parse(&["--wads-once", "/a", "--wads", "/b"]).is_err());
+    fn wad_dirs_are_asked_about_kept_without_asking_or_just_for_the_session() {
+        let asked = parse(&["--wads", "/a", "--wads=/b"]).unwrap();
+        assert_eq!(asked.wads, ["/a", "/b"]);
+        assert_eq!(asked.keep_wads, Keep::Ask);
+        let session = parse(&["--wads", "/a", "--session"]).unwrap();
+        assert_eq!(
+            (session.wads, session.keep_wads),
+            (vec!["/a".into()], Keep::Session)
+        );
+        let global = parse(&["--keep-wads", "/a", "--keep-wads", "/b", "--session"]).unwrap();
+        assert_eq!(
+            (global.wads, global.keep_wads),
+            (vec!["/a".into(), "/b".into()], Keep::Global)
+        );
+        let here = parse(&["--keep-loadout-wads", "/a"]).unwrap();
+        assert_eq!(
+            (here.wads, here.keep_wads),
+            (vec!["/a".into()], Keep::Loadout)
+        );
+        assert!(parse(&["--keep-wads"]).is_err());
+        assert!(parse(&["--keep-wads", "/a", "--wads", "/b"]).is_err());
+        assert!(parse(&["--keep-wads", "/a", "--keep-loadout-wads", "/b"]).is_err());
+        assert!(parse(&["--wads-once", "/a"]).is_err());
     }
 
     #[test]
@@ -809,34 +994,132 @@ mod tests {
             Forget::Asking
         );
         assert_eq!(
-            parse(&["--forget-wads-once"]).unwrap().forget_wads,
+            parse(&["--forget-wads", "--session"]).unwrap().forget_wads,
             Forget::Once
         );
+        assert_eq!(
+            parse(&["--keep-forget-wads"]).unwrap().forget_wads,
+            Forget::ForGood
+        );
         assert_eq!(parse(&[]).unwrap().forget_wads, Forget::Nothing);
-        for flag in ["--forget-wads", "--forget-wads-once"] {
+        assert_eq!(parse(&["--session"]).unwrap().forget_wads, Forget::Nothing);
+        for flag in ["--forget-wads", "--keep-forget-wads"] {
             assert!(parse(&[flag, "--wads", "/a"]).is_err());
-            assert!(parse(&[flag, "--wads-once", "/a"]).is_err());
+            assert!(parse(&[flag, "--keep-wads", "/a"]).is_err());
+            assert!(parse(&[flag, "--keep-loadout-wads", "/a"]).is_err());
         }
-        assert!(parse(&["--forget-wads", "--forget-wads-once"]).is_err());
+        assert!(parse(&["--forget-wads", "--keep-forget-wads"]).is_err());
         // the wads and the loadout are forgotten apart
-        let both = parse(&["--forget-wads", "--forget-loadout-once"]).unwrap();
+        let both = parse(&["--forget-wads", "--keep-forget-loadout"]).unwrap();
         assert_eq!(
             (both.forget_wads, both.forget_loadout),
-            (Forget::Asking, Forget::Once)
+            (Forget::Asking, Forget::ForGood)
         );
     }
 
     #[test]
-    fn a_loadout_for_once_opens_the_same_but_is_marked_not_to_ask() {
-        let once = parse(&["--loadout-once", "/tmp/v"]).unwrap();
-        assert_eq!(once.loadout, Some("/tmp/v".into()));
-        assert!(once.loadout_once);
-        assert!(parse(&["--loadout-once=/tmp/v"]).unwrap().loadout_once);
-        assert!(!parse(&["--loadout", "/tmp/v"]).unwrap().loadout_once);
-        assert!(parse(&["--loadout-once"]).is_err());
+    fn a_loadout_is_asked_about_kept_without_asking_or_just_for_the_session() {
+        assert_eq!(parse(&["--loadout", "/v"]).unwrap().keep_loadout, Keep::Ask);
+        let session = parse(&["--session", "--loadout", "/v"]).unwrap();
+        assert_eq!(session.loadout, Some("/v".into()));
+        assert_eq!(session.keep_loadout, Keep::Session);
+        let kept = parse(&["--keep-loadout=/v", "--session"]).unwrap();
+        assert_eq!(kept.loadout, Some("/v".into()));
+        assert_eq!(kept.keep_loadout, Keep::Global);
+        // the dir on its own is --loadout
+        assert_eq!(
+            parse(&["/v", "--session"]).unwrap().keep_loadout,
+            Keep::Session
+        );
+        assert!(parse(&["--keep-loadout"]).is_err());
         // still only one loadout, and still not with forgetting
-        assert!(parse(&["--loadout-once", "a", "--loadout", "b"]).is_err());
-        assert!(parse(&["--loadout-once", "a", "--forget-loadout"]).is_err());
+        assert!(parse(&["--keep-loadout", "a", "--loadout", "b"]).is_err());
+        assert!(parse(&["--keep-loadout", "a", "--forget-loadout"]).is_err());
+        assert!(parse(&["a", "--keep-loadout", "b"]).is_err());
+        assert!(parse(&["--loadout-once", "a"]).is_err());
+        assert!(parse(&["--vault", "a"]).is_err());
+    }
+
+    #[test]
+    fn session_makes_everything_given_just_for_this_run_but_a_keep_flag_wins() {
+        let cli = parse(&[
+            "--session",
+            "--uzdoom",
+            "/opt/uzdoom",
+            "--keep-base-wad",
+            "/iwads/DOOM2.WAD",
+            "--ini=/inis/mine.ini",
+            "--keep-theme",
+            "/themes/blue.toml",
+        ])
+        .unwrap();
+        assert_eq!(
+            (cli.uzdoom.as_deref(), cli.keep_uzdoom),
+            (Some("/opt/uzdoom"), Keep::Session)
+        );
+        assert_eq!(
+            (cli.base_wad.as_deref(), cli.keep_base_wad),
+            (Some("/iwads/DOOM2.WAD"), Keep::Global)
+        );
+        assert_eq!(
+            (cli.ini.as_deref(), cli.keep_ini),
+            (Some("/inis/mine.ini"), Keep::Session)
+        );
+        assert_eq!(
+            (cli.theme.as_deref(), cli.keep_theme),
+            (Some("/themes/blue.toml"), Keep::Global)
+        );
+        // without --session, the plain flags ask
+        let asked = parse(&[
+            "--uzdoom",
+            "a",
+            "--base-wad",
+            "b",
+            "--ini",
+            "c",
+            "--theme",
+            "d",
+        ])
+        .unwrap();
+        assert_eq!(
+            [
+                asked.keep_uzdoom,
+                asked.keep_base_wad,
+                asked.keep_ini,
+                asked.keep_theme
+            ],
+            [Keep::Ask; 4]
+        );
+        // --session on its own changes nothing that was given
+        assert_eq!(
+            parse(&["--session"]),
+            Ok(Cli {
+                keep_loadout: Keep::Session,
+                keep_wads: Keep::Session,
+                keep_uzdoom: Keep::Session,
+                keep_base_wad: Keep::Session,
+                keep_ini: Keep::Session,
+                keep_theme: Keep::Session,
+                ..Cli::default()
+            })
+        );
+    }
+
+    #[test]
+    fn a_file_and_its_keep_flag_go_one_at_a_time() {
+        for flag in ["uzdoom", "base-wad", "ini", "theme"] {
+            let plain = format!("--{flag}");
+            let keep = format!("--keep-{flag}");
+            assert!(parse(&[&plain, "a", &keep, "b"]).is_err(), "{flag}");
+            assert!(parse(&[&keep, "a", &keep, "b"]).is_err(), "{flag}");
+            assert!(parse(&[&keep]).is_err(), "{flag}");
+            assert!(parse(&[&format!("{keep}=")]).is_err(), "{flag}");
+            assert_eq!(
+                parse(&[&keep, "a"]).unwrap().loadout,
+                None,
+                "{flag} is not taken for the loadout"
+            );
+        }
     }
 
     #[test]
@@ -990,12 +1273,16 @@ mod tests {
                 .share_ini
         );
         assert!(
-            !overrides(&["host", "p", "--keep-ini"])
+            !overrides(&["host", "p", "--no-share-ini"])
                 .apply(sharing.clone())
                 .share_ini
         );
         assert!(overrides(&["host", "p"]).apply(sharing).share_ini);
-        assert!(parse(&["host", "p", "--share-ini", "--keep-ini"]).is_err());
+        assert!(parse(&["host", "p", "--share-ini", "--no-share-ini"]).is_err());
+        // --keep-ini is tdl's own, which keeps an ini as the global one
+        let kept = parse(&["host", "p", "--keep-ini", "/inis/mine.ini"]).unwrap();
+        assert_eq!(kept.ini.as_deref(), Some("/inis/mine.ini"));
+        assert_eq!(kept.keep_ini, Keep::Global);
     }
 
     #[test]
@@ -1117,8 +1404,9 @@ mod tests {
     #[test]
     fn a_command_can_come_after_the_options_and_beside_a_loadout_dir() {
         let cli = parse(&[
-            "--loadout-once",
+            "--loadout",
             "/tmp/v",
+            "--session",
             "--no-music",
             "launch",
             "brutal_doom",
@@ -1136,7 +1424,7 @@ mod tests {
         assert_eq!(both.loadout, Some("/tmp/v".into()));
         assert!(matches!(both.command, Some(Command::Host { .. })));
         // tdl's own options can come after the command too
-        let after = parse(&["host", "p", "--loadout-once", "/tmp/v", "--no-music"]).unwrap();
+        let after = parse(&["host", "p", "--keep-loadout", "/tmp/v", "--no-music"]).unwrap();
         assert_eq!(after.loadout, Some("/tmp/v".into()));
         assert!(after.no_music);
     }

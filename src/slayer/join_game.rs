@@ -1,4 +1,5 @@
 use std::{
+    ffi::OsString,
     ops::Deref,
     path::{Path, PathBuf},
     sync::{
@@ -73,7 +74,8 @@ pub fn summon(
     let Some(uzdoom) = profile.uzdoom(&loadout.uac) else {
         return Warning::uzdoom_not_selected(grimoire);
     };
-    let profile = if host_ini != HostIni::Yours {
+    let yours = profile.ini(&loadout.uac).cloned();
+    let ini = if host_ini != HostIni::Yours {
         status::summon(
             grimoire,
             "Joining",
@@ -82,23 +84,23 @@ pub fn summon(
         )?;
         let keys = host_ini == HostIni::WithKeys;
         match with_host_ini(loadout, address, &profile, uzdoom, keys) {
-            Ok(Some((joining, warnings))) => {
+            Ok(Some((hosts, warnings))) => {
                 if !warnings.is_empty() {
                     Warning::summon_lines(grimoire, &warnings)?;
                 }
-                joining
+                Some(hosts)
             }
             Ok(None) => {
                 Warning::summon(grimoire, "The host doesn't share its ini, so yours is used")?;
-                profile.clone()
+                yours
             }
             Err(problem) => {
                 Warning::summon(grimoire, &format!("{problem}, so yours is used"))?;
-                profile.clone()
+                yours
             }
         }
     } else {
-        profile.clone()
+        yours
     };
     let base_wad = profile.base_wad(&loadout.uac);
     if manifest.base_wad_matches(base_wad)
@@ -111,6 +113,7 @@ pub fn summon(
         let result = uzdoom::join(
             uzdoom,
             base_wad.map(Wad::deref),
+            ini.as_deref(),
             &profile,
             &address.host,
             profile.uzdoom_args(&loadout.uac),
@@ -123,26 +126,20 @@ pub fn summon(
     }
 }
 
-/// `profile` as it joins with the host's ini (see [`net::ini::take`]), with its keys if `keys`,
-/// kept in its own data dir as `host.ini` (nothing is saved to the profile), and the warnings
-/// about what was left out. `None` if the host shares no ini.
+/// The ini `profile` joins with when it takes the host's (see [`net::ini::take`]), with its keys if
+/// `keys`, kept in its own data dir as `host.ini` (nothing is saved to the profile), and the
+/// warnings about what was left out. `None` if the host shares no ini.
 pub fn with_host_ini(
     loadout: &Loadout,
     address: &Address,
     profile: &Profile,
     uzdoom: &std::ffi::OsStr,
     keys: bool,
-) -> std::result::Result<Option<(Profile, Vec<String>)>, String> {
-    let own = net::ini::in_use(profile.ini.as_deref(), uzdoom);
+) -> std::result::Result<Option<(OsString, Vec<String>)>, String> {
+    let own = net::ini::in_use(profile.ini(&loadout.uac).map(OsString::as_os_str), uzdoom);
     let dir = loadout.data_dir.join(&profile.name);
     let taken = net::ini::take(address, own.as_deref(), keys, &dir)?;
-    Ok(taken.map(|taken| {
-        let joining = Profile {
-            ini: Some(taken.path.into_os_string()),
-            ..profile.clone()
-        };
-        (joining, taken.warnings)
-    }))
+    Ok(taken.map(|taken| (taken.path.into_os_string(), taken.warnings)))
 }
 
 /// The profile to join with: the single compatible one, a pick among several, or a fresh download.

@@ -15,7 +15,7 @@ use ratatui::{
 };
 
 use crate::{
-    cli::{Ask, Command, Forget, Seal},
+    cli::{Ask, Command, Forget, Keep, Seal},
     clipboard::Clipboard,
     error::{Error, Result},
     layout,
@@ -52,7 +52,8 @@ use crate::{
     slayer::plain,
     slayer::share,
     slayer::watch,
-    theme, uzdoom,
+    theme::{self, Theme},
+    uzdoom,
     widgets::{
         details::Details,
         mark::{self, Mark},
@@ -76,10 +77,18 @@ pub struct Launcher {
     keep_music: bool,
     /// `--no-music`: no music at all this run, whatever the settings say.
     no_music: bool,
-    /// `--uzdoom` and `--base-wad`, until they are put into the config for the session (after any
-    /// upgrade, since an upgrade compares the config with what it saved).
+    /// `--uzdoom`, `--base-wad` and `--ini`, until they are put into the global settings for the
+    /// session (after any upgrade, since an upgrade compares the files with what it saved), each
+    /// with whether to keep it.
     session_uzdoom: Option<PathBuf>,
+    keep_uzdoom: Keep,
     session_base_wad: Option<PathBuf>,
+    keep_base_wad: Keep,
+    session_ini: Option<PathBuf>,
+    keep_ini: Keep,
+    /// `--theme`, worn already, and whether to keep wearing it.
+    session_theme: Option<PathBuf>,
+    keep_theme: Keep,
     /// The command from the command line, until it is done.
     command: Option<Command>,
     /// Each profile's mark, by position. A profile is only checked once its row is on screen, and
@@ -88,10 +97,10 @@ pub struct Launcher {
     /// What was passed on the command line, made absolute, for the startup questions about
     /// keeping it.
     passed_loadout: Option<PathBuf>,
-    ask_about_loadout: bool,
+    keep_loadout: Keep,
     forget_loadout: Forget,
     passed_wads: Vec<PathBuf>,
-    ask_about_wads: bool,
+    keep_wads: Keep,
     forget_wads: Forget,
     /// The scroll from `--unseal`, until it has been imported.
     passed_scroll: Option<PathBuf>,
@@ -112,13 +121,13 @@ pub struct Launcher {
 #[derive(Default)]
 pub struct Start {
     pub loadout: Option<String>,
-    /// Whether to ask about opening the passed loadout every time; off for `--loadout-once`.
-    pub ask_about_loadout: bool,
-    /// Opens the standard loadout, and maybe offers to forget the remembered one.
+    /// Whether to open the passed loadout every time: asked, not, or without asking.
+    pub keep_loadout: Keep,
+    /// Opens the standard loadout, and maybe forgets the remembered one.
     pub forget_loadout: Forget,
     pub wads: Vec<String>,
-    /// Whether to ask about keeping the passed wad dirs; off for `--wads-once`.
-    pub ask_about_wads: bool,
+    /// Whether and where to keep the passed wad dirs.
+    pub keep_wads: Keep,
     /// Uses no wad dirs but the downloads, and maybe offers to forget the kept ones.
     pub forget_wads: Forget,
     /// A scroll to import as soon as the launcher is up.
@@ -135,10 +144,19 @@ pub struct Start {
     pub keep_music: bool,
     /// Plays no music at all for this run.
     pub no_music: bool,
-    /// The UZDoom to play with for this run only, over every profile's own and the global one.
+    /// The UZDoom to play with this run, over every profile's own and the global one, and whether
+    /// to keep it as the global one.
     pub uzdoom: Option<PathBuf>,
-    /// The base wad to play with for this run only, the same way. Hashed once the launcher is up.
+    pub keep_uzdoom: Keep,
+    /// The base wad, the same way. Hashed once the launcher is up.
     pub base_wad: Option<PathBuf>,
+    pub keep_base_wad: Keep,
+    /// The ini, the same way.
+    pub ini: Option<PathBuf>,
+    pub keep_ini: Keep,
+    /// The `theme.toml` worn this run (already worn by then), and whether to keep wearing it.
+    pub theme: Option<PathBuf>,
+    pub keep_theme: Keep,
     /// `run`, `host` or `join`: done without the launcher, after which tdl closes.
     pub command: Option<Command>,
 }
@@ -261,14 +279,20 @@ impl Launcher {
             keep_music: start.keep_music,
             no_music: start.no_music,
             session_uzdoom: start.uzdoom,
+            keep_uzdoom: start.keep_uzdoom,
             session_base_wad: start.base_wad,
+            keep_base_wad: start.keep_base_wad,
+            session_ini: start.ini,
+            keep_ini: start.keep_ini,
+            session_theme: start.theme,
+            keep_theme: start.keep_theme,
             command: start.command,
             marks: HashMap::new(),
             passed_loadout,
-            ask_about_loadout: start.ask_about_loadout,
+            keep_loadout: start.keep_loadout,
             forget_loadout: start.forget_loadout,
             passed_wads,
-            ask_about_wads: start.ask_about_wads,
+            keep_wads: start.keep_wads,
             forget_wads: start.forget_wads,
             passed_scroll: start.unseal.as_deref().map(absolute),
             unseal_delete: start.unseal_delete,
@@ -306,6 +330,18 @@ impl Launcher {
 
         if layout::is_too_small(area.width, area.height) {
             resize::summon(grimoire)?;
+        }
+        // 👗 the kept theme, unless `--theme` already put one on; one that can't be worn is said
+        if self.session_theme.is_none()
+            && let Some(path) = &self.loadout.uac.theme
+        {
+            match Theme::read(Path::new(path)) {
+                Ok(theme) => theme::wear(theme),
+                Err(problem) => {
+                    theme::wear(Theme::default());
+                    Warning::summon(grimoire, &format!("{problem}, so the built-in one is worn"))?;
+                }
+            }
         }
         quips::show(!self.no_quips && !self.loadout.uac.no_quips);
         // 🔇 nothing plays at all, not even on the splash
@@ -365,11 +401,8 @@ impl Launcher {
                 upgraded.iter().for_each(|path| scribe::retire(path));
             }
         }
-        self.offer_to_keep(grimoire)?;
-        // 🧪 this run's UZDoom and base wad, used over every other and never saved
-        if let Some(uzdoom) = self.session_uzdoom.take() {
-            self.loadout.uac.session_uzdoom = Some(uzdoom.into_os_string());
-        }
+        // 🧪 this run's UZDoom, base wad and ini, used over every other, and kept only if asked to
+        self.use_session_files();
         if let Some(path) = self.session_base_wad.take() {
             match hashing::wad(grimoire, &path)? {
                 Some(wad) => {
@@ -382,6 +415,7 @@ impl Launcher {
                 )?,
             }
         }
+        self.offer_to_keep(grimoire)?;
         picker::set_wad_dirs(&self.loadout.wad_dirs);
         if let Some(scroll) = self.passed_scroll.take() {
             // 📜 the new profile goes last, and the cursor lands on it
@@ -420,17 +454,22 @@ impl Launcher {
             .command
             .take()
             .ok_or("--headless needs launch, host or join")?;
-        let loadout = &mut launcher.loadout;
-        loadout.wad_dirs.retain(|dir| dir.is_dir());
-        if let Some(uzdoom) = launcher.session_uzdoom.take() {
-            loadout.uac.session_uzdoom = Some(uzdoom.into_os_string());
+        if launcher.passed_wads.iter().any(|dir| !dir.is_dir()) {
+            launcher.leave_out_missing_wads();
         }
+        launcher.loadout.wad_dirs.retain(|dir| dir.is_dir());
+        launcher.use_session_files();
         if let Some(path) = launcher.session_base_wad.take() {
             let wad = Wad::hashed(&path, &mut ())
                 .map_err(|error| format!("Could not read --base-wad: {error}"))?;
-            loadout.uac.session_base_wad = Some(wad);
-            loadout.forget_lookup();
+            launcher.loadout.uac.session_base_wad = Some(wad);
+            launcher.loadout.forget_lookup();
         }
+        // 🗝️ with no windows nothing can be asked, so only the --keep- flags keep anything
+        for problem in launcher.keep_unasked() {
+            eprintln!("{problem}");
+        }
+        let loadout = &mut launcher.loadout;
         match command {
             Command::Host { profile, overrides } => {
                 let index = find_profile(&loadout.profiles, &profile)
@@ -558,6 +597,7 @@ impl Launcher {
         let result = uzdoom::launch(
             uzdoom,
             profile.base_wad(&self.loadout.uac).map(Wad::deref),
+            profile.ini(&self.loadout.uac).map(OsString::as_os_str),
             profile,
             profile.uzdoom_args(&self.loadout.uac),
             &self.loadout.data_dir.join(&profile.name),
@@ -590,9 +630,12 @@ impl Launcher {
         host_game::summon(grimoire, &mut self.loadout, index, settings)
     }
 
-    /// The startup questions about what was passed on the command line: whether to open the
-    /// passed loadout every time, and whether to keep the passed wad dirs for this session,
-    /// globally, or for this loadout. Dirs that don't exist are dropped first, with a warning.
+    /// The startup questions about what was passed on the command line, for whatever is to be
+    /// asked about: whether to open the passed loadout every time, whether to keep the passed wad
+    /// dirs for this session, globally, or for this loadout, whether to forget what was kept, and
+    /// whether to keep this run's UZDoom, base wad, ini and theme as the global ones. What the
+    /// `--keep-` flags keep is kept without asking (see [`Launcher::keep_unasked`]). Dirs that
+    /// don't exist are dropped first, with a warning.
     fn offer_to_keep(&mut self, grimoire: &mut Grimoire) -> Result<()> {
         let missing: Vec<_> = self
             .passed_wads
@@ -605,13 +648,10 @@ impl Launcher {
                 grimoire,
                 &format!("Not a dir, so left out: {}", missing.join(", ")),
             )?;
-            self.passed_wads.retain(|dir| dir.is_dir());
-            // 📂 none of them left: the kept dirs are better than none
-            self.loadout.wad_dirs = if self.passed_wads.is_empty() {
-                remembered_dirs(&self.loadout.config.wad_dirs, &self.loadout.uac.wad_dirs)
-            } else {
-                self.passed_wads.clone()
-            };
+            self.leave_out_missing_wads();
+        }
+        for problem in self.keep_unasked() {
+            Warning::summon(grimoire, &problem)?;
         }
 
         if self.forget_loadout == Forget::Asking {
@@ -621,7 +661,7 @@ impl Launcher {
                         format!("Stop opening {} by default?", Path::new(&kept).display());
                     if Dialog::summon(grimoire, &question)? {
                         self.loadout.uac.loadout = None;
-                        if self.loadout.uac.keep(&self.loadout.uac_path).is_err() {
+                        if self.loadout.keep_uac().is_err() {
                             Warning::save_failed(grimoire)?;
                         }
                     }
@@ -632,7 +672,7 @@ impl Launcher {
         }
 
         if let Some(passed) = &self.passed_loadout
-            && self.ask_about_loadout
+            && self.keep_loadout == Keep::Ask
             && self.loadout.uac_writable
             && self.loadout.uac.loadout.as_deref() != Some(passed.as_os_str())
             && Dialog::summon(
@@ -641,7 +681,7 @@ impl Launcher {
             )?
         {
             self.loadout.uac.loadout = Some(passed.clone().into_os_string());
-            if self.loadout.uac.keep(&self.loadout.uac_path).is_err() {
+            if self.loadout.keep_uac().is_err() {
                 Warning::save_failed(grimoire)?;
             }
         }
@@ -649,10 +689,26 @@ impl Launcher {
         if self.forget_wads == Forget::Asking {
             self.offer_to_forget_wads(grimoire)?;
         }
-
-        if !self.ask_about_wads {
-            return Ok(());
+        if self.keep_wads == Keep::Ask {
+            self.offer_to_keep_wads(grimoire)?;
         }
+        self.offer_to_keep_files(grimoire)
+    }
+
+    /// Drops the passed wad dirs that aren't dirs, falling back on the kept ones if none are left.
+    fn leave_out_missing_wads(&mut self) {
+        self.passed_wads.retain(|dir| dir.is_dir());
+        // 📂 none of them left: the kept dirs are better than none
+        self.loadout.wad_dirs = if self.passed_wads.is_empty() {
+            remembered_dirs(&self.loadout.config.wad_dirs, &self.loadout.uac.wad_dirs)
+        } else {
+            self.passed_wads.clone()
+        };
+    }
+
+    /// `--wads`: asks whether to keep the passed wad dirs for this session, globally, or for this
+    /// loadout, unless they are the kept ones already.
+    fn offer_to_keep_wads(&mut self, grimoire: &mut Grimoire) -> Result<()> {
         let passed: Vec<OsString> = self
             .passed_wads
             .iter()
@@ -673,7 +729,7 @@ impl Launcher {
         match ThreeWayDialog::summon(grimoire, &question, options)? {
             Some(1) if self.loadout.uac_writable => {
                 self.loadout.uac.wad_dirs = passed;
-                if self.loadout.uac.keep(&self.loadout.uac_path).is_err() {
+                if self.loadout.keep_uac().is_err() {
                     Warning::save_failed(grimoire)?;
                 }
             }
@@ -693,6 +749,171 @@ impl Launcher {
             _ => {}
         }
         Ok(())
+    }
+
+    /// `--uzdoom`, `--base-wad`, `--ini` and `--theme`: asks, for each that is to be asked about
+    /// and isn't the global one already, whether to keep it as the global one.
+    fn offer_to_keep_files(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+        if !self.loadout.uac_writable {
+            return Ok(());
+        }
+        let uac = &self.loadout.uac;
+        let shown = |path: &OsString| Path::new(path).display().to_string();
+        let mut kept = false;
+        if self.keep_uzdoom == Keep::Ask
+            && let Some(uzdoom) = uac.session_uzdoom.clone()
+            && uac.uzdoom.as_ref() != Some(&uzdoom)
+            && Dialog::summon(
+                grimoire,
+                &format!("Keep {} as the UZDoom for every profile?", shown(&uzdoom)),
+            )?
+        {
+            self.loadout.uac.uzdoom = Some(uzdoom);
+            kept = true;
+        }
+        let uac = &self.loadout.uac;
+        if self.keep_base_wad == Keep::Ask
+            && let Some(base_wad) = uac.session_base_wad.clone()
+            && uac.base_wad.as_ref() != Some(&base_wad)
+            && Dialog::summon(
+                grimoire,
+                &format!(
+                    "Keep {} as the base wad for every profile?",
+                    shown(&base_wad.path)
+                ),
+            )?
+        {
+            self.loadout.uac.base_wad = Some(base_wad);
+            self.loadout.forget_lookup();
+            kept = true;
+        }
+        let uac = &self.loadout.uac;
+        if self.keep_ini == Keep::Ask
+            && let Some(ini) = uac.session_ini.clone()
+            && uac.ini.as_ref() != Some(&ini)
+            && Dialog::summon(
+                grimoire,
+                &format!("Keep {} as the ini for every profile?", shown(&ini)),
+            )?
+        {
+            self.loadout.uac.ini = Some(ini);
+            kept = true;
+        }
+        if self.keep_theme == Keep::Ask
+            && let Some(theme) = self.session_theme.clone().map(PathBuf::into_os_string)
+            && self.loadout.uac.theme.as_ref() != Some(&theme)
+            && Dialog::summon(
+                grimoire,
+                &format!("Keep wearing the theme {}?", shown(&theme)),
+            )?
+        {
+            self.loadout.uac.theme = Some(theme);
+            kept = true;
+        }
+        if kept && self.loadout.keep_uac().is_err() {
+            Warning::save_failed(grimoire)?;
+        }
+        Ok(())
+    }
+
+    /// Keeps and forgets what the `--keep-` flags ask for, without asking: the loadout to open
+    /// every time, the wad dirs (globally or for this loadout), this run's UZDoom, base wad, ini
+    /// and theme, and forgetting the kept loadout or wad dirs for good. This run's UZDoom, base wad
+    /// and ini must be in the global settings' session ones by now. Returns what went wrong, one
+    /// line each, for the user.
+    fn keep_unasked(&mut self) -> Vec<String> {
+        let mut problems = Vec::new();
+        let loadout = &mut self.loadout;
+        let uac = &mut loadout.uac;
+        let mut global = false;
+        let mut kept_here = false;
+        if self.forget_loadout == Forget::ForGood {
+            global |= uac.loadout.take().is_some();
+        }
+        if self.keep_loadout == Keep::Global
+            && let Some(passed) = &self.passed_loadout
+        {
+            uac.loadout = Some(passed.clone().into_os_string());
+            global = true;
+        }
+        if self.forget_wads == Forget::ForGood {
+            global |= !std::mem::take(&mut uac.wad_dirs).is_empty();
+            kept_here |= !std::mem::take(&mut loadout.config.wad_dirs).is_empty();
+        }
+        let passed: Vec<OsString> = self
+            .passed_wads
+            .iter()
+            .map(|dir| dir.clone().into_os_string())
+            .collect();
+        match self.keep_wads {
+            Keep::Global if !passed.is_empty() => {
+                loadout.uac.wad_dirs = passed;
+                global = true;
+            }
+            Keep::Loadout if !passed.is_empty() => {
+                loadout.config.wad_dirs = passed;
+                kept_here = true;
+            }
+            _ => {}
+        }
+        let uac = &mut loadout.uac;
+        if self.keep_uzdoom == Keep::Global && uac.session_uzdoom.is_some() {
+            uac.uzdoom.clone_from(&uac.session_uzdoom);
+            global = true;
+        }
+        if self.keep_base_wad == Keep::Global && uac.session_base_wad.is_some() {
+            uac.base_wad.clone_from(&uac.session_base_wad);
+            global = true;
+        }
+        if self.keep_ini == Keep::Global && uac.session_ini.is_some() {
+            uac.ini.clone_from(&uac.session_ini);
+            global = true;
+        }
+        if self.keep_theme == Keep::Global
+            && let Some(theme) = &self.session_theme
+        {
+            uac.theme = Some(theme.clone().into_os_string());
+            global = true;
+        }
+        if global {
+            loadout.forget_lookup();
+            if !loadout.uac_writable {
+                problems.push(
+                    "The global settings are from a newer tdl, so nothing was kept in them"
+                        .to_string(),
+                );
+            } else if loadout.keep_uac().is_err() {
+                problems.push("Could not save the global settings".to_string());
+            }
+        }
+        if kept_here
+            && loadout
+                .config
+                .write(&loadout.config_dir, &loadout.profiles)
+                .is_err()
+        {
+            problems.push("Could not save the loadout's wad dirs".to_string());
+        }
+        problems
+    }
+
+    /// Puts this run's UZDoom and ini into the global settings' session ones, used over every
+    /// other and never saved there. The base wad is hashed first, by the caller.
+    fn use_session_files(&mut self) {
+        if let Some(uzdoom) = self.session_uzdoom.take() {
+            self.loadout.uac.session_uzdoom = Some(uzdoom.into_os_string());
+        }
+        if let Some(ini) = self.session_ini.take() {
+            self.loadout.uac.session_ini = Some(ini.into_os_string());
+        }
+    }
+
+    /// The theme kept in the global settings, from the standard config dir, before any window is
+    /// up: `None` if there is none, else whether it can be worn.
+    pub fn kept_theme() -> Option<std::result::Result<Theme, String>> {
+        let project_dirs = ProjectDirs::from("error.error.fruit", "eef", "tdl")?;
+        let uac = Uac::open(&Uac::path(project_dirs.config_dir()))?;
+        Some(Theme::read(Path::new(&uac.theme?)))
     }
 
     /// `--forget-wads`: asks whether to forget the wad dirs kept for every loadout, for this one, or
@@ -764,7 +985,8 @@ impl Launcher {
     /// changed at all.
     fn change_settings(&mut self, grimoire: &mut Grimoire) -> Result<()> {
         let before = Settings::of(&self.loadout.uac);
-        let Some(settings) = SettingsForm::summon(grimoire, before.clone())? else {
+        let new_theme = self.loadout.uac_path.with_file_name(theme::FILE);
+        let Some(settings) = SettingsForm::summon(grimoire, before.clone(), new_theme)? else {
             return Ok(());
         };
         if settings == before {
@@ -777,6 +999,7 @@ impl Launcher {
             );
         }
         let kept_song = self.loadout.uac.song.clone();
+        let kept_theme = self.loadout.uac.theme.clone();
         let kept_music = self.loadout.uac.music;
         if let Err(problem) = settings.apply(&mut self.loadout.uac) {
             return Warning::summon(grimoire, &problem);
@@ -792,6 +1015,20 @@ impl Launcher {
         self.follow_music(kept_music, self.loadout.uac.music);
         // 💬 the quips come and go now, unless `--no-quips` said otherwise for this run
         quips::show(!self.no_quips && !self.loadout.uac.no_quips);
+        // 👗 and the theme changes from the next frame on (the form read it, so it can be worn)
+        if self.loadout.uac.theme != kept_theme {
+            let theme = self
+                .loadout
+                .uac
+                .theme
+                .as_ref()
+                .map(|path| Theme::read(Path::new(path)));
+            match theme {
+                Some(Err(problem)) => Warning::summon(grimoire, &problem)?,
+                Some(Ok(theme)) => theme::wear(theme),
+                None => theme::wear(Theme::default()),
+            }
+        }
         if self.loadout.uac.keep(&self.loadout.uac_path).is_err() {
             Warning::save_failed(grimoire)?;
         }
@@ -1564,7 +1801,9 @@ mod tests {
     use insta::assert_snapshot;
 
     use super::*;
-    use crate::{loadout::InsertedCopies, loadout::scribe::tests::Altar, testing};
+    use crate::{
+        loadout::InsertedCopies, loadout::config::Config, loadout::scribe::tests::Altar, testing,
+    };
 
     fn launcher(altar: &Altar, row: usize) -> Launcher {
         let loadout = testing::example_loadout(altar);
@@ -1998,5 +2237,98 @@ mod tests {
         // nothing is forgotten yet: that waits for the question
         assert!(opened.loadout.uac.loadout.is_some());
         assert!(opened.loadout.notices.is_empty());
+    }
+
+    #[test]
+    fn the_keep_flags_keep_without_asking_and_session_keeps_nothing() {
+        let altar = Altar::new("launcher-keep-unasked");
+        let standard = altar.file("standard");
+        let other = altar.file("other");
+        let start = |keep| Start {
+            loadout: Some(other.to_string_lossy().into_owned()),
+            keep_loadout: keep,
+            wads: vec!["/wads".into()],
+            keep_wads: keep,
+            uzdoom: Some("/opt/uzdoom".into()),
+            keep_uzdoom: keep,
+            ini: Some("/inis/mine.ini".into()),
+            keep_ini: keep,
+            theme: Some("/themes/blue.toml".into()),
+            keep_theme: keep,
+            ..Start::default()
+        };
+        for keep in [Keep::Ask, Keep::Session] {
+            let mut launcher = Launcher::new(start(keep), &standard, &standard);
+            launcher.use_session_files();
+            assert!(launcher.keep_unasked().is_empty());
+            // used this run, but nothing is saved
+            assert_eq!(
+                launcher.loadout.uac.session_uzdoom,
+                Some("/opt/uzdoom".into())
+            );
+            assert_eq!(
+                launcher.loadout.uac.session_ini,
+                Some("/inis/mine.ini".into())
+            );
+            assert_eq!(Uac::open(&Uac::path(&standard)), None, "{keep:?}");
+        }
+        let mut launcher = Launcher::new(start(Keep::Global), &standard, &standard);
+        launcher.use_session_files();
+        assert!(launcher.keep_unasked().is_empty());
+        let kept = Uac::open(&Uac::path(&standard)).unwrap();
+        assert_eq!(kept.loadout, Some(other.clone().into_os_string()));
+        assert_eq!(kept.wad_dirs, [OsString::from("/wads")]);
+        assert_eq!(kept.uzdoom, Some("/opt/uzdoom".into()));
+        assert_eq!(kept.ini, Some("/inis/mine.ini".into()));
+        assert_eq!(kept.theme, Some("/themes/blue.toml".into()));
+        // the wad dirs can go to the loadout instead
+        let start = Start {
+            wads: vec!["/mods".into()],
+            keep_wads: Keep::Loadout,
+            ..Start::default()
+        };
+        let mut launcher = Launcher::new(start, &standard, &standard);
+        assert!(launcher.keep_unasked().is_empty());
+        let reopened = Launcher::new(Start::default(), &standard, &standard);
+        assert_eq!(reopened.loadout.config.wad_dirs, [OsString::from("/mods")]);
+        assert_eq!(reopened.loadout.uac.wad_dirs, [OsString::from("/wads")]);
+    }
+
+    #[test]
+    fn forgetting_for_good_forgets_the_kept_loadout_and_every_kept_wad_dir() {
+        let altar = Altar::new("launcher-forget-for-good");
+        let standard = altar.file("standard");
+        let kept = altar.file("kept");
+        fs::create_dir_all(&kept).unwrap();
+        Uac {
+            loadout: Some(kept.into_os_string()),
+            wad_dirs: vec!["/kept".into()],
+            ..Uac::default()
+        }
+        .keep(&Uac::path(&standard))
+        .unwrap();
+        // the standard loadout, opened once forgetting, keeps wad dirs of its own
+        Config {
+            wad_dirs: vec!["/kept-here".into()],
+            ..Config::default()
+        }
+        .write(&standard, &[])
+        .unwrap();
+        let start = Start {
+            forget_loadout: Forget::ForGood,
+            forget_wads: Forget::ForGood,
+            ..Start::default()
+        };
+        let mut launcher = Launcher::new(start, &standard, &standard);
+        assert!(launcher.loadout.wad_dirs.is_empty());
+        assert_eq!(
+            launcher.loadout.config.wad_dirs,
+            [OsString::from("/kept-here")]
+        );
+        assert!(launcher.keep_unasked().is_empty());
+        let reopened = Launcher::new(Start::default(), &standard, &standard);
+        assert_eq!(reopened.loadout.uac.loadout, None);
+        assert!(reopened.loadout.uac.wad_dirs.is_empty());
+        assert!(reopened.loadout.config.wad_dirs.is_empty());
     }
 }

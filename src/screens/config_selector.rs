@@ -4,7 +4,7 @@ use crate::{error::Result, picker, popups::three_way_dialog::ThreeWayDialog, rit
 
 /// What the user chose for a profile's UZDoom config file.
 pub enum IniChoice {
-    /// No file of the profile's own: UZDoom keeps using its normal, global config.
+    /// No file of the profile's own: the global ini from the settings, else UZDoom's usual one.
     Global,
     /// A new, empty config for this profile alone. The caller makes the file.
     New,

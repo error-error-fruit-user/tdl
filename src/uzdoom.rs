@@ -187,10 +187,12 @@ fn copy_output(mut output: impl Read, mut log: Option<File>, latest: &Mutex<Stri
     }
 }
 
-/// Plays offline, with saves kept in the profile's own dir.
+/// Plays offline, with saves kept in the profile's own dir. `base_wad` and `ini` are the ones in
+/// effect (see [`Profile::base_wad`] and [`Profile::ini`]), as for hosting and joining.
 pub fn launch(
     uzdoom: &OsStr,
     base_wad: Option<&OsStr>,
+    ini: Option<&OsStr>,
     profile: &Profile,
     extra: &str,
     data_subdir: &Path,
@@ -200,7 +202,7 @@ pub fn launch(
     if let Some(base_wad) = base_wad {
         args.extend([OsStr::new("-iwad"), base_wad]);
     }
-    if let Some(ini) = profile.ini.as_ref() {
+    if let Some(ini) = ini {
         args.extend([OsStr::new("-config"), ini])
     }
     execute(uzdoom, profile, &args, extra, data_subdir)
@@ -211,6 +213,7 @@ pub fn launch(
 pub fn host(
     uzdoom: &OsStr,
     base_wad: Option<&OsStr>,
+    ini: Option<&OsStr>,
     profile: &Profile,
     settings: &HostSettings,
     extra: &str,
@@ -226,7 +229,7 @@ pub fn host(
     if let Some(base_wad) = base_wad {
         args.extend([OsStr::new("-iwad"), base_wad]);
     }
-    if let Some(ini) = profile.ini.as_ref() {
+    if let Some(ini) = ini {
         args.extend([OsStr::new("-config"), ini]);
     }
     if settings.is_deathmatch {
@@ -242,6 +245,7 @@ pub fn host(
 pub fn join(
     uzdoom: &OsStr,
     base_wad: Option<&OsStr>,
+    ini: Option<&OsStr>,
     profile: &Profile,
     ip: &str,
     extra: &str,
@@ -251,7 +255,7 @@ pub fn join(
     if let Some(base_wad) = base_wad {
         args.extend([OsStr::new("-iwad"), base_wad]);
     }
-    if let Some(ini) = profile.ini.as_ref() {
+    if let Some(ini) = ini {
         args.extend([OsStr::new("-config"), ini]);
     }
     execute(uzdoom, profile, &args, extra, data_subdir)
@@ -399,6 +403,7 @@ for file in "${files[@]}"; do add "$file" "PWAD IWAD"; done
             launch(
                 wrapper.as_os_str(),
                 Some(iwad.as_os_str()),
+                profile.ini.as_deref(),
                 &profile,
                 "",
                 &data,
@@ -494,6 +499,7 @@ for file in "${files[@]}"; do add "$file" "PWAD IWAD"; done
         past_busy(|| {
             launch(
                 echo.as_os_str(),
+                None,
                 None,
                 &profile,
                 "  -nomusic   +sv_cheats 1 ",

@@ -7,6 +7,7 @@
 
 use std::{
     ffi::OsStr,
+    ffi::OsString,
     io::{self, BufRead, IsTerminal, Write},
     ops::Deref,
     path::{Path, PathBuf},
@@ -122,6 +123,7 @@ pub fn launch(loadout: &Loadout, index: usize) -> Outcome {
     let game = uzdoom::launch(
         &uzdoom,
         profile.base_wad(&loadout.uac).map(Wad::deref),
+        profile.ini(&loadout.uac).map(OsString::as_os_str),
         profile,
         profile.uzdoom_args(&loadout.uac),
         &loadout.data_dir.join(&profile.name),
@@ -164,7 +166,7 @@ pub fn host(loadout: &mut Loadout, index: usize, overrides: &HostOverrides) -> O
     let manifest = Manifest::build(&wads, base_wad.map(|w| w.hash.clone()).unwrap_or_default())
         .map_err(|_| "One of the profile's wads can't be read")?;
     let ini = if settings.share_ini {
-        match host_game::shared_ini(profile.ini.as_deref(), &uzdoom) {
+        match host_game::shared_ini(profile.ini(&loadout.uac).map(OsString::as_os_str), &uzdoom) {
             Ok(ini) => Some(ini),
             Err(problem) => {
                 eprintln!("{problem}, so it isn't shared");
@@ -194,6 +196,7 @@ pub fn host(loadout: &mut Loadout, index: usize, overrides: &HostOverrides) -> O
     let game = uzdoom::host(
         &uzdoom,
         base_wad.map(Wad::deref),
+        profile.ini(&loadout.uac).map(OsString::as_os_str),
         &profile,
         &settings,
         profile.uzdoom_args(&loadout.uac),
@@ -233,27 +236,28 @@ pub fn join(
     };
     let uzdoom = ready_to_play(loadout, &profile)?;
     let profile = upgrade_volatile(loadout, address, &manifest, profile)?;
-    let profile = if host_ini != HostIni::Yours {
+    let yours = profile.ini(&loadout.uac).cloned();
+    let ini = if host_ini != HostIni::Yours {
         let keys = host_ini == HostIni::WithKeys;
         match join_game::with_host_ini(loadout, address, &profile, &uzdoom, keys) {
-            Ok(Some((joining, warnings))) => {
+            Ok(Some((hosts, warnings))) => {
                 for warning in &warnings {
                     eprintln!("{warning}");
                 }
                 println!("Playing with the host's ini");
-                joining
+                Some(hosts)
             }
             Ok(None) => {
                 eprintln!("The host doesn't share its ini, so yours is used");
-                profile
+                yours
             }
             Err(problem) => {
                 eprintln!("{problem}, so yours is used");
-                profile
+                yours
             }
         }
     } else {
-        profile
+        yours
     };
     let base_wad = profile.base_wad(&loadout.uac);
     if !manifest.base_wad_matches(base_wad) {
@@ -262,6 +266,7 @@ pub fn join(
     let game = uzdoom::join(
         &uzdoom,
         base_wad.map(Wad::deref),
+        ini.as_deref(),
         &profile,
         &address.host,
         profile.uzdoom_args(&loadout.uac),

@@ -139,7 +139,7 @@ fn file_line(
 }
 
 /// `line`, unless this session uses a file of its own from the command line (`--uzdoom`,
-/// `--base-wad`): then the line is for that file, said to be the session's. `fault` is the one
+/// `--base-wad`, `--ini`): then the line is for that file, said to be the session's. `fault` is the one
 /// for the file in effect.
 fn or_session(line: Detail, session: Option<&OsStr>, fault: Option<&Fault>) -> Detail {
     let Some(path) = session else {
@@ -255,12 +255,16 @@ impl Details {
                 global.session_base_wad.as_deref(),
                 fault(Part::BaseWad),
             ),
-            file_line(
-                "ini",
-                profile.ini.as_deref(),
-                None,
+            or_session(
+                file_line(
+                    "ini",
+                    profile.ini.as_deref(),
+                    global.ini.as_deref(),
+                    fault(Part::Ini),
+                    "uzdoom's own",
+                ),
+                global.session_ini.as_deref(),
                 fault(Part::Ini),
-                "uzdoom's own",
             ),
             args_line(
                 profile.uzdoom_args.as_deref(),
@@ -289,6 +293,9 @@ impl Details {
             .uzdoom_in_effect()
             .and_then(|p| Fault::of(Path::new(p), 0));
         let base_fault = global.base_wad_in_effect().and_then(Wad::check);
+        let ini_fault = global
+            .ini_in_effect()
+            .and_then(|p| Fault::of(Path::new(p), 0));
         let mut uzdoom = or_session(
             file_line(
                 "uzdoom",
@@ -315,6 +322,17 @@ impl Details {
                 ),
                 global.session_base_wad.as_deref(),
                 base_fault.as_ref(),
+            ),
+            or_session(
+                file_line(
+                    "ini",
+                    None,
+                    global.ini.as_deref(),
+                    ini_fault.as_ref(),
+                    "uzdoom's own",
+                ),
+                global.session_ini.as_deref(),
+                ini_fault.as_ref(),
             ),
             args_line(None, Some(&global.uzdoom_args), "none"),
         ];

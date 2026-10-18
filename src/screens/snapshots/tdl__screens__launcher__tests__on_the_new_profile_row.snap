@@ -18,11 +18,11 @@ expression: "testing::draw(90, 28, |page| launcher.render(page))"
               ┃                                                           ┃
               ┃                                                           ┃
               ┃                                                           ┃
-              ┃                                                           ┃
               ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-                                 ┏━━━━━━[ global ]━━━━━━┓
-                                 ┃   uzdoom ■ uzdoom.sh ┃
-                                 ┃ base wad ■ DOOM2.WAD ┃
-                                 ┃     args □ none      ┃
-                                 ┗━━━━━━━━━━━━━━━━━━━━━━┛
-                                          [F1/?]
+                               ┏━━━━━━━[ global ]━━━━━━━━┓
+                               ┃   uzdoom ■ uzdoom.sh    ┃
+                               ┃ base wad ■ DOOM2.WAD    ┃
+                               ┃      ini □ uzdoom's own ┃
+                               ┃     args □ none         ┃
+                               ┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                                         [F1/?]

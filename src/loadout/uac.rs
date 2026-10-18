@@ -70,6 +70,14 @@ pub struct Uac {
     /// missing in older files, which count as the usual splash.
     #[serde(default)]
     pub pride: bool,
+    /// The UZDoom ini used by profiles that don't set their own, instead of UZDoom's usual one.
+    /// Picked in the settings or kept from `--ini`.
+    #[serde(default, with = "optional_path")]
+    pub ini: Option<OsString>,
+    /// The `theme.toml` tdl wears instead of its built-in theme. Picked in the settings or kept
+    /// from `--theme`.
+    #[serde(default, with = "optional_path")]
+    pub theme: Option<OsString>,
     /// UZDoom from `--uzdoom`, for this session only: it is never saved, and it wins over every
     /// profile's own and the global one.
     #[serde(skip)]
@@ -77,6 +85,9 @@ pub struct Uac {
     /// The base wad from `--base-wad`, for this session only, the same way.
     #[serde(skip)]
     pub session_base_wad: Option<Wad>,
+    /// The ini from `--ini`, for this session only, the same way.
+    #[serde(skip)]
+    pub session_ini: Option<OsString>,
 }
 
 /// The global settings a scroll can carry to someone else: how tdl looks and sounds, and nothing
@@ -216,6 +227,12 @@ impl Uac {
     /// The base wad a profile without its own uses: this session's, else the global one.
     pub fn base_wad_in_effect(&self) -> Option<&Wad> {
         self.session_base_wad.as_ref().or(self.base_wad.as_ref())
+    }
+
+    /// The ini a profile without its own uses: this session's, else the global one, else none
+    /// (UZDoom's usual one).
+    pub fn ini_in_effect(&self) -> Option<&OsString> {
+        self.session_ini.as_ref().or(self.ini.as_ref())
     }
 
     /// Takes the settings a loadout's `config.rite` kept before its edition 5, for each that isn't

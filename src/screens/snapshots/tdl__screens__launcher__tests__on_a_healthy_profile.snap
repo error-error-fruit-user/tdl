@@ -18,11 +18,11 @@ expression: "testing::draw(90, 28, |page| launcher.render(page))"
               ┃                                                           ┃
               ┃                                                           ┃
               ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-                ┏━━━━━━━━━━[ ready ]━━━━━━━━━━━┓ ┏━━━━━━[ global ]━━━━━━┓
-                ┃   uzdoom ■ uzdoom.sh  global ┃ ┃   uzdoom ■ uzdoom.sh ┃
-                ┃ base wad ■ DOOM2.WAD  global ┃ ┃ base wad ■ DOOM2.WAD ┃
-                ┃      ini □ uzdoom's own      ┃ ┃     args □ none      ┃
-                ┃     args □ none              ┃ ┃                      ┃
-                ┃     wads ■ 3 wads            ┃ ┃                      ┃
-                ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┗━━━━━━━━━━━━━━━━━━━━━━┛
-                                         [F1/?]
+               ┏━━━━━━━━━━[ ready ]━━━━━━━━━━━┓ ┏━━━━━━━[ global ]━━━━━━━━┓
+               ┃   uzdoom ■ uzdoom.sh  global ┃ ┃   uzdoom ■ uzdoom.sh    ┃
+               ┃ base wad ■ DOOM2.WAD  global ┃ ┃ base wad ■ DOOM2.WAD    ┃
+               ┃      ini □ uzdoom's own      ┃ ┃      ini □ uzdoom's own ┃
+               ┃     args □ none              ┃ ┃     args □ none         ┃
+               ┃     wads ■ 3 wads            ┃ ┃                         ┃
+               ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                                          [F1/?]

@@ -362,6 +362,16 @@ impl Profile {
             .or(global.uzdoom.as_ref())
     }
 
+    /// The ini to play with: this session's from `--ini` if there is one, else the profile's own,
+    /// else the global one. `None` is UZDoom's usual one.
+    pub fn ini<'a>(&'a self, global: &'a Uac) -> Option<&'a OsString> {
+        global
+            .session_ini
+            .as_ref()
+            .or(self.ini.as_ref())
+            .or(global.ini.as_ref())
+    }
+
     /// Everything wrong with the files this profile needs to run, UZDoom first. The UZDoom path,
     /// base wad and ini are the effective ones, so the global settings count too. This only looks
     /// at the disk; nothing is hashed.
@@ -375,8 +385,7 @@ impl Profile {
             .and_then(Wad::check)
             .map(|fault| (Part::BaseWad, fault));
         let ini = self
-            .ini
-            .as_ref()
+            .ini(global)
             .and_then(|path| Fault::of(Path::new(path), 0))
             .map(|fault| (Part::Ini, fault));
         let wads = self

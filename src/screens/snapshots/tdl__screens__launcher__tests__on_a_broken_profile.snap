@@ -18,11 +18,11 @@ expression: "testing::draw(90, 28, |page| launcher.render(page))"
               ┃                                                           ┃
               ┃                                                           ┃
               ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-     ┏━━━━━━━━━━━━━━━━━━━━━[ broken ]━━━━━━━━━━━━━━━━━━━━━┓ ┏━━━━━━[ global ]━━━━━━┓
-     ┃   uzdoom ■ uzdoom.sh  global                       ┃ ┃   uzdoom ■ uzdoom.sh ┃
-     ┃ base wad ■ DOOM2.WAD  global                       ┃ ┃ base wad ■ DOOM2.WAD ┃
-     ┃      ini □ uzdoom's own                            ┃ ┃     args □ none      ┃
-     ┃     args □ none                                    ┃ ┃                      ┃
-     ┃     wads ■ 4 wads  1 broken, 1 changed, 1 volatile ┃ ┃                      ┃
-     ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┗━━━━━━━━━━━━━━━━━━━━━━┛
-                                         [F1/?]
+    ┏━━━━━━━━━━━━━━━━━━━━━[ broken ]━━━━━━━━━━━━━━━━━━━━━┓ ┏━━━━━━━[ global ]━━━━━━━━┓
+    ┃   uzdoom ■ uzdoom.sh  global                       ┃ ┃   uzdoom ■ uzdoom.sh    ┃
+    ┃ base wad ■ DOOM2.WAD  global                       ┃ ┃ base wad ■ DOOM2.WAD    ┃
+    ┃      ini □ uzdoom's own                            ┃ ┃      ini □ uzdoom's own ┃
+    ┃     args □ none                                    ┃ ┃     args □ none         ┃
+    ┃     wads ■ 4 wads  1 broken, 1 changed, 1 volatile ┃ ┃                         ┃
+    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                                          [F1/?]

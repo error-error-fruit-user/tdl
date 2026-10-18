@@ -82,7 +82,8 @@ pub fn size(fields: &[Field]) -> (u16, u16) {
     (label + 2 + value + 1, rows + rows.saturating_sub(1) * GAP)
 }
 
-/// Draws the fields with the one at `focus` lit up, and returns where its cursor goes.
+/// Draws the fields with the one at `focus` lit up, and returns where its cursor goes. Fields that
+/// don't all fit scroll, so the focused one is always in sight.
 pub fn render(
     fields: &[Field],
     focus: Option<usize>,
@@ -97,8 +98,10 @@ pub fn render(
     let (width, _) = size(fields);
     let x = area.x + area.width.saturating_sub(width) / 2;
     let mut cursor = None;
-    for (i, field) in fields.iter().enumerate() {
-        let y = area.y + i as u16 * (1 + GAP);
+    let fit = usize::from((area.height + GAP) / (1 + GAP)).max(1);
+    let first = focus.map_or(0, |focus| (focus + 1).saturating_sub(fit));
+    for (i, field) in fields.iter().enumerate().skip(first) {
+        let y = area.y + (i - first) as u16 * (1 + GAP);
         if y >= area.bottom() {
             break;
         }

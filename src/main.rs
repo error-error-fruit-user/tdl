@@ -6,6 +6,7 @@ use crate::{
     cli::Cli,
     error::{Error, INTERRUPTED_EXIT},
     screens::launcher::{Launcher, Start},
+    theme::Theme,
 };
 
 mod cli;
@@ -30,6 +31,10 @@ mod uzdoom;
 mod widgets;
 
 fn main() {
+    // 🎨 the help wears the kept theme too, if it is one that can be worn
+    if let Some(theme) = Launcher::kept_theme().and_then(Result::ok) {
+        theme::wear(theme);
+    }
     // 📖 clap answers --help and --version itself, and says what is wrong with anything else
     let cli = Cli::parse(std::env::args().skip(1)).unwrap_or_else(|error| error.exit());
     if cli.list_quips {
@@ -45,7 +50,7 @@ fn main() {
         eprintln!("{message}");
         std::process::exit(2);
     }
-    // 🧪 this run's UZDoom and base wad must be there, said now rather than at launch
+    // 🧪 this run's UZDoom, base wad, ini and theme must be there, said now rather than at launch
     let session_file = |flag: &str, file: Option<String>| {
         file.map(|file| {
             let path = std::path::absolute(&file).unwrap_or_else(|_| file.clone().into());
@@ -58,13 +63,25 @@ fn main() {
     };
     let uzdoom = session_file("--uzdoom", cli.uzdoom);
     let base_wad = session_file("--base-wad", cli.base_wad);
+    let ini = session_file("--ini", cli.ini);
+    let theme = session_file("--theme", cli.theme);
+    // 👗 and the theme must be one that can be worn, from the very first window
+    if let Some(path) = &theme {
+        match Theme::read(path) {
+            Ok(theme) => theme::wear(theme),
+            Err(message) => {
+                eprintln!("--theme: {message}");
+                std::process::exit(2);
+            }
+        }
+    }
     let headless = cli.headless;
     let seal = cli.seal;
     let start = Start {
         loadout: cli.loadout,
-        ask_about_loadout: !cli.loadout_once,
+        keep_loadout: cli.keep_loadout,
         forget_loadout: cli.forget_loadout,
-        ask_about_wads: !cli.wads_once,
+        keep_wads: cli.keep_wads,
         forget_wads: cli.forget_wads,
         wads: cli.wads,
         unseal: cli.unseal,
@@ -76,7 +93,13 @@ fn main() {
         keep_music: cli.keep_music,
         no_music: cli.no_music,
         uzdoom,
+        keep_uzdoom: cli.keep_uzdoom,
         base_wad,
+        keep_base_wad: cli.keep_base_wad,
+        ini,
+        keep_ini: cli.keep_ini,
+        theme,
+        keep_theme: cli.keep_theme,
         command: cli.command,
     };
     // 📜 --seal draws no windows either: the loadout goes into the scroll, and tdl closes

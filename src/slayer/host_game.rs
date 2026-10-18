@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::{ffi::OsString, ops::Deref};
 
 use crate::{
     error::{Error, Result},
@@ -53,7 +53,7 @@ pub fn summon(
         return Warning::wad_unreadable(grimoire);
     };
     let ini = if settings.share_ini {
-        match shared_ini(profile.ini.as_deref(), uzdoom) {
+        match shared_ini(profile.ini(&loadout.uac).map(OsString::as_os_str), uzdoom) {
             Ok(ini) => Some(ini),
             Err(problem) => {
                 Warning::summon(grimoire, &format!("{problem}, so it isn't shared"))?;
@@ -84,6 +84,7 @@ pub fn summon(
     let result = uzdoom::host(
         uzdoom,
         base_wad.map(Wad::deref),
+        profile.ini(&loadout.uac).map(OsString::as_os_str),
         profile,
         &settings,
         profile.uzdoom_args(&loadout.uac),
