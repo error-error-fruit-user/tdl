@@ -12,6 +12,8 @@ rm -rf "$out"
 mkdir "$out"
 cp "target/$target/release/tdl.exe" "$out/"
 cp LICENSE "$out/LICENSE"
+# 🏚️ for anyone coming from a tdl before 1.0.0, whose files it upgrades
+cp upgrade_legacy.py "$out/"
 
 # Gather the license text of every crate that is linked into the binary:
 # cargo-license picks the crates (no build or dev dependencies, only those used by the target),

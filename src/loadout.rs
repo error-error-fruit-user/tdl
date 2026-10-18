@@ -2,6 +2,7 @@ pub mod config;
 pub mod edition;
 pub mod hash;
 pub mod host_settings;
+pub mod legacy;
 pub mod lookup;
 pub mod profile;
 pub mod saved;
@@ -61,12 +62,9 @@ impl Loadout {
     /// Loads everything, recovering from what it can. A profile whose file is unreadable falls back
     /// to its `.bak`, or failing that to an empty profile that keeps its name, so it can still be
     /// seen and deleted from the launcher. If the settings are lost, the profile list is rebuilt from
-    /// the files in the profiles dir. A `profiles` dir from before the dot is renamed first.
+    /// the files in the profiles dir.
     pub fn new(config_dir: PathBuf, data_dir: PathBuf) -> Self {
         let profiles_dir = config_dir.join(SUBDIRECTORY);
-        if !profiles_dir.exists() {
-            let _ = std::fs::rename(config_dir.join("profiles"), &profiles_dir);
-        }
         let mut notices = Vec::new();
         let config = match Config::load(&Config::path(&config_dir)) {
             Loaded::Fine(config) => config,
@@ -85,7 +83,7 @@ impl Loadout {
                     ..Config::default()
                 }
             }
-            Loaded::Missing | Loaded::TooNew => Config::default(),
+            Loaded::Missing | Loaded::TooNew | Loaded::Legacy => Config::default(),
         };
         let profiles = config
             .profile_names
@@ -105,7 +103,7 @@ impl Loadout {
                         notices.push(format!("'{name}' has no file, starting empty"));
                         Profile::default()
                     }
-                    Loaded::TooNew => Profile::default(),
+                    Loaded::TooNew | Loaded::Legacy => Profile::default(),
                 };
                 profile.name = name.clone();
                 profile
@@ -510,8 +508,7 @@ fn names_on_disk(dir: &std::path::Path) -> Vec<String> {
             let stem = path.file_stem()?.to_str()?;
             let valid =
                 !stem.is_empty() && stem.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
-            (valid && [scribe::EXTENSION, scribe::OLD_EXTENSION].contains(&extension))
-                .then(|| stem.to_string())
+            (valid && extension == scribe::EXTENSION).then(|| stem.to_string())
         })
         .collect();
     names.sort();
@@ -529,100 +526,13 @@ mod tests {
         loadout::wad::Wad,
     };
 
-    /// A config dir laid out exactly as the app saved it before editions existed.
-    fn legacy_altar(name: &str) -> (Altar, Profile) {
-        let altar = Altar::new(name);
-        let config = altar.file("config");
-        fs::create_dir_all(config.join("profiles")).unwrap();
-        let profile = Profile {
-            name: "brutal".into(),
-            wads: vec![Wad::new("/wads/brutal.pk3".into(), "ab".repeat(32), 0)],
-            base_wad: None,
-            uzdoom: Some(OsString::from("/usr/bin/uzdoom")),
-            ini: None,
-            host_defaults: None,
-            uzdoom_args: None,
-            watched: None,
-            dismissed: Vec::new(),
-        };
-        // the old profile layout, from before host defaults: a bare five-field array
-        let old_profile = (
-            &profile.name,
-            &profile.wads,
-            &profile.base_wad,
-            &profile.uzdoom,
-            &profile.ini,
-        );
-        // the old tuple layout: (uzdoom, base_wad, profile_names)
-        let old_config = (
-            Some(OsString::from("/usr/bin/uzdoom")),
-            None::<Wad>,
-            ["brutal"],
-        );
-        fs::write(
-            config.join("config.doom"),
-            rmp_serde::to_vec(&old_config).unwrap(),
-        )
-        .unwrap();
-        fs::write(
-            config.join("profiles/brutal.doom"),
-            rmp_serde::to_vec(&old_profile).unwrap(),
-        )
-        .unwrap();
-        (altar, profile)
-    }
-
     fn loadout(altar: &Altar) -> Loadout {
         Loadout::new(altar.file("config"), altar.file("data"))
     }
 
     #[test]
-    fn legacy_files_load_and_are_reported_as_outdated() {
-        let (altar, profile) = legacy_altar("loadout-legacy-load");
-        let loadout = loadout(&altar);
-        assert_eq!(loadout.profiles, [profile]);
-        // the UZDoom it kept is still read, for the launcher to hand to the global settings
-        assert_eq!(loadout.config.old_uzdoom, Some("/usr/bin/uzdoom".into()));
-        assert!(loadout.is_outdated());
-        assert!(!loadout.is_too_new());
-        assert!(loadout.notices.is_empty());
-        // the old dir was renamed, not copied
-        assert!(altar.file("config/.profiles").is_dir());
-        assert!(!altar.file("config/profiles").exists());
-    }
-
-    #[test]
-    fn upgrading_converts_every_file_and_keeps_the_originals_until_retired() {
-        let (altar, profile) = legacy_altar("loadout-upgrade");
-        let config_dir = altar.file("config");
-        let original = fs::read(config_dir.join("profiles/brutal.doom")).unwrap();
-
-        let upgraded = loadout(&altar).upgrade().unwrap();
-        assert_eq!(upgraded.len(), 2);
-        assert!(config_dir.join("config.rite").exists());
-        assert!(config_dir.join(".profiles/brutal.rite").exists());
-        // originals are still there, because nobody has agreed to delete them
-        assert_eq!(
-            fs::read(config_dir.join(".profiles/brutal.doom")).unwrap(),
-            original
-        );
-        assert!(config_dir.join("config.doom").exists());
-
-        let reloaded = loadout(&altar);
-        assert!(!reloaded.is_outdated());
-        assert_eq!(reloaded.profiles, [profile]);
-        assert!(reloaded.upgrade().unwrap().is_empty());
-
-        upgraded.iter().for_each(|path| scribe::retire(path));
-        assert!(!config_dir.join("config.doom").exists());
-        assert!(!config_dir.join(".profiles/brutal.doom").exists());
-        assert_eq!(loadout(&altar).profiles.len(), 1);
-    }
-
-    #[test]
     fn a_newer_file_is_reported_and_left_alone() {
-        let (altar, _) = legacy_altar("loadout-too-new");
-        loadout(&altar).upgrade().unwrap();
+        let (altar, _) = saved_altar("loadout-too-new");
         let path = altar.file("config/.profiles/brutal.rite");
         let newer = br#"placeholder"#;
         // replace the profile with a file from a "future" edition
@@ -651,16 +561,31 @@ mod tests {
         assert!(!loadout.is_too_new());
     }
 
-    /// Upgrades the legacy layout, so there is a `.rite` and a `.bak` to break.
-    fn upgraded_altar(name: &str) -> (Altar, Profile) {
-        let (altar, profile) = legacy_altar(name);
-        loadout(&altar).upgrade().unwrap();
+    /// A loadout of one profile, every file saved twice, so there is a `.rite` and a `.bak` to
+    /// break.
+    fn saved_altar(name: &str) -> (Altar, Profile) {
+        let altar = Altar::new(name);
+        let config_dir = altar.file("config");
+        fs::create_dir_all(config_dir.join(SUBDIRECTORY)).unwrap();
+        let profile = Profile {
+            uzdoom: Some(OsString::from("/usr/bin/uzdoom")),
+            ..Profile::new(
+                "brutal".into(),
+                vec![Wad::new("/wads/brutal.pk3".into(), "ab".repeat(32), 0)],
+            )
+        };
+        for _ in 0..2 {
+            profile.save(&Profile::path(&config_dir, "brutal")).unwrap();
+            Config::default()
+                .write(&config_dir, std::slice::from_ref(&profile))
+                .unwrap();
+        }
         (altar, profile)
     }
 
     #[test]
     fn a_corrupt_profile_is_restored_from_its_backup_and_the_user_is_told() {
-        let (altar, profile) = upgraded_altar("loadout-restore");
+        let (altar, profile) = saved_altar("loadout-restore");
         let path = altar.file("config/.profiles/brutal.rite");
         fs::write(&path, b"not a profile").unwrap();
         let loadout = loadout(&altar);
@@ -674,7 +599,7 @@ mod tests {
 
     #[test]
     fn a_corrupt_profile_without_a_backup_is_empty_but_keeps_its_name_and_its_bytes() {
-        let (altar, _) = upgraded_altar("loadout-lost");
+        let (altar, _) = saved_altar("loadout-lost");
         let path = altar.file("config/.profiles/brutal.rite");
         fs::remove_file(altar.file("config/.profiles/brutal.rite.bak")).unwrap();
         fs::write(&path, b"not a profile").unwrap();
@@ -699,7 +624,7 @@ mod tests {
 
     #[test]
     fn a_profile_with_no_file_is_reported_and_starts_empty() {
-        let (altar, _) = upgraded_altar("loadout-missing");
+        let (altar, _) = saved_altar("loadout-missing");
         burn_profile(&altar);
         let loadout = loadout(&altar);
         assert_eq!(loadout.profiles[0].name, "brutal");
@@ -708,7 +633,7 @@ mod tests {
 
     #[test]
     fn lost_settings_are_set_aside_and_the_profile_list_is_rebuilt_from_the_files() {
-        let (altar, profile) = upgraded_altar("loadout-config-lost");
+        let (altar, profile) = saved_altar("loadout-config-lost");
         fs::remove_file(altar.file("config/config.rite.bak")).unwrap();
         fs::write(altar.file("config/config.rite"), b"not settings").unwrap();
         let loadout = loadout(&altar);
@@ -794,7 +719,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_failed_insert_leaves_the_list_and_the_disk_alone() {
-        let (altar, profile) = upgraded_altar("loadout-insert-fails");
+        let (altar, profile) = saved_altar("loadout-insert-fails");
         let mut loadout = loadout(&altar);
         let Some(_frozen) = Frozen::new(altar.file("config/.profiles")) else {
             return;
@@ -809,7 +734,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn an_insert_whose_settings_cannot_be_saved_is_taken_back() {
-        let (altar, profile) = upgraded_altar("loadout-insert-config-fails");
+        let (altar, profile) = saved_altar("loadout-insert-config-fails");
         let mut loadout = loadout(&altar);
         let Some(_frozen) = Frozen::new(altar.file("config")) else {
             return;
@@ -823,7 +748,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_failed_remove_deletes_nothing() {
-        let (altar, profile) = upgraded_altar("loadout-remove-fails");
+        let (altar, profile) = saved_altar("loadout-remove-fails");
         let mut loadout = loadout(&altar);
         profile
             .write(&loadout.config_dir, &loadout.data_dir)
@@ -844,7 +769,7 @@ mod tests {
 
     #[test]
     fn removing_them_all_takes_every_profile_and_its_saves_but_not_the_downloads() {
-        let (altar, profile) = upgraded_altar("loadout-remove-all");
+        let (altar, profile) = saved_altar("loadout-remove-all");
         let mut loadout = loadout(&altar);
         profile
             .write(&loadout.config_dir, &loadout.data_dir)
@@ -914,7 +839,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_failed_remove_all_deletes_nothing() {
-        let (altar, profile) = upgraded_altar("loadout-remove-all-fails");
+        let (altar, profile) = saved_altar("loadout-remove-all-fails");
         let mut loadout = loadout(&altar);
         profile
             .write(&loadout.config_dir, &loadout.data_dir)
@@ -932,7 +857,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_failed_rename_leaves_the_old_profile_and_its_saves_in_place() {
-        let (altar, profile) = upgraded_altar("loadout-rename-fails");
+        let (altar, profile) = saved_altar("loadout-rename-fails");
         let mut loadout = loadout(&altar);
         profile
             .write(&loadout.config_dir, &loadout.data_dir)
@@ -958,7 +883,7 @@ mod tests {
 
     #[test]
     fn inserting_in_the_middle_keeps_the_cursor_on_the_new_profile() {
-        let (altar, profile) = upgraded_altar("loadout-insert-middle");
+        let (altar, profile) = saved_altar("loadout-insert-middle");
         let mut loadout = loadout(&altar);
         let mut index = 0;
         loadout.insert(&mut index, named("first")).unwrap();
@@ -971,7 +896,7 @@ mod tests {
 
     #[test]
     fn inserting_on_the_new_profile_row_moves_the_cursor_down_with_it() {
-        let (altar, profile) = upgraded_altar("loadout-insert-last");
+        let (altar, profile) = saved_altar("loadout-insert-last");
         let mut loadout = loadout(&altar);
         // the `+` row sits just past the last profile
         let mut index = loadout.profiles.len();
@@ -993,7 +918,7 @@ mod tests {
 
     #[test]
     fn removing_keeps_the_cursor_in_range() {
-        let (altar, _) = upgraded_altar("loadout-remove-ok");
+        let (altar, _) = saved_altar("loadout-remove-ok");
         let mut loadout = loadout(&altar);
         let mut index = 1;
         loadout.insert(&mut index, named("second")).unwrap();
@@ -1023,7 +948,7 @@ mod tests {
 
     #[test]
     fn renaming_moves_the_saves_and_retires_the_old_file() {
-        let (altar, profile) = upgraded_altar("loadout-rename");
+        let (altar, profile) = saved_altar("loadout-rename");
         let mut loadout = loadout(&altar);
         profile
             .write(&loadout.config_dir, &loadout.data_dir)
@@ -1049,7 +974,7 @@ mod tests {
 
     #[test]
     fn a_new_profile_replacing_one_of_its_name_takes_its_place_and_not_its_saves() {
-        let (altar, profile) = upgraded_altar("loadout-supplant-new");
+        let (altar, profile) = saved_altar("loadout-supplant-new");
         let mut loadout = loadout(&altar);
         profile
             .write(&loadout.config_dir, &loadout.data_dir)
@@ -1074,7 +999,7 @@ mod tests {
 
     #[test]
     fn an_edited_profile_renamed_over_another_keeps_its_place_and_its_saves() {
-        let (altar, profile) = upgraded_altar("loadout-supplant-edited");
+        let (altar, profile) = saved_altar("loadout-supplant-edited");
         let mut loadout = loadout(&altar);
         profile
             .write(&loadout.config_dir, &loadout.data_dir)
@@ -1101,7 +1026,7 @@ mod tests {
 
     #[test]
     fn leaving_the_editor_without_changes_writes_nothing() {
-        let (altar, profile) = upgraded_altar("loadout-replace-unchanged");
+        let (altar, profile) = saved_altar("loadout-replace-unchanged");
         let mut loadout = loadout(&altar);
         let files = [
             "config/.profiles/brutal.rite",
@@ -1124,7 +1049,7 @@ mod tests {
 
     #[test]
     fn an_edit_that_keeps_the_name_does_not_rewrite_the_settings() {
-        let (altar, profile) = upgraded_altar("loadout-replace-keeps-config");
+        let (altar, profile) = saved_altar("loadout-replace-keeps-config");
         let mut loadout = loadout(&altar);
         // saving the settings again would copy the current config over its backup
         let backup = fs::read(altar.file("config/config.rite.bak")).unwrap();
@@ -1154,7 +1079,7 @@ mod tests {
 
     #[test]
     fn renaming_a_profile_keeps_its_own_ini_pointing_at_the_moved_file() {
-        let (altar, profile) = upgraded_altar("loadout-rename-ini");
+        let (altar, profile) = saved_altar("loadout-rename-ini");
         let mut loadout = loadout(&altar);
         let ini = altar.file("data/brutal/uzdoom.ini");
         fs::create_dir_all(altar.file("data/brutal")).unwrap();

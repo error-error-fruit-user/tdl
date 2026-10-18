@@ -38,10 +38,9 @@ const MAX_NAME: usize = 64;
 
 /// Profiles to share, in order, and, if their maker chose to, their global settings.
 ///
-/// Saved as `{profiles, settings}`. Scrolls from before several profiles could be shared held one
-/// profile's fields at the top level; they still read, as a scroll of that one profile.
+/// Saved as `{profiles, settings}`. Scrolls of edition 0 (tdl 0.6.0), which held one profile's
+/// fields at the top level, are legacy: `upgrade_legacy.py --scroll` upgrades them.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(from = "SavedScroll")]
 pub struct Scroll {
     pub profiles: Vec<SealedProfile>,
     /// The maker's music and quip settings, if they chose to share them. Never their song.
@@ -61,36 +60,6 @@ pub struct SealedProfile {
     pub host_defaults: Option<HostSettings>,
 }
 
-/// A scroll as it is read. Untagged, so a scroll of edition 0, which was one profile with no
-/// `profiles` list, lands in [`SavedScroll::One`].
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum SavedScroll {
-    Many {
-        profiles: Vec<SealedProfile>,
-        #[serde(default)]
-        settings: Option<Shared>,
-    },
-    One {
-        #[serde(flatten)]
-        profile: SealedProfile,
-        #[serde(default)]
-        settings: Option<Shared>,
-    },
-}
-
-impl From<SavedScroll> for Scroll {
-    fn from(saved: SavedScroll) -> Self {
-        match saved {
-            SavedScroll::Many { profiles, settings } => Self { profiles, settings },
-            SavedScroll::One { profile, settings } => Self {
-                profiles: vec![profile],
-                settings,
-            },
-        }
-    }
-}
-
 /// One wad on a scroll.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct Inscribed {
@@ -105,14 +74,9 @@ pub struct Inscribed {
 }
 
 impl Edition for Scroll {
-    const UPGRADES: &[fn(Self) -> Self] = &[v0_to_v1];
-}
-
-/// Edition 1 holds a list of profiles. A scroll of edition 0, one profile, reads as a list of one
-/// already (see [`SavedScroll`]); the new edition number is what keeps older builds, which only
-/// know one profile, from reading a scroll of several as nothing.
-fn v0_to_v1(scroll: Scroll) -> Scroll {
-    scroll
+    /// Edition 1 holds a list of profiles, as tdl 1.0.0 writes it.
+    const FIRST: u32 = 1;
+    const UPGRADES: &[fn(Self) -> Self] = &[];
 }
 
 /// What breaking the seal turned up: each profile with its wads in load order, each wad found or
@@ -546,51 +510,22 @@ mod tests {
     }
 
     #[test]
-    fn a_scroll_of_one_profile_from_edition_zero_reads_as_a_list_of_one() {
+    fn a_scroll_of_one_profile_from_edition_zero_is_legacy() {
         let altar = Altar::new("scroll-edition-zero");
         let path = altar.file("old.scroll");
-        let wad = inscribed("a.wad", b"a");
         write_edition_zero(
             &path,
             EditionZero {
                 name: "old".into(),
-                wads: vec![wad.clone()],
-                base_wad: Some(inscribed("DOOM2.WAD", b"iwad")),
-                host_defaults: Some(HostSettings::new(Some(9000))),
-                settings: Some(Shared {
-                    no_quips: true,
-                    ..Shared::default()
-                }),
-            },
-        );
-        assert_eq!(Scroll::stored_version(&path), Some(0));
-        let scroll = Scroll::open(&path).unwrap();
-        assert_eq!(scroll.profiles.len(), 1);
-        let profile = &scroll.profiles[0];
-        assert_eq!(profile.name, "old");
-        assert_eq!(profile.wads, [wad]);
-        assert_eq!(profile.base_wad.as_ref().unwrap().name, "DOOM2.WAD");
-        assert_eq!(profile.host_defaults.as_ref().unwrap().port, "9000");
-        assert!(scroll.settings.unwrap().no_quips);
-    }
-
-    #[test]
-    fn a_scroll_from_before_settings_could_be_shared_carries_none() {
-        let altar = Altar::new("scroll-before-settings");
-        let path = altar.file("old.scroll");
-        write_edition_zero(
-            &path,
-            EditionZero {
-                name: "old".into(),
-                wads: Vec::new(),
+                wads: vec![inscribed("a.wad", b"a")],
                 base_wad: None,
                 host_defaults: None,
                 settings: None,
             },
         );
-        let scroll = Scroll::open(&path).unwrap();
-        assert_eq!(scroll.settings, None);
-        assert_eq!(scroll.profiles[0].name, "old");
+        assert_eq!(Scroll::stored_version(&path), Some(0));
+        assert!(Scroll::is_legacy(&path));
+        assert_eq!(Scroll::open(&path), None);
     }
 
     #[test]

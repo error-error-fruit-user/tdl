@@ -10,9 +10,6 @@ use std::{
 /// The extension of every file the app writes: a profile is a rite, and so is the config.
 pub const EXTENSION: &str = "rite";
 
-/// What these files used to be called. They are still read, and retired on the next write.
-pub const OLD_EXTENSION: &str = "doom";
-
 /// `brutal.rite` becomes `brutal.rite.tmp`, `brutal.rite.bak`, and so on.
 pub fn suffixed(path: &Path, suffix: &str) -> PathBuf {
     let mut name = path.as_os_str().to_owned();
@@ -20,30 +17,22 @@ pub fn suffixed(path: &Path, suffix: &str) -> PathBuf {
     name.into()
 }
 
-/// Reads `path`, or the file it used to be called if the old name is all that exists.
-pub fn peruse(path: &Path) -> io::Result<Vec<u8>> {
-    fs::read(path).or_else(|_| fs::read(path.with_extension(OLD_EXTENSION)))
-}
-
 /// Replaces `path` with `bytes` without ever leaving a half-written file behind.
 ///
 /// The new contents are written and synced to a `.tmp` beside the file, the file being replaced
 /// is copied to `.bak`, and only then is the `.tmp` renamed over it. A rename within a dir is
-/// atomic, so a crash leaves either the old file or the new one, never a torn page. If only the
-/// old-extension twin existed, it becomes the backup, and it is left where it is: deleting
-/// originals is the job of [`retire`], once someone has checked the new file and the user agrees.
+/// atomic, so a crash leaves either the old file or the new one, never a torn page.
 ///
 /// The directory itself is not synced: that is Unix-only, and a launcher's config isn't worth it.
 pub fn inscribe(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let old_path = path.with_extension(OLD_EXTENSION);
     let ink = suffixed(path, ".tmp");
     let result = (|| {
         let mut scroll = fs::File::create(&ink)?;
         scroll.write_all(bytes)?;
         scroll.sync_all()?;
-        // 🗝️ the backup comes from the newest version that exists, which is `path` once migrated
-        if let Some(previous) = [path, &old_path].into_iter().find(|p| p.exists()) {
-            fs::copy(previous, suffixed(path, ".bak"))?;
+        // 🗝️ the backup is the file as it was
+        if path.exists() {
+            fs::copy(path, suffixed(path, ".bak"))?;
         }
         fs::rename(&ink, path)
     })();
@@ -54,20 +43,18 @@ pub fn inscribe(path: &Path, bytes: &[u8]) -> io::Result<()> {
     result
 }
 
-/// Deletes what an upgrade left behind: the old-extension original and the `.bak` copy of the file
-/// as it was. The current file is never touched.
+/// Deletes what an upgrade left behind: the `.bak` copy of the file as it was. The current file is
+/// never touched.
 pub fn retire(path: &Path) {
-    let _ = fs::remove_file(path.with_extension(OLD_EXTENSION));
     let _ = fs::remove_file(suffixed(path, ".bak"));
 }
 
-/// Destroys the file and every trace of it: the backup, a stray `.tmp`, and the old-extension twin.
+/// Destroys the file and every trace of it: the backup and a stray `.tmp`.
 pub fn burn(path: &Path) {
     for ashes in [
         path.to_path_buf(),
         suffixed(path, ".bak"),
         suffixed(path, ".tmp"),
-        path.with_extension(OLD_EXTENSION),
     ] {
         let _ = fs::remove_file(ashes);
     }
@@ -144,28 +131,14 @@ pub mod tests {
     }
 
     #[test]
-    fn old_extension_files_are_read_then_retired_into_the_backup() {
-        let altar = Altar::new("migrate");
+    fn retiring_deletes_the_backup_and_keeps_the_file() {
+        let altar = Altar::new("retire");
         let path = altar.file("a.rite");
-        fs::write(altar.file("a.doom"), b"old").unwrap();
-        assert_eq!(peruse(&path).unwrap(), b"old");
+        inscribe(&path, b"old").unwrap();
         inscribe(&path, b"new").unwrap();
-        assert_eq!(peruse(&path).unwrap(), b"new");
-        assert_eq!(fs::read(altar.file("a.rite.bak")).unwrap(), b"old");
-        // the original stays until somebody retires it
-        assert!(altar.file("a.doom").exists());
         retire(&path);
-        assert!(!altar.file("a.doom").exists());
         assert!(!altar.file("a.rite.bak").exists());
         assert_eq!(fs::read(&path).unwrap(), b"new");
-    }
-
-    #[test]
-    fn the_new_file_wins_when_both_extensions_exist() {
-        let altar = Altar::new("both");
-        fs::write(altar.file("a.doom"), b"old").unwrap();
-        fs::write(altar.file("a.rite"), b"new").unwrap();
-        assert_eq!(peruse(&altar.file("a.rite")).unwrap(), b"new");
     }
 
     #[test]
@@ -175,7 +148,6 @@ pub mod tests {
         inscribe(&path, b"one").unwrap();
         inscribe(&path, b"two").unwrap();
         fs::write(altar.file("a.rite.tmp"), b"x").unwrap();
-        fs::write(altar.file("a.doom"), b"y").unwrap();
         burn(&path);
         assert_eq!(fs::read_dir(&altar.0).unwrap().count(), 0);
     }

@@ -22,6 +22,7 @@ use crate::{
     loadout::Loadout,
     loadout::edition::{Edition, Loaded},
     loadout::host_settings::HostSettings,
+    loadout::legacy,
     loadout::profile::Profile,
     loadout::scribe,
     loadout::uac::{Music, Shared, Uac},
@@ -106,9 +107,9 @@ pub struct Launcher {
     passed_scroll: Option<PathBuf>,
     /// Whether the scroll replaces the loadout's profiles (`--unseal-delete`), and asks first.
     unseal_delete: Option<Ask>,
-    /// Whether the global settings took any from an older `config.rite`, to be saved before the
-    /// upgrade writes it without them.
-    adopted: bool,
+    /// Files from before tdl 1.0.0 that were found, which `upgrade_legacy.py` has to upgrade
+    /// before anything is done.
+    legacy: Vec<PathBuf>,
     /// The search being typed, if one is.
     search: Option<Search>,
     /// The last search's matches, for `;` and `,` to step through.
@@ -232,7 +233,7 @@ impl Launcher {
                 notices.push("Your global settings were unreadable, saved as .corrupt".to_string());
                 Uac::default()
             }
-            Loaded::TooNew => {
+            Loaded::TooNew | Loaded::Legacy => {
                 uac_writable = false;
                 Uac::default()
             }
@@ -255,6 +256,8 @@ impl Launcher {
             Some(root) => (root.join("config"), root.join("data")),
             None => (standard_config_dir.into(), standard_data_dir.into()),
         };
+        // 🏚️ looked for before the loadout is opened, which makes its profiles dir
+        let legacy = legacy::found(standard_config_dir, &config_dir);
         let mut loadout = Loadout::new(config_dir, data_dir);
         loadout.notices.extend(notices);
         let passed_wads: Vec<_> = start.wads.iter().map(|dir| absolute(dir)).collect();
@@ -267,9 +270,8 @@ impl Launcher {
         };
         loadout.uac = global;
         loadout.uac_path = uac_path;
-        loadout.uac_writable = uac_writable;
-        // 🌐 settings a loadout kept before they all went global, saved once the upgrade is agreed to
-        let adopted = loadout.uac.adopt(&mut loadout.config);
+        // 🏚️ nothing is written while legacy files wait for the script
+        loadout.uac_writable = uac_writable && legacy.is_empty();
         Self {
             loadout,
             table_state: TableState::new().with_selected(0),
@@ -296,7 +298,7 @@ impl Launcher {
             forget_wads: start.forget_wads,
             passed_scroll: start.unseal.as_deref().map(absolute),
             unseal_delete: start.unseal_delete,
-            adopted,
+            legacy,
             search: None,
             found: Found::default(),
             selection: Selection::default(),
@@ -378,17 +380,18 @@ impl Launcher {
             Warning::files_too_new(grimoire)?;
             return Err(Error::Interrupted);
         }
+        // 🏚️ files from before tdl 1.0.0 are upgraded by the script, not here: nothing is touched
+        if !self.legacy.is_empty() {
+            let advice = legacy::advice(&self.legacy, self.passed_loadout.as_deref());
+            Warning::summon_lines(grimoire, &advice)?;
+            return Err(Error::Legacy(advice.join("\n")));
+        }
         // 📜 anything that was fished out of the wreckage on the way in
         for notice in std::mem::take(&mut self.loadout.notices) {
             Warning::summon(grimoire, &notice)?;
         }
         if self.loadout.is_outdated() {
             if !Dialog::should_upgrade(grimoire)? {
-                return Err(Error::Interrupted);
-            }
-            // 🌐 the loadout's old settings are kept globally first, or the upgrade would lose them
-            if self.adopted && self.loadout.keep_uac().is_err() {
-                Warning::upgrade_failed(grimoire)?;
                 return Err(Error::Interrupted);
             }
             // ⏳ checking every page takes a moment, so don't leave the old dialog hanging there
@@ -506,6 +509,10 @@ impl Launcher {
         let loadout = &mut launcher.loadout;
         if loadout.is_too_new() {
             return Err("Your files are from a newer tdl, please update".to_string());
+        }
+        if !launcher.legacy.is_empty() {
+            let advice = legacy::advice(&launcher.legacy, launcher.passed_loadout.as_deref());
+            return Err(advice.join("\n"));
         }
         for notice in std::mem::take(&mut loadout.notices) {
             eprintln!("{notice}");
@@ -2330,5 +2337,23 @@ mod tests {
         assert_eq!(reopened.loadout.uac.loadout, None);
         assert!(reopened.loadout.uac.wad_dirs.is_empty());
         assert!(reopened.loadout.config.wad_dirs.is_empty());
+    }
+
+    #[test]
+    fn legacy_files_are_found_before_the_loadout_is_opened_and_left_as_they_are() {
+        let altar = Altar::new("launcher-legacy");
+        let standard = altar.file("standard");
+        fs::create_dir_all(standard.join("profiles")).unwrap();
+        let old = rmp_serde::to_vec(&("brutal", Vec::<()>::new())).unwrap();
+        fs::write(standard.join("profiles/brutal.doom"), &old).unwrap();
+        fs::write(standard.join("global.rite"), b"old").unwrap();
+        let launcher = Launcher::new(Start::default(), &standard, &standard);
+        assert_eq!(
+            launcher.legacy,
+            [standard.join("global.rite"), standard.join("profiles")]
+        );
+        assert!(!launcher.loadout.uac_writable, "nothing is saved over them");
+        assert_eq!(fs::read(standard.join("profiles/brutal.doom")).unwrap(), old);
+        assert_eq!(fs::read(standard.join("global.rite")).unwrap(), b"old");
     }
 }

@@ -39,6 +39,11 @@ pub enum Error {
     #[error("Upgrade Error: {0}!")]
     Upgrade(&'static str),
 
+    /// Files from before tdl 1.0.0 were found: what they are and how to upgrade them, shown again
+    /// once the windows are gone, so the command can be copied.
+    #[error("{0}")]
+    Legacy(String),
+
     /// `uac.rite` is from a newer tdl, so it is never written over.
     #[error("The global settings are from a newer tdl!")]
     UacTooNew,

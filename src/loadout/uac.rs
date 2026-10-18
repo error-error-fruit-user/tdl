@@ -1,6 +1,8 @@
 //! Settings that belong to no loadout: which loadout to open when none is passed, wad dirs every
-//! loadout uses, UZDoom, the base wad and UZDoom's arguments, the splash, the music, and the quips. Kept in `uac.rite` in the platform's standard config dir, the one place every
-//! loadout can find.
+//! loadout uses, UZDoom, the base wad, the ini and UZDoom's arguments, the theme, the splash, the
+//! music, and the quips. Kept in `uac.rite` in the platform's standard config dir, the one place
+//! every loadout can find. Before tdl 1.0.0 it was `global.rite`, which `upgrade_legacy.py`
+//! upgrades.
 
 use std::{
     ffi::OsString,
@@ -12,7 +14,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     loadout::{
-        config::Config,
         edition::Edition,
         saved::{optional_path, paths},
         wad::Wad,
@@ -27,9 +28,8 @@ pub struct Uac {
     /// The loadout to open when tdl starts without `--loadout`, kept from an earlier `--loadout`.
     #[serde(default, with = "optional_path")]
     pub loadout: Option<OsString>,
-    /// Wad dirs kept from `--wads` for every loadout, used after the loadout's own. Called
-    /// `wad_folders` before edition 1.
-    #[serde(default, alias = "wad_folders", with = "paths")]
+    /// Wad dirs kept from `--wads` for every loadout, used after the loadout's own.
+    #[serde(default, with = "paths")]
     pub wad_dirs: Vec<OsString>,
     /// The quip under the splash logo whenever tdl starts, unless `--splash-quip` asks
     /// for another. Set in the settings (`O` in the launcher). Missing in older files, which count
@@ -48,8 +48,7 @@ pub struct Uac {
     /// another. Picked in the settings; missing in older files, which count as the built-in one.
     #[serde(default, with = "optional_path")]
     pub song: Option<OsString>,
-    /// Path to the UZDoom executable, used by profiles that don't set their own. Kept in each
-    /// loadout's `config.rite` before its edition 5; missing in older files, which count as none.
+    /// Path to the UZDoom executable, used by profiles that don't set their own.
     #[serde(default, with = "optional_path")]
     pub uzdoom: Option<OsString>,
     /// The base wad used by profiles that don't set their own, the same way.
@@ -208,14 +207,10 @@ impl SplashQuip {
 }
 
 impl Edition for Uac {
-    /// Born after editions existed, so edition 0 is already a named map, never a bare array.
-    const UPGRADES: &[fn(Self) -> Self] = &[v0_to_v1];
-}
-
-/// Edition 1 calls `wad_folders` `wad_dirs`. The old name still reads (see [`Uac::wad_dirs`]);
-/// the new edition number keeps older builds, which would drop the field, from reading the file.
-fn v0_to_v1(global: Uac) -> Uac {
-    global
+    /// Edition 1 was `global.rite`, the last before tdl 1.0.0; edition 2 calls its `vault` the
+    /// `loadout`.
+    const FIRST: u32 = 2;
+    const UPGRADES: &[fn(Self) -> Self] = &[];
 }
 
 impl Uac {
@@ -233,42 +228,6 @@ impl Uac {
     /// (UZDoom's usual one).
     pub fn ini_in_effect(&self) -> Option<&OsString> {
         self.session_ini.as_ref().or(self.ini.as_ref())
-    }
-
-    /// Takes the settings a loadout's `config.rite` kept before its edition 5, for each that isn't
-    /// set here yet, so the first loadout opened since keeps its own; what is set here wins over
-    /// any other loadout's. They are taken out of `config` either way. Returns whether any was
-    /// taken.
-    pub fn adopt(&mut self, config: &mut Config) -> bool {
-        let mut adopted = false;
-        if let Some(uzdoom) = config.old_uzdoom.take()
-            && self.uzdoom.is_none()
-        {
-            self.uzdoom = Some(uzdoom);
-            adopted = true;
-        }
-        if let Some(base_wad) = config.old_base_wad.take()
-            && self.base_wad.is_none()
-        {
-            self.base_wad = Some(base_wad);
-            adopted = true;
-        }
-        let args = std::mem::take(&mut config.old_uzdoom_args);
-        if !args.is_empty() && self.uzdoom_args.is_empty() {
-            self.uzdoom_args = args;
-            adopted = true;
-        }
-        if std::mem::take(&mut config.old_skip_splash) && !self.skip_splash {
-            self.skip_splash = true;
-            adopted = true;
-        }
-        if let Some(port) = config.old_host_port.take()
-            && self.host_port.is_none()
-        {
-            self.host_port = Some(port);
-            adopted = true;
-        }
-        adopted
     }
 
     /// The settings that can be shared in a scroll.
@@ -305,7 +264,7 @@ impl Uac {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::loadout::scribe::tests::Altar;
+    use crate::loadout::{edition::Loaded, scribe::tests::Altar};
 
     #[test]
     fn global_settings_save_and_load_back() {
@@ -324,6 +283,8 @@ mod tests {
             uzdoom_args: "-nomusic".into(),
             skip_splash: true,
             host_port: Some(9000),
+            ini: Some("/inis/mine.ini".into()),
+            theme: Some("/themes/blue.toml".into()),
             ..Uac::default()
         };
         global.keep(&path).unwrap();
@@ -332,6 +293,7 @@ mod tests {
         let session = Uac {
             session_uzdoom: Some("/test/uzdoom-dev".into()),
             session_base_wad: Some(Wad::new("/test/freedoom2.wad".into(), "cd".repeat(32), 1)),
+            session_ini: Some("/test/session.ini".into()),
             ..global.clone()
         };
         session.keep(&path).unwrap();
@@ -339,71 +301,31 @@ mod tests {
     }
 
     #[test]
-    fn global_settings_from_before_the_quip_show_a_random_one() {
+    fn global_settings_from_before_tdl_1_are_legacy() {
         #[derive(Serialize)]
         struct Before {
-            loadout: Option<String>,
-            wad_folders: Vec<String>,
+            vault: Option<String>,
+            wad_dirs: Vec<String>,
         }
         #[derive(Serialize)]
         struct Sealed {
             version: u32,
             data: Before,
         }
-        let altar = Altar::new("global-before-quip");
+        let altar = Altar::new("uac-legacy");
         let path = Uac::path(&altar.0);
         let bytes = rmp_serde::to_vec_named(&Sealed {
-            version: 0,
+            version: 1,
             data: Before {
-                loadout: None,
-                wad_folders: vec!["/wads".into()],
+                vault: Some("/home/me/doom".into()),
+                wad_dirs: vec!["/wads".into()],
             },
         })
         .unwrap();
         fs::write(&path, bytes).unwrap();
-        let global = Uac::open(&path).unwrap();
-        assert_eq!(global.splash_quip, SplashQuip::Random);
-        assert!(!global.no_quips);
-        assert_eq!(global.song, None);
-        assert_eq!(global.music, Music::Splash);
-        assert_eq!(global.wad_dirs, [OsString::from("/wads")]);
-    }
-
-    #[test]
-    fn a_loadouts_old_settings_are_taken_where_none_are_set_and_taken_out_either_way() {
-        let old = || Config {
-            old_uzdoom: Some("/loadout/uzdoom".into()),
-            old_base_wad: Some(Wad::new("/loadout/DOOM2.WAD".into(), "ab".repeat(32), 3)),
-            old_uzdoom_args: "-nomusic".into(),
-            old_skip_splash: true,
-            old_host_port: Some(9000),
-            profile_names: vec!["brutal".into()],
-            ..Config::default()
-        };
-        let mut config = old();
-        let mut global = Uac::default();
-        assert!(global.adopt(&mut config));
-        assert_eq!(global.uzdoom, Some("/loadout/uzdoom".into()));
-        assert_eq!(global.base_wad.as_ref().map(|wad| wad.size), Some(3));
-        assert_eq!(global.uzdoom_args, "-nomusic");
-        assert!(global.skip_splash);
-        assert_eq!(global.host_port, Some(9000));
-        assert!(
-            config
-                == Config {
-                    profile_names: vec!["brutal".into()],
-                    ..Config::default()
-                }
-        );
-
-        // another loadout's: what is set already wins, and nothing is left behind
-        let mut other = old();
-        other.old_uzdoom = Some("/other/uzdoom".into());
-        assert!(!global.adopt(&mut other));
-        assert_eq!(global.uzdoom, Some("/loadout/uzdoom".into()));
-        assert!(other.old_uzdoom.is_none() && other.old_base_wad.is_none());
-        // a config with none has nothing to give
-        assert!(!Uac::default().adopt(&mut Config::default()));
+        assert!(Uac::is_legacy(&path));
+        assert_eq!(Uac::load(&path), Loaded::Legacy);
+        assert_eq!(Uac::current(), 2);
     }
 
     #[test]

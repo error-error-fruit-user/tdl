@@ -77,9 +77,6 @@ pub mod paths {
 
 /// A wad saved on its own, with its whole path: the global base wad, and any wad in a profile that
 /// can't be split into a dir and a text file name.
-///
-/// The field order is the layout of edition 0, where a wad was a bare `(path, hash)` array, so new
-/// fields only ever go at the end.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SavedWad {
     pub path: SavedPath,

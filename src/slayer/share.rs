@@ -9,6 +9,7 @@ use crate::{
     loadout::{
         Loadout,
         edition::Edition,
+        legacy,
         profile::Profile,
         scroll::{self, Scroll, UnsealedProfile},
         uac::Shared,
@@ -241,6 +242,10 @@ fn read(grimoire: &mut Grimoire, path: &Path) -> Result<Option<Scroll>> {
     }
     if Scroll::stored_version(path).is_some_and(|version| version > Scroll::current()) {
         Warning::summon(grimoire, "The scroll is from a newer tdl, please update!")?;
+        return Ok(None);
+    }
+    if legacy::is_legacy_scroll(path) {
+        Warning::summon(grimoire, &legacy::scroll_advice(path))?;
         return Ok(None);
     }
     let Some(scroll) = Scroll::open(path) else {

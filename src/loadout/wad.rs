@@ -141,23 +141,6 @@ impl Wad {
             .to_string_lossy()
     }
 
-    /// This wad with its size filled in from the file as it is now, if the size was never recorded
-    /// (0) and the file is there. Nothing is hashed, and the modified time stays unknown, so the
-    /// file is still never trusted without being read. Changes made before this point can't be
-    /// seen, but from now on a change in size is noticed.
-    pub fn with_size_backfilled(self) -> Self {
-        if self.size != 0 {
-            return self;
-        }
-        match fs::metadata(&self.path) {
-            Ok(metadata) if metadata.is_file() => Self {
-                size: metadata.len(),
-                ..self
-            },
-            _ => self,
-        }
-    }
-
     /// Copies the file to `path`, which must not exist yet, and returns the copy as a wad of its
     /// own with the same hash and settings, for pasting a wad whose name the profile already has.
     /// The copy is only trusted without being read again (see [`Wad::is_unchanged`]) if the
@@ -382,32 +365,6 @@ mod tests {
         assert_ne!(fresh.hash, before);
         assert_eq!(fresh.size, 10);
         assert!(fresh.volatile);
-    }
-
-    #[test]
-    fn backfilling_fills_in_only_an_unknown_size_of_a_file_that_is_there() {
-        let altar = Altar::new("wad-backfill");
-        fs::write(altar.file("a.wad"), b"12345").unwrap();
-        let unknown = Wad::new(altar.file("a.wad").into(), "ab".into(), 0);
-        let backfilled = unknown.clone().with_size_backfilled();
-        assert_eq!(backfilled.size, 5);
-        assert_eq!(
-            backfilled.modified, 0,
-            "still not trusted without reading it"
-        );
-        // and now a change is noticed
-        fs::write(altar.file("a.wad"), b"123456789").unwrap();
-        assert!(matches!(backfilled.check(), Some(Fault::Changed { .. })));
-
-        // a known size is left alone, even if the file has since changed
-        let known = Wad::new(altar.file("a.wad").into(), "ab".into(), 3);
-        assert_eq!(known.clone().with_size_backfilled(), known);
-        // and so is a wad with nothing to measure
-        let gone = Wad::new(altar.file("gone.wad").into(), "ab".into(), 0);
-        assert_eq!(gone.clone().with_size_backfilled(), gone);
-        fs::create_dir(altar.file("dir.wad")).unwrap();
-        let dir = Wad::new(altar.file("dir.wad").into(), "ab".into(), 0);
-        assert_eq!(dir.clone().with_size_backfilled(), dir);
     }
 
     #[test]

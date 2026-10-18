@@ -61,8 +61,7 @@ pub struct Watching {
     pub new: Vec<PathBuf>,
 }
 
-/// A profile as it is saved. The field order is the layout of edition 0, where this was a bare
-/// array, so new fields only ever go at the end.
+/// A profile as it is saved.
 #[derive(Deserialize, Serialize)]
 struct SavedProfile {
     name: String,
@@ -73,9 +72,8 @@ struct SavedProfile {
     /// Missing in files from before host defaults, which count as none.
     #[serde(default)]
     host_defaults: Option<HostSettings>,
-    /// Every dir the wads are in, each listed once. Missing in files from before edition 2,
-    /// whose wads all carry their whole path. Called `folders` before edition 4.
-    #[serde(default, alias = "folders")]
+    /// Every dir the wads are in, each listed once.
+    #[serde(default)]
     dirs: Vec<SavedPath>,
     /// Missing in files from before profiles had arguments of their own, which count as none.
     #[serde(default)]
@@ -87,16 +85,12 @@ struct SavedProfile {
     dismissed: Vec<SavedPath>,
 }
 
-/// One wad in a saved profile.
-///
-/// Untagged, so files from before edition 2 still read: their wads have no `dir`, so they land
-/// in [`SavedEntry::Loose`].
+/// One wad in a saved profile. Untagged: a wad with a `dir` is [`SavedEntry::Filed`].
 #[derive(Deserialize, Serialize)]
 #[serde(untagged)]
 enum SavedEntry {
-    /// `name` in the profile's dir number `dir` (called `folder` before edition 4): the usual case.
+    /// `name` in the profile's dir number `dir`: the usual case.
     Filed {
-        #[serde(alias = "folder")]
         dir: u32,
         name: String,
         hash: String,
@@ -105,7 +99,7 @@ enum SavedEntry {
         modified: u64,
     },
     /// A wad saved with its whole path, for one whose file name isn't valid UTF-8 (or that has no
-    /// dir to speak of), and for every wad saved before edition 2.
+    /// dir to speak of).
     Loose(SavedWad),
 }
 
@@ -222,40 +216,9 @@ pub enum Part {
 }
 
 impl Edition for Profile {
-    const UPGRADES: &[fn(Self) -> Self] = &[v0_to_v1, v1_to_v2, v2_to_v3, v3_to_v4];
-}
-
-/// Edition 1 only wrapped the same data in a named, versioned map, so nothing needs fixing.
-fn v0_to_v1(profile: Profile) -> Profile {
-    profile
-}
-
-/// Edition 2 saves wads as a dir table and text names, and paths as text, so the file reads on
-/// any OS. Reading either shape into a [`Profile`] already did the work (see [`SavedEntry`]); the
-/// new edition number is what keeps older builds from reading a file they can't understand.
-fn v1_to_v2(profile: Profile) -> Profile {
-    profile
-}
-
-/// Edition 3 fills in the size of every wad added before sizes were recorded (saved as 0), from
-/// the file as it is now, so a change from here on is marked as one. Wads whose file is gone keep
-/// 0. Nothing is hashed, so this stays quick.
-fn v2_to_v3(profile: Profile) -> Profile {
-    Profile {
-        wads: profile
-            .wads
-            .into_iter()
-            .map(Wad::with_size_backfilled)
-            .collect(),
-        base_wad: profile.base_wad.map(Wad::with_size_backfilled),
-        ..profile
-    }
-}
-
-/// Edition 4 calls the dir table `dirs` and each wad's `folder` its `dir`. The old names still read
-/// (see [`SavedProfile`]); the new edition number keeps older builds from reading the file.
-fn v3_to_v4(profile: Profile) -> Profile {
-    profile
+    /// Edition 4 is the one tdl 1.0.0 writes; older ones are upgraded by `upgrade_legacy.py`.
+    const FIRST: u32 = 4;
+    const UPGRADES: &[fn(Self) -> Self] = &[];
 }
 
 impl Profile {
@@ -495,7 +458,7 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::loadout::scribe::tests::Altar;
+    use crate::loadout::{edition::Loaded, scribe::tests::Altar};
 
     fn wad(altar: &Altar, name: &str) -> Wad {
         fs::write(altar.file(name), b"1234").unwrap();
@@ -764,192 +727,24 @@ mod tests {
         assert_eq!(Profile::open(&path), Some(profile));
     }
 
-    /// How edition 1 saved a profile: every wad with its whole path, as a tagged `OsString`.
-    #[derive(Serialize)]
-    struct EditionOne {
-        name: String,
-        wads: Vec<EditionOneWad>,
-        base_wad: Option<EditionOneWad>,
-        uzdoom: Option<OsString>,
-        ini: Option<OsString>,
-        host_defaults: Option<HostSettings>,
-    }
-
-    #[derive(Serialize)]
-    struct EditionOneWad {
-        path: OsString,
-        hash: String,
-        size: u64,
-        volatile: bool,
-    }
-
     #[test]
-    fn a_profile_saved_by_edition_one_loads_and_upgrades() {
-        let altar = Altar::new("profile-edition-one");
-        let path = altar.file("old.rite");
-        let old_wad = |path: &str, volatile| EditionOneWad {
-            path: path.into(),
-            hash: "cd".repeat(32),
-            size: 9,
-            volatile,
-        };
-        let old = EditionOne {
-            name: "old".into(),
-            wads: vec![
-                old_wad("/wads/a.wad", false),
-                old_wad("/wads/wip.pk3", true),
-            ],
-            base_wad: Some(old_wad("/iwads/DOOM2.WAD", false)),
-            uzdoom: Some("/usr/bin/uzdoom".into()),
-            ini: None,
-            host_defaults: None,
-        };
-        #[derive(Serialize)]
-        struct Sealed<T> {
-            version: u32,
-            data: T,
-        }
-        let bytes = rmp_serde::to_vec_named(&Sealed {
-            version: 1,
-            data: old,
-        })
+    fn a_profile_saved_before_tdl_1_is_legacy_and_left_alone() {
+        let altar = Altar::new("profile-legacy");
+        let path = altar.file("brutal.rite");
+        // edition 0: a bare array, with every wad's whole path
+        let bytes = rmp_serde::to_vec(&(
+            "brutal",
+            [(OsString::from("/wads/brutal.pk3"), "ab".repeat(32))],
+            None::<()>,
+            None::<OsString>,
+            None::<OsString>,
+        ))
         .unwrap();
-        fs::write(&path, bytes).unwrap();
-
-        let wad = |path: &str, volatile| Wad {
-            volatile,
-            ..Wad::new(path.into(), "cd".repeat(32), 9)
-        };
-        let expected = Profile {
-            base_wad: Some(wad("/iwads/DOOM2.WAD", false)),
-            uzdoom: Some("/usr/bin/uzdoom".into()),
-            ..Profile::new(
-                "old".into(),
-                vec![wad("/wads/a.wad", false), wad("/wads/wip.pk3", true)],
-            )
-        };
-        assert_eq!(Profile::stored_version(&path), Some(1));
-        let loaded = Profile::open(&path).unwrap();
-        assert_eq!(loaded, expected);
-        // and upgrading rewrites it in the new shape, which reads back the same
-        assert!(loaded.upgrade(&path).unwrap());
-        assert_eq!(Profile::stored_version(&path), Some(Profile::current()));
-        assert_eq!(Profile::open(&path), Some(expected));
+        fs::write(&path, &bytes).unwrap();
+        assert!(Profile::is_legacy(&path));
+        assert_eq!(Profile::load(&path), Loaded::Legacy);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
     }
-
-    #[test]
-    fn a_profile_saved_by_edition_two_gets_the_sizes_it_never_recorded() {
-        let altar = Altar::new("profile-edition-two");
-        fs::write(altar.file("there.wad"), b"1234567").unwrap();
-        fs::write(altar.file("known.pk3"), b"12").unwrap();
-        fs::write(altar.file("base.wad"), b"123").unwrap();
-        let wad = |name: &str, size| Wad::new(altar.file(name).into(), "ab".repeat(32), size);
-        let old = Profile {
-            base_wad: Some(wad("base.wad", 0)),
-            ..Profile::new(
-                "old".into(),
-                vec![wad("there.wad", 0), wad("gone.wad", 0), wad("known.pk3", 9)],
-            )
-        };
-        // edition 2 saved today's shape (with the old names for its dirs, which still read), only
-        // with an older number on it
-        #[derive(Serialize)]
-        struct Sealed<'a> {
-            version: u32,
-            data: &'a Profile,
-        }
-        let path = altar.file("old.rite");
-        let bytes = rmp_serde::to_vec_named(&Sealed {
-            version: 2,
-            data: &old,
-        })
-        .unwrap();
-        fs::write(&path, bytes).unwrap();
-
-        let loaded = Profile::open(&path).unwrap();
-        let sizes: Vec<_> = loaded.wads.iter().map(|wad| wad.size).collect();
-        // the unknown sizes come from the files; a missing file stays unknown, a known size stays
-        assert_eq!(sizes, [7, 0, 9]);
-        assert_eq!(loaded.base_wad.as_ref().map(|wad| wad.size), Some(3));
-        assert!(loaded.wads.iter().all(|wad| wad.modified == 0));
-        // the upgrade is written as the new edition and reads back the same
-        assert!(loaded.upgrade(&path).unwrap());
-        assert_eq!(Profile::stored_version(&path), Some(Profile::current()));
-        assert_eq!(Profile::open(&path), Some(loaded));
-    }
-
-    /// How edition 3 saved a profile: today's shape, with the dirs still called folders.
-    #[derive(Serialize)]
-    struct EditionThree {
-        name: String,
-        wads: Vec<EditionThreeWad>,
-        base_wad: Option<EditionThreeWad>,
-        uzdoom: Option<String>,
-        ini: Option<String>,
-        host_defaults: Option<HostSettings>,
-        folders: Vec<String>,
-        uzdoom_args: Option<String>,
-    }
-
-    #[derive(Serialize)]
-    struct EditionThreeWad {
-        folder: u32,
-        name: String,
-        hash: String,
-        size: u64,
-        volatile: bool,
-        modified: u64,
-    }
-
-    #[test]
-    fn a_profile_saved_by_edition_three_keeps_its_folders_as_dirs() {
-        let altar = Altar::new("profile-edition-three");
-        let path = altar.file("old.rite");
-        let old_wad = |folder, name: &str| EditionThreeWad {
-            folder,
-            name: name.into(),
-            hash: "ab".repeat(32),
-            size: 4,
-            volatile: false,
-            modified: 7,
-        };
-        let old = EditionThree {
-            name: "spread".into(),
-            wads: vec![
-                old_wad(0, "a.wad"),
-                old_wad(1, "b.pk3"),
-                old_wad(0, "c.wad"),
-            ],
-            base_wad: Some(old_wad(2, "DOOM2.WAD")),
-            uzdoom: Some("/usr/bin/uzdoom".into()),
-            ini: None,
-            host_defaults: None,
-            folders: vec!["/wads".into(), "/mods".into(), "/iwads".into()],
-            uzdoom_args: None,
-        };
-        #[derive(Serialize)]
-        struct Sealed<T> {
-            version: u32,
-            data: T,
-        }
-        let bytes = rmp_serde::to_vec_named(&Sealed {
-            version: 3,
-            data: old,
-        })
-        .unwrap();
-        fs::write(&path, bytes).unwrap();
-
-        let loaded = Profile::open(&path).unwrap();
-        assert_eq!(loaded, spread_out());
-        assert!(loaded.upgrade(&path).unwrap());
-        assert_eq!(Profile::stored_version(&path), Some(4));
-        assert_eq!(Profile::open(&path), Some(spread_out()));
-        // the upgraded file says dirs, and nothing is a folder anymore
-        let bytes = fs::read(&path).unwrap();
-        assert!(!bytes.windows(6).any(|window| window == b"folder"));
-    }
-
-    // 👀 a profile that watches a dir
 
     #[test]
     fn a_watched_dir_brings_in_new_wads_and_lets_go_of_gone_ones_but_not_others() {
