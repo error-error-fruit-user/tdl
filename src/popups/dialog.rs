@@ -15,7 +15,7 @@ pub struct Dialog<'a> {
 }
 
 impl<'a> Dialog<'a> {
-    const TITLE: &str = "dialogue";
+    const TITLE: &'static str = "dialogue";
 
     pub fn new(message: &'a str) -> Self {
         Self {

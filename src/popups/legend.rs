@@ -7,7 +7,7 @@ use ratatui::{
 use crate::{
     error::Result,
     layout, popups,
-    ritual::{Grimoire, Page, Phase, Ritual},
+    ritual::{Grimoire, Page, Phase, Ritual, Tea},
     theme,
 };
 
@@ -22,7 +22,7 @@ pub struct Legend<'a> {
 }
 
 impl<'a> Legend<'a> {
-    const TITLE: &str = "keys";
+    const TITLE: &'static str = "keys";
 
     pub fn new(legend: &'a [[&'a str; 2]]) -> Self {
         Self {
@@ -32,7 +32,7 @@ impl<'a> Legend<'a> {
         }
     }
 
-    pub fn summon(grimoire: &mut Grimoire, legend: &[[&str; 2]]) -> Result<()> {
+    pub fn summon(grimoire: &mut Grimoire, legend: &[[&'static str; 2]]) -> Result<()> {
         Legend::new(legend).invoke(grimoire)
     }
 
@@ -150,7 +150,7 @@ impl Ritual for Legend<'_> {
         );
     }
 
-    fn prompt(&mut self, _: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Tea>> {
+    fn prompt(&mut self, _: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Tea<Self>>> {
         Ok(self.turn(key_code))
     }
 }

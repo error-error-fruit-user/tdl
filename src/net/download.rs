@@ -126,7 +126,7 @@ fn download_entry(
         return Ok(downloaded(wad_path, entry));
     }
     std::fs::create_dir_all(&downloads_subdir)?;
-    let part = downloads_subdir.join({ format!("{}.part", entry.name) });
+    let part = downloads_subdir.join(format!("{}.part", entry.name));
     if let Err(error) = download_part(agent, address, entry, &part, progress) {
         let _ = std::fs::remove_file(&part);
         return Err(error);

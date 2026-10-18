@@ -21,11 +21,11 @@ pub struct ProfileNamer<'a> {
 }
 
 impl<'a> ProfileNamer<'a> {
-    const TITLE: &str = "name the profile";
+    const TITLE: &'static str = "name the profile";
     fn border_color() -> Color {
         theme::worn().colors.multiplayer
     }
-    const LEGEND: &[[&str; 2]] = &[
+    const LEGEND: &'static [[&'static str; 2]] = &[
         ["Enter", "Save Profile"],
         ["A-Z/0-9/_", "Input"],
         ["←/→/Home/End", "Move the Cursor"],

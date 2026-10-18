@@ -22,11 +22,11 @@ pub struct ProfilePicker<'a> {
 }
 
 impl<'a> ProfilePicker<'a> {
-    const TITLE: &str = "pick a profile";
+    const TITLE: &'static str = "pick a profile";
     fn border_color() -> Color {
         theme::worn().colors.multiplayer
     }
-    const LEGEND: &[[&str; 2]] = &[
+    const LEGEND: &'static [[&'static str; 2]] = &[
         ["Enter", "Select Profile"],
         ["J/K", "Traverse"],
         ["Esc", "Cancel"],

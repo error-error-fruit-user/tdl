@@ -1,4 +1,4 @@
-#![feature(associated_type_defaults)]
+#![cfg_attr(feature = "nightly", feature(associated_type_defaults))]
 
 use std::{io::Write, path::PathBuf};
 

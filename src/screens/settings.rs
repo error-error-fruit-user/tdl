@@ -7,7 +7,7 @@ use crate::{
     loadout::uac::{Music, SplashQuip, Uac},
     music, picker,
     popups::{legend::Legend, three_way_dialog::ThreeWayDialog, warning::Warning},
-    ritual::{Grimoire, Page, Phase, Ritual},
+    ritual::{Grimoire, Page, Phase, Ritual, Tea},
     theme::{self, Dressing, Theme, pride::Pride, splash::Splash},
     widgets::{
         form::{self, Field},
@@ -114,53 +114,53 @@ impl SettingsForm {
     const INI: usize = 8;
     const ARGS: usize = 9;
     const QUIP: usize = 10;
-    const TOGGLE_LEGEND: &[[&str; 2]] = &[
+    const TOGGLE_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Save"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["J/K, ←/→", "Switch"],
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
-    const ARGS_LEGEND: &[[&str; 2]] = &[
+    const ARGS_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Save"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["Any but ?", "Input"],
         ["←/→/Home/End", "Move the Cursor"],
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
-    const SONG_LEGEND: &[[&str; 2]] = &[
+    const SONG_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Pick a Song"],
         ["Backspace", "Back to the Built-in Track"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
-    const THEME_LEGEND: &[[&str; 2]] = &[
+    const THEME_LEGEND: &[[&'static str; 2]] = &[
         ["J/K, ←/→", "Built-in, Then Each by Name"],
         ["Enter", "Built-in, New (Write It to theme.toml) or Select"],
         ["Backspace", "Back to the Built-in Theme"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
-    const SPLASH_LEGEND: &[[&str; 2]] = &[
+    const SPLASH_LEGEND: &[[&'static str; 2]] = &[
         ["J/K, ←/→", "Built-in, Then Each by Name"],
         ["Enter", "Built-in, New (Write It to splash.toml) or Select"],
         ["Backspace", "Back to the Built-in Splash"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
-    const PRIDE_LEGEND: &[[&str; 2]] = &[
+    const PRIDE_LEGEND: &[[&'static str; 2]] = &[
         ["J/K, ←/→", "Built-in, Then Each by Name"],
         ["Enter", "Built-in, New (Write It to pride.toml) or Select"],
         ["Backspace", "Back to the Built-in Flags"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
-    const INI_LEGEND: &[[&str; 2]] = &[
+    const INI_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Pick an Ini"],
         ["Backspace", "Back to UZDoom's Own"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
-    const QUIP_LEGEND: &[[&str; 2]] = &[
+    const QUIP_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Save"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["Any Key", "Your Own Quip"],
@@ -303,7 +303,7 @@ impl Ritual for SettingsForm {
         form::draw(page, Self::TITLE, Self::border_color(), &fields, self.focus);
     }
 
-    fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Tea>> {
+    fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Tea<Self>>> {
         // ❓ a quip may well end in `?`, so there the legend is on F1 instead
         let legend = match (self.focus, key_code) {
             (Self::QUIP, KeyCode::F(1)) => Some(Self::QUIP_LEGEND),

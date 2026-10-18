@@ -20,7 +20,7 @@ use crate::{
     popups::legend::Legend,
     popups::warning::Warning,
     popups::{self, dialog::Dialog, hashing, status, three_way_dialog::ThreeWayDialog},
-    ritual::{self, Grimoire, Page, Phase, Ritual},
+    ritual::{self, Grimoire, Page, Phase, Ritual, Tea},
     screens::{
         config_selector::{ConfigSelector, IniChoice},
         library::Library,
@@ -81,9 +81,9 @@ impl<'a> Editor<'a> {
         theme::worn().colors.screen
     }
     /// Labels the rule between the name and the wad list.
-    const DIVIDER: &str = "wads";
+    const DIVIDER: &'static str = "wads";
     /// The last row, which adds wads.
-    const NEW_ROW: &str = "+ add wads";
+    const NEW_ROW: &'static str = "+ add wads";
     /// The order column: up to three digits and a dot.
     const ORDER_WIDTH: u16 = 4;
     const COLUMN_SPACING: u16 = 1;
@@ -91,7 +91,7 @@ impl<'a> Editor<'a> {
     const MAX_NAME: usize = 64;
     /// The longest a profile's own UZDoom arguments may be typed.
     const MAX_ARGS: usize = 120;
-    const NAMING_LEGEND: &[[&str; 2]] = &[
+    const NAMING_LEGEND: &'static [[&'static str; 2]] = &[
         ["Enter", "Save and Quit"],
         ["Esc", "Quit (Asks to Save Changes)"],
         ["Tab/↓", "Edit Wads"],
@@ -99,7 +99,7 @@ impl<'a> Editor<'a> {
         ["←/→/Home/End", "Move the Cursor"],
         ["/", "Search Wads"],
     ];
-    const EDITING_LEGEND: &[[&str; 2]] = &[
+    const EDITING_LEGEND: &'static [[&'static str; 2]] = &[
         ["Enter", "Save and Quit"],
         ["Esc", "Unselect, or Quit (Asks to Save)"],
         ["Tab", "Edit Name (or ↑ from the top)"],
@@ -772,7 +772,7 @@ impl Ritual for Editor<'_> {
         }
     }
 
-    fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Tea>> {
+    fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Tea<Self>>> {
         // 🔎 a search being typed takes every key until it is kept or called off
         if self.search.is_some() {
             return Ok(self.search_key(key_code));

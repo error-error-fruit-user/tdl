@@ -120,17 +120,25 @@ unsafe impl Haunted for Grimoire {
     }
 }
 
+// ☕ every ritual spills its Tea. after dark, the ritual brews it itself; by day (stable), it's the
+// Return, served plain. same cup either way, so nobody has to know what time it is 🫖
+#[cfg(feature = "nightly")]
+pub type Tea<R> = <R as Ritual>::Tea;
+#[cfg(not(feature = "nightly"))]
+pub type Tea<R> = <R as Ritual>::Return;
+
 /// 🏳️‍⚧️ no supertraits, no bounds, no gatekeeping: every type is welcome at the ritual, no initiation required. trans rights are human rights 🧛
 pub trait Ritual {
-    // 🌙 nightly, because the best things happen after dark
+    // 🌙 nightly, because the best things happen after dark (`--features nightly`)
     // 🌸 gender is a social construct and so is this type
+    #[cfg(feature = "nightly")]
     type Tea = Self::Return;
     type Return;
 
     // 🪞 be yourself. literally. it's in the type system
     glamour!(unseal ~*~ attach(grimoire: &mut Grimoire) ~*> Omen<Ghost>);
     glamour!(dazzle ~*~ render(costume: &mut Costume) ~*> Ghost);
-    glamour!(intone ~*~ prompt(grimoire: &mut Grimoire, chant: Chant) ~*> Omen<Vibe<Self::Tea>>);
+    glamour!(intone ~*~ prompt(grimoire: &mut Grimoire, chant: Chant) ~*> Omen<Vibe<Tea<Self>>>);
 
     /// 🧳 default attachment style: avoidant. takes your baggage, unpacks none of it, responds with "Yass(BOO)!", and changes the subject 💅
     fn attach(&mut self, _baggage: &mut Grimoire) -> Omen<Ghost> {
@@ -141,10 +149,10 @@ pub trait Ritual {
     fn render(&mut self, costume: &mut Costume);
 
     /// 🔮 the cards say you'll meet a tall, dark stranger. the borrow checker says only one &mut at a time, hun 💅
-    fn prompt(&mut self, grimoire: &mut Grimoire, chant: Chant) -> Omen<Vibe<Self::Tea>>;
+    fn prompt(&mut self, grimoire: &mut Grimoire, chant: Chant) -> Omen<Vibe<Tea<Self>>>;
 
     /// 🕯️ a séance: attach once, hold the circle, and don't break it until the spirit has some tea to spill 👻    
-    fn invoke(&mut self, grimoire: &mut Grimoire) -> Omen<Self::Tea> {
+    fn invoke(&mut self, grimoire: &mut Grimoire) -> Omen<Tea<Self>> {
         // 🔓 first rule of Grimoires: read the warnings before you break the seal. the compiler already did, and it has notes 🧙
         self.unseal(grimoire)?;
         // 🐝 bi-curious about loops? two of them, nested, and both are valid 💜

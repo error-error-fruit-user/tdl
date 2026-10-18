@@ -3,7 +3,7 @@
 # demo.tape) and every picture in docs/screenshots/ (from screenshots.tape, taken of the same
 # example profiles the tests use).
 #
-# Needs vhs, ttyd and ffmpeg on PATH, and the nightly toolchain. Everything runs on throwaway
+# Needs vhs, ttyd and ffmpeg on PATH, and Rust (stable is fine). Everything runs on throwaway
 # loadouts and homes in /tmp, which are removed afterwards, so nothing of yours is read or written.
 set -euo pipefail
 
@@ -24,13 +24,13 @@ trap cleanup EXIT
 cleanup
 
 echo "Building the release binary..."
-cargo +nightly build --release
+cargo build --release
 
 echo "Recording demo.gif..."
 vhs demo.tape
 
 echo "Laying out the example profiles..."
-TDL_SCREENSHOT_DIR="$SHOTS" cargo +nightly test screenshot_loadout -- --ignored --quiet
+TDL_SCREENSHOT_DIR="$SHOTS" cargo test screenshot_loadout -- --ignored --quiet
 
 echo "Taking the screenshots..."
 vhs screenshots.tape

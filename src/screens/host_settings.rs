@@ -47,46 +47,46 @@ impl HostSettingsForm {
     const INI_LABEL: &str = "ini";
     /// The longest a map name may be typed, far longer than any real one.
     const MAX_MAP: usize = 32;
-    const PLAYER_COUNT_LEGEND: &[[&str; 2]] = &[
+    const PLAYER_COUNT_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Launch"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["2-8, ←/→", "Input"],
         ["Esc", "Cancel"],
     ];
-    const MODE_LEGEND: &[[&str; 2]] = &[
+    const MODE_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Launch"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["J/K, ←/→", "Switch Mode"],
         ["Esc", "Cancel"],
     ];
-    const MAP_LEGEND: &[[&str; 2]] = &[
+    const MAP_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Launch"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["A-Z/0-9/_", "Input"],
         ["←/→/Home/End", "Move the Cursor"],
         ["Esc", "Cancel"],
     ];
-    const PORT_LEGEND: &[[&str; 2]] = &[
+    const PORT_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Launch"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["0-9", "Input"],
         ["←/→/Home/End", "Move the Cursor"],
         ["Esc", "Cancel"],
     ];
-    const CODE_LEGEND: &[[&str; 2]] = &[
+    const CODE_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Launch"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["a-z/0-9", "Input"],
         ["←/→/Home/End", "Move the Cursor"],
         ["Esc", "Cancel"],
     ];
-    const INI_LEGEND: &[[&str; 2]] = &[
+    const INI_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Launch"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["J/K, ←/→", "Share It or Not"],
         ["Esc", "Cancel"],
     ];
-    const BUTTON_LEGEND: &[[&str; 2]] = &[
+    const BUTTON_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Press"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["Esc", "Cancel"],

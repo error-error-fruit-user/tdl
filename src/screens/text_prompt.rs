@@ -3,7 +3,7 @@ use ratatui::{crossterm::event::KeyCode, style::Color};
 use crate::{
     error::Result,
     popups::legend::Legend,
-    ritual::{Grimoire, Page, Phase, Ritual},
+    ritual::{Grimoire, Page, Phase, Ritual, Tea},
     theme,
     widgets::{
         form::{self, Field},
@@ -26,7 +26,7 @@ impl<'a> TextPrompt<'a> {
     fn border_color() -> Color {
         theme::worn().colors.screen
     }
-    const LEGEND: &[[&str; 2]] = &[
+    const LEGEND: &'static [[&'static str; 2]] = &[
         ["Enter", "Keep It"],
         ["Any Key", "Input"],
         ["←/→/Home/End", "Move the Cursor"],
@@ -84,7 +84,7 @@ impl Ritual for TextPrompt<'_> {
         form::draw(page, self.title, Self::border_color(), &fields, 0);
     }
 
-    fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Tea>> {
+    fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Tea<Self>>> {
         if key_code == KeyCode::F(1) {
             Legend::summon(grimoire, Self::LEGEND)?;
             return Ok(Phase::Render);

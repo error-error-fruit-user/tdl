@@ -238,7 +238,7 @@ impl Launcher {
     /// The columns between the profile's panel and the global one beside it.
     const PANEL_GAP: u16 = 1;
     const COLUMN_SPACING: u16 = 1;
-    const LEGEND: &[[&str; 2]] = &[
+    const LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Launch"],
         ["H", "Host"],
         ["N", "Join"],

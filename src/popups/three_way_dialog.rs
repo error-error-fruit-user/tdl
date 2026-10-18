@@ -17,7 +17,7 @@ pub struct ThreeWayDialog<'a> {
 }
 
 impl<'a> ThreeWayDialog<'a> {
-    const TITLE: &str = "dialogue";
+    const TITLE: &'static str = "dialogue";
 
     /// Which option, if any, is the user's answer, or `Prompt` if the key means nothing here.
     fn answer(options: &[&str; 3], key_code: KeyCode) -> Phase<Option<usize>> {

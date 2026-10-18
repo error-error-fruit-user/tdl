@@ -2,7 +2,13 @@
 name = "tdl"
 version = "1.1.0"
 edition = "2024"
+rust-version = "1.89"
 license = "0BSD"
+
+[features]
+# Builds with nightly Rust's unstable features (`associated_type_defaults`, for `Ritual::Tea`):
+# `cargo +nightly build --features nightly`. Without it, tdl builds on stable.
+nightly = []
 
 [dependencies]
 blake3 = "1.8.7"

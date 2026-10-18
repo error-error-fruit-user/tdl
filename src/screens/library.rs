@@ -78,16 +78,16 @@ enum Item {
 }
 
 impl<'a> Library<'a> {
-    const TITLE: &str = "wads";
-    const EVERY_TITLE: &str = "every wad";
+    const TITLE: &'static str = "wads";
+    const EVERY_TITLE: &'static str = "every wad";
     fn border_color() -> Color {
         theme::worn().colors.screen
     }
-    const NEW_ROW: &str = "+ add a wad dir";
+    const NEW_ROW: &'static str = "+ add a wad dir";
     /// The size column: `999.9 MB`.
     const SIZE_WIDTH: u16 = 8;
     const COLUMN_SPACING: u16 = 1;
-    const LEGEND: &[[&str; 2]] = &[
+    const LEGEND: &'static [[&'static str; 2]] = &[
         ["Esc", "Back (unselects first)"],
         ["Tab", "Every Wad/Each Dir"],
         ["J↓/K↑/Home/End", "Traverse"],

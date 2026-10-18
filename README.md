@@ -41,7 +41,7 @@ The profiles here are examples made for the screenshots.
 
 ## Requirements
 
-- A recent **nightly** Rust toolchain (the project uses unstable features)
+- Rust **1.89** or later, stable or nightly (on nightly, `--features nightly` turns on the unstable feature the code was written for; the build is the same either way)
 - [UZDoom](https://github.com/UZDoom/UZDoom) installed
 - A Doom base wad (e.g. `DOOM2.WAD`, or the free [Freedoom](https://freedoom.github.io/))
 - Python 3.8 or later, only to [upgrade the files of a tdl before 1.0.0](#upgrading-from-before-100)
@@ -51,7 +51,8 @@ The profiles here are examples made for the screenshots.
 ```sh
 git clone https://codeberg.org/Error-ErrorFruitUser/tdl.git
 cd tdl
-cargo +nightly build --release
+cargo build --release                              # stable
+cargo +nightly build --release --features nightly  # or nightly, with its unstable feature
 ./target/release/tdl
 ```
 

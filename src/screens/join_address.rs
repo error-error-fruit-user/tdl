@@ -32,21 +32,21 @@ impl JoinAddressForm {
     const FIELDS: usize = 4;
     /// Long enough for any IPv4 address.
     const MAX_IP: usize = 15;
-    const IP_LEGEND: &[[&str; 2]] = &[
+    const IP_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Launch"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["←/→/Home/End", "Move the Cursor"],
         ["0-9/.", "Input"],
         ["Esc", "Cancel"],
     ];
-    const PORT_LEGEND: &[[&str; 2]] = &[
+    const PORT_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Launch"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["←/→/Home/End", "Move the Cursor"],
         ["0-9", "Input"],
         ["Esc", "Cancel"],
     ];
-    const CODE_LEGEND: &[[&str; 2]] = &[
+    const CODE_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Launch"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["←/→/Home/End", "Move the Cursor"],
@@ -54,7 +54,7 @@ impl JoinAddressForm {
         ["Esc", "Cancel"],
     ];
 
-    const INI_LEGEND: &[[&str; 2]] = &[
+    const INI_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Launch"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["J/K, ←/→", "Yours, the Host's, or It and Its Keys"],

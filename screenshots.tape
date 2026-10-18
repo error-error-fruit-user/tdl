@@ -1,7 +1,7 @@
 # The README's screenshots, taken from the example profiles (the same ones the tests use).
-# Run from the project root, after `cargo +nightly build --release`:
+# Run from the project root, after `cargo build --release`:
 #
-#   TDL_SCREENSHOT_DIR=/tmp/tdl-shots cargo +nightly test screenshot_loadout -- --ignored
+#   TDL_SCREENSHOT_DIR=/tmp/tdl-shots cargo test screenshot_loadout -- --ignored
 #   vhs screenshots.tape
 #
 # vhs saves a screenshot a moment after asking for it, so each one is followed by a second's wait,

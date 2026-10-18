@@ -3,7 +3,7 @@ use ratatui::{crossterm::event::KeyCode, style::Color};
 use crate::{
     error::Result,
     popups::{legend::Legend, warning::Warning},
-    ritual::{Grimoire, Page, Phase, Ritual},
+    ritual::{Grimoire, Page, Phase, Ritual, Tea},
     tag, theme,
     widgets::{
         form::{self, Field},
@@ -43,19 +43,19 @@ impl<F: Fn(&str) -> bool> WadNamer<F> {
     }
     /// The longest a typed name gets, so it stays something a window can show.
     const MAX_LENGTH: usize = 64;
-    const LEGEND: &[[&str; 2]] = &[
+    const LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Paste the Copy"],
         ["A-Z/0-9/_-. ", "Input"],
         ["←/→/Home/End", "Move the Cursor"],
         ["Esc", "Skip It"],
     ];
-    const RENAMING_LEGEND: &[[&str; 2]] = &[
+    const RENAMING_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Rename Yours"],
         ["A-Z/0-9/_-. ", "Input"],
         ["←/→/Home/End", "Move the Cursor"],
         ["Esc", "Back"],
     ];
-    const RENAMING_WAD_LEGEND: &[[&str; 2]] = &[
+    const RENAMING_WAD_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Rename It"],
         ["A-Z/0-9/_-. ", "Input"],
         ["←/→/Home/End", "Move the Cursor"],
@@ -161,7 +161,7 @@ impl<F: Fn(&str) -> bool> Ritual for WadNamer<F> {
         form::draw(page, &self.title, Self::border_color(), &fields, 0);
     }
 
-    fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Tea>> {
+    fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Tea<Self>>> {
         match key_code {
             KeyCode::Enter => match self.check() {
                 Ok(name) => Ok(Phase::Return(Some(name))),
