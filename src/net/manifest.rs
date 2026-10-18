@@ -79,14 +79,15 @@ impl Manifest {
                 .all(|(entry, wad)| entry.hash == wad.hash || entry.is_same_name_as_volatile(wad))
     }
 
-    /// The names of the volatile wads whose hash differs from the host's. A profile can be
-    /// compatible and still have these, so the user is asked before joining with them.
-    pub fn differing_wads(&self, profile: &Profile) -> Vec<String> {
+    /// Where the profile's wads differ from the host's, by their place in the list. A compatible
+    /// profile can only differ in volatile wads, which joining brings up to the host's version.
+    pub fn differing_wads(&self, profile: &Profile) -> Vec<usize> {
         self.entries
             .iter()
             .zip(&profile.wads)
-            .filter(|(entry, wad)| entry.hash != wad.hash)
-            .map(|(_, wad)| wad.file_name().into_owned())
+            .enumerate()
+            .filter(|(_, (entry, wad))| entry.hash != wad.hash)
+            .map(|(index, _)| index)
             .collect()
     }
 }
@@ -160,8 +161,8 @@ mod tests {
 
         let volatile = profile(vec![wad("/x/a.pk3", "other", true)]);
         assert!(host.is_compatible_with(&volatile));
-        // ... but the user still gets told
-        assert_eq!(host.differing_wads(&volatile), ["a.pk3"]);
+        // ... and is brought up to the host's when joining
+        assert_eq!(host.differing_wads(&volatile), [0]);
     }
 
     #[test]

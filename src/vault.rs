@@ -11,7 +11,7 @@ pub mod scroll;
 pub mod shelf;
 pub mod wad;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{
     clipboard::Clipboard,
@@ -23,6 +23,7 @@ use crate::{
         lookup::Lookup,
         profile::{Profile, SUBDIRECTORY, tagged_name},
         shelf::Shelf,
+        wad::Wad,
     },
 };
 
@@ -253,6 +254,65 @@ impl Vault {
         }
         if config_changed {
             note(self.config.write(&self.config_dir, &self.profiles));
+        }
+        outcome
+    }
+
+    /// Puts `to` in place of every wad whose file is at `from`, in the profiles and the global base
+    /// wad, each staying volatile or not, and saves what changed: for a wad brought up to the
+    /// host's version when joining. Everything is tried even if a save fails; the first failure
+    /// is returned.
+    pub fn upgrade_wad(&mut self, from: &Path, to: &Wad) -> Result<()> {
+        let upgrade = |wad: &mut Wad| {
+            if Path::new(&wad.path) != from {
+                return false;
+            }
+            *wad = Wad {
+                volatile: wad.volatile,
+                ..to.clone()
+            };
+            true
+        };
+        self.rework_wads(upgrade, |profile| {
+            let mut changed = false;
+            for wad in profile.wads.iter_mut().chain(&mut profile.base_wad) {
+                changed |= upgrade(wad);
+            }
+            changed
+        })
+    }
+
+    /// Points every wad whose file was at `from` at `to`, in the profiles and the global base
+    /// wad, and saves what changed: for a wad renamed to make room for the host's when joining.
+    /// Everything is tried even if a save fails; the first failure is returned.
+    pub fn follow_wad(&mut self, from: &Path, to: &Path) -> Result<()> {
+        self.rework_wads(
+            |wad| wad.follow(from, to),
+            |profile| profile.follow(from, to),
+        )
+    }
+
+    /// Changes the global base wad with `base_wad` and each profile with `profile` (each says
+    /// whether it changed anything), and saves the ones that changed.
+    fn rework_wads(
+        &mut self,
+        base_wad: impl Fn(&mut Wad) -> bool,
+        profile: impl Fn(&mut Profile) -> bool,
+    ) -> Result<()> {
+        self.forget_lookup();
+        let mut outcome = Ok(());
+        if self.global.base_wad.as_mut().is_some_and(base_wad)
+            && let Err(error) = self.keep_global()
+        {
+            outcome = Err(error);
+        }
+        for changed in &mut self.profiles {
+            if profile(changed)
+                && let Err(error) = changed.write(&self.config_dir, &self.data_dir)
+                && outcome.is_ok()
+            {
+                outcome = Err(error.into());
+            }
         }
         outcome
     }

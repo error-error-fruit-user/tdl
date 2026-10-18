@@ -11,15 +11,17 @@ use crate::{
     },
 };
 
-/// Prompts for the file name of a pasted wad's copy. Only the part before the extension is typed;
-/// the extension stays the original's, so UZDoom still knows what kind of file it is. A name that
-/// `is_free` turns down (a file already there, or a wad the profile already has) is refused.
+/// Prompts for the file name of a pasted wad's copy, or of the joiner's own wad when it is renamed
+/// to make room for the host's. Only the part before the extension is typed; the extension stays
+/// the original's, so UZDoom still knows what kind of file it is. A name that `is_free` turns down
+/// (a file already there, or a wad the profile already has) is refused.
 pub struct WadNamer<F> {
     stem: String,
     /// Where the cursor is in the stem.
     caret: usize,
     extension: String,
     title: String,
+    renaming: bool,
     is_free: F,
 }
 
@@ -33,11 +35,30 @@ impl<F: Fn(&str) -> bool> WadNamer<F> {
         ["←/→/Home/End", "Move the Cursor"],
         ["Esc", "Skip It"],
     ];
+    const RENAMING_LEGEND: &[[&str; 2]] = &[
+        ["Enter", "Rename Yours"],
+        ["A-Z/0-9/_-. ", "Input"],
+        ["←/→/Home/End", "Move the Cursor"],
+        ["Esc", "Back"],
+    ];
 
     /// Asks for the copy's file name, starting from `suggested` (a whole file name, such as the
     /// tagged one). The full file name, extension included, or `None` if skipped.
     pub fn summon(grimoire: &mut Grimoire, suggested: &str, is_free: F) -> Result<Option<String>> {
         Self::new(suggested, is_free).invoke(grimoire)
+    }
+
+    /// Asks for a new file name for the joiner's own wad, so the host's can go where it was,
+    /// starting from `suggested`. The full file name, or `None` to go back.
+    pub fn summon_renaming(
+        grimoire: &mut Grimoire,
+        suggested: &str,
+        is_free: F,
+    ) -> Result<Option<String>> {
+        let mut namer = Self::new(suggested, is_free);
+        namer.title = format!("rename yours ({})", extension_label(&namer.extension));
+        namer.renaming = true;
+        namer.invoke(grimoire)
     }
 
     fn new(suggested: &str, is_free: F) -> Self {
@@ -47,6 +68,7 @@ impl<F: Fn(&str) -> bool> WadNamer<F> {
             caret: text::end(stem),
             extension: extension.to_string(),
             title: format!("name the copy ({})", extension_label(extension)),
+            renaming: false,
             is_free,
         }
     }
@@ -58,20 +80,29 @@ impl<F: Fn(&str) -> bool> WadNamer<F> {
 
     /// Whether `c` can go in a file name on every OS tdl runs on.
     fn allowed(c: char) -> bool {
-        c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | ' ')
+        allowed(c)
     }
 
     /// What Enter does with the name as it stands: the name, or why it can't be used.
     fn check(&self) -> std::result::Result<String, &'static str> {
         let name = self.file_name();
         if self.stem.trim().is_empty() || self.stem.starts_with('.') {
-            Err("Type a name for the copy")
+            Err(if self.renaming {
+                "Type a new name for yours"
+            } else {
+                "Type a name for the copy"
+            })
         } else if !(self.is_free)(&name) {
             Err("A file or wad of that name is already there")
         } else {
             Ok(name)
         }
     }
+}
+
+/// Whether `c` can go in a file name on every OS tdl runs on.
+pub fn allowed(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | ' ')
 }
 
 /// How the extension is named in the title: `.pk3`, or `no extension`.
@@ -108,7 +139,12 @@ impl<F: Fn(&str) -> bool> Ritual for WadNamer<F> {
             },
             KeyCode::Esc => Ok(Phase::Return(None)),
             KeyCode::Char('?') | KeyCode::F(1) => {
-                Legend::summon(grimoire, Self::LEGEND)?;
+                let legend = if self.renaming {
+                    Self::RENAMING_LEGEND
+                } else {
+                    Self::LEGEND
+                };
+                Legend::summon(grimoire, legend)?;
                 Ok(Phase::Render)
             }
             key_code => Ok(

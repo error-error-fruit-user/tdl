@@ -74,23 +74,6 @@ impl Dialog<'_> {
         Self::summon(grimoire, "Upgraded! Delete the original files?")
     }
 
-    /// For volatile wads that differ from the host's copy.
-    pub fn should_join_with_different_wads(
-        grimoire: &mut Grimoire,
-        names: &[String],
-    ) -> Result<bool> {
-        match names {
-            [name] => Self::summon(
-                grimoire,
-                &format!("{name} differs from the host's, join anyway?"),
-            ),
-            _ => Self::summon(
-                grimoire,
-                &format!("{} wads differ from the host's, join anyway?", names.len()),
-            ),
-        }
-    }
-
     pub fn should_use_different_file(grimoire: &mut Grimoire) -> Result<bool> {
         Self::summon(grimoire, "Different file than expected, use it anyway?")
     }

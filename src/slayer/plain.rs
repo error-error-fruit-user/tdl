@@ -1,8 +1,9 @@
 //! `tdl host --headless` and `tdl join --headless`: the same as hosting and joining from the
-//! launcher, but with no windows at all, only plain lines in the terminal. The one question asked
-//! is whether to download wads that aren't installed; anything else that would be a question is
-//! said and gone along with, and anything that stops the game is an error, which ends tdl with a
-//! failure.
+//! launcher, but with no windows at all, only plain lines in the terminal. The questions asked
+//! are whether to download wads that aren't installed, and what to do with the joiner's own wads
+//! that have the names of the host's but not their contents; anything else that would be a
+//! question is said and gone along with, and anything that stops the game is an error, which ends
+//! tdl with a failure.
 
 use std::{
     ffi::OsStr,
@@ -23,10 +24,13 @@ use crate::{
     error::{Error, INTERRUPTED_EXIT, Result as TdlResult},
     layout::show_size,
     net::{self, Address, Manifest},
+    screens::wad_namer,
     slayer::{
         join_game::{fill_gaps, first_match},
         share,
+        upgrade::{self, Choice, Outdated, Settled},
     },
+    tag,
     tally::Tally,
     uzdoom::{self, Game},
     vault::{
@@ -179,32 +183,15 @@ pub fn join(vault: &mut Vault, address: &Address, always_download: bool) -> Outc
         Err(Error::Refused) => return Err(format!("The host at {where_to} refused the join code")),
         Err(_) => return Err(format!("Couldn't reach a host at {where_to}")),
     };
-    let profile = match vault
-        .profiles
-        .iter()
-        .find(|profile| manifest.is_compatible_with(profile))
-    {
-        Some(profile) => {
-            println!("Joining with {}", profile.name);
-            profile.clone()
+    let profile = match resolve_profile(vault, address, &manifest, always_download)? {
+        Some(profile) => profile,
+        None => {
+            println!("Not joining");
+            return Ok(());
         }
-        None => match make_profile(vault, address, &manifest, always_download)? {
-            Some(profile) => profile,
-            None => {
-                println!("Not joining");
-                return Ok(());
-            }
-        },
     };
     let uzdoom = ready_to_play(vault, &profile)?;
-    // 🌀 the questions the windows would ask are said instead, and gone along with
-    let differing = manifest.differing_wads(&profile);
-    if !differing.is_empty() {
-        eprintln!(
-            "These volatile wads differ from the host's, joining anyway: {}",
-            differing.join(", ")
-        );
-    }
+    let profile = upgrade_volatile(vault, address, &manifest, profile)?;
     let base_wad = profile.base_wad(&vault.global);
     if !manifest.base_wad_matches(base_wad) {
         eprintln!("Your base wad isn't the host's, joining anyway");
@@ -221,6 +208,255 @@ pub fn join(vault: &mut Vault, address: &Address, always_download: bool) -> Outc
     wait_for(game)?;
     println!("The game is over");
     Ok(())
+}
+
+/// The first profile that matches the host's wads, or a new one made from the wads already here
+/// and downloads of the rest. With none, the joiner's own wads with the names of the host's but
+/// other contents are offered the host's version first, after which one may match. `None` if the
+/// user says no.
+fn resolve_profile(
+    vault: &mut Vault,
+    address: &Address,
+    manifest: &Manifest,
+    always_download: bool,
+) -> std::result::Result<Option<Profile>, String> {
+    if let Some(profile) = compatible(vault, manifest) {
+        return Ok(Some(profile));
+    }
+    if vault.global.uzdoom_in_effect().is_none() {
+        return Err("No UZDoom is selected: pick one in tdl with U, or pass --uzdoom".to_string());
+    }
+    let mut local = find_local(vault, manifest)?;
+    let outdated = upgrade::outdated(vault, manifest, &local);
+    if !outdated.is_empty() {
+        let choices = choose(vault, &outdated, always_download);
+        let settled = bring_up_to_date(vault, address, manifest, &outdated, &choices)?;
+        for (wad, placed) in local.iter_mut().zip(settled.placed) {
+            if wad.is_none() {
+                *wad = placed;
+            }
+        }
+        // ⬆️ a profile whose wads were just brought up to date may be the host's now
+        if let Some(profile) = compatible(vault, manifest) {
+            return Ok(Some(profile));
+        }
+    }
+    make_profile(vault, address, manifest, local, always_download)
+}
+
+/// The first profile that matches the host's wads, said.
+fn compatible(vault: &Vault, manifest: &Manifest) -> Option<Profile> {
+    let profile = vault
+        .profiles
+        .iter()
+        .find(|profile| manifest.is_compatible_with(profile))?;
+    println!("Joining with {}", profile.name);
+    Some(profile.clone())
+}
+
+/// The host's wads that are already on this machine, in the manifest's order, with `None` for
+/// each one that isn't.
+fn find_local(
+    vault: &mut Vault,
+    manifest: &Manifest,
+) -> std::result::Result<Vec<Option<Wad>>, String> {
+    let lookup = vault.lookup();
+    let checks: Vec<_> = manifest
+        .entries
+        .iter()
+        .map(|entry| lookup.check(entry))
+        .collect();
+    checks
+        .into_iter()
+        .zip(&manifest.entries)
+        .map(|(check, entry)| match check {
+            Local::Intact(wad) => Ok(Some(wad)),
+            Local::Maybe(paths) => first_match(paths, entry, &mut ()),
+        })
+        .collect::<Result<_, _>>()
+        .map_err(|error| error.to_string())
+}
+
+/// What to do with each of the joiner's wads that isn't the host's version: a volatile one is
+/// replaced without asking, and so is any other with `always_download`; otherwise the joiner is
+/// asked, and no answer is skip.
+fn choose(vault: &Vault, outdated: &[Outdated], always_download: bool) -> Vec<Choice> {
+    outdated
+        .iter()
+        .map(|wad| {
+            let shown = wad.path.display();
+            if wad.volatile {
+                println!("Replacing your volatile {shown} with the host's version");
+                Choice::Replace
+            } else if always_download {
+                println!(
+                    "Replacing {shown} with the host's version, as --always-download says{}",
+                    if wad.is_download(vault) {
+                        String::new()
+                    } else {
+                        format!(" (yours is kept as {}.bak)", wad.file_name())
+                    }
+                );
+                Choice::Replace
+            } else if wad.is_download(vault) {
+                let question = format!(
+                    "Your download of {} isn't the host's version. Use the host's in its place?",
+                    wad.file_name()
+                );
+                if ask(&question) {
+                    Choice::Replace
+                } else {
+                    Choice::Skip
+                }
+            } else {
+                ask_replace(wad)
+            }
+        })
+        .collect()
+}
+
+/// Asks whether to replace the joiner's own `wad` with the host's, rename theirs to keep both, or
+/// skip it. Anything but r or n is skip, and so is having no terminal to ask on.
+fn ask_replace(wad: &Outdated) -> Choice {
+    let name = wad.file_name();
+    let question = format!(
+        "{} isn't the host's {name}. Replace it with the host's (yours kept as {name}.bak), \
+         rename yours to keep both, or skip it?",
+        wad.path.display()
+    );
+    let answer = answer(&question, "[r/n/S]", "skip").map(|answer| answer.to_ascii_lowercase());
+    match answer.as_deref() {
+        Some("r" | "replace") => Choice::Replace,
+        Some("n" | "rename" | "name") => ask_rename(wad),
+        _ => Choice::Skip,
+    }
+}
+
+/// Asks for a new name for the joiner's own `wad`, offering a tagged one (`brutal_2.pk3`) for an
+/// empty answer. The extension stays, so it can be left off. A name that can't be used is said,
+/// and the wad skipped.
+fn ask_rename(wad: &Outdated) -> Choice {
+    let name = wad.file_name();
+    let dir = wad.path.parent().unwrap_or(Path::new(""));
+    let is_free = |name: &str| !dir.join(name).exists();
+    let suggested = tag::tagged_file(&name, is_free);
+    let Some(typed) = answer("New name for yours?", &format!("[{suggested}]"), "skip") else {
+        return Choice::Skip;
+    };
+    let (_, extension) = tag::split_extension(&name);
+    let renamed = if typed.is_empty() {
+        suggested
+    } else if typed
+        .to_ascii_lowercase()
+        .ends_with(&extension.to_ascii_lowercase())
+    {
+        typed
+    } else {
+        format!("{typed}{extension}")
+    };
+    if renamed.starts_with('.') || !renamed.chars().all(wad_namer::allowed) {
+        eprintln!("{renamed} can't be a file name everywhere, so skipping {name}");
+        Choice::Skip
+    } else if !is_free(&renamed) {
+        eprintln!("{renamed} is already there, so skipping {name}");
+        Choice::Skip
+    } else {
+        Choice::Rename(renamed)
+    }
+}
+
+/// `profile` with each volatile wad that differs from the host's brought up to the host's version
+/// without asking: hashed again first, since its stored hash is often only out of date, and only
+/// replaced (the old file kept as `.bak`) if it really differs. What goes wrong is said, and the
+/// game joined with the joiner's own version.
+fn upgrade_volatile(
+    vault: &mut Vault,
+    address: &Address,
+    manifest: &Manifest,
+    profile: Profile,
+) -> std::result::Result<Profile, String> {
+    let differing = manifest.differing_wads(&profile);
+    if differing.is_empty() {
+        return Ok(profile);
+    }
+    let mut outdated = Vec::new();
+    for entry in differing {
+        let wad = profile.wads[entry].refreshed(&mut ()).map_err(|error| {
+            format!("Couldn't read {}: {error}", profile.wads[entry].file_name())
+        })?;
+        let path = PathBuf::from(&wad.path);
+        if wad.hash == manifest.entries[entry].hash {
+            // 🟰 it only looked different: the file has become the host's since it was hashed
+            if vault.upgrade_wad(&path, &wad).is_err() {
+                eprintln!("Could not save the new hash of {}", path.display());
+            }
+        } else {
+            println!(
+                "Replacing your volatile {} with the host's version",
+                path.display()
+            );
+            outdated.push(Outdated {
+                entry,
+                path,
+                volatile: true,
+            });
+        }
+    }
+    let choices = vec![Choice::Replace; outdated.len()];
+    let settled = bring_up_to_date(vault, address, manifest, &outdated, &choices)?;
+    if !settled.problems.is_empty() {
+        eprintln!("Joining anyway, with your own versions of those");
+    }
+    let upgraded = vault.profiles.iter().find(|p| p.name == profile.name);
+    Ok(upgraded.cloned().unwrap_or(profile))
+}
+
+/// Downloads the host's version of each outdated wad that `choices` doesn't skip, then does each
+/// choice, saying whatever went wrong.
+fn bring_up_to_date(
+    vault: &mut Vault,
+    address: &Address,
+    manifest: &Manifest,
+    outdated: &[Outdated],
+    choices: &[Choice],
+) -> std::result::Result<Settled, String> {
+    let wanted = upgrade::wanted(outdated, choices);
+    let needed: Vec<_> = wanted
+        .iter()
+        .map(|&i| manifest.entries[i].clone())
+        .collect();
+    let downloaded = download(vault, address, &needed)?;
+    let downloaded: Vec<_> = wanted.into_iter().zip(downloaded).collect();
+    let settled = upgrade::settle(
+        vault,
+        manifest.entries.len(),
+        outdated,
+        choices,
+        &downloaded,
+    );
+    for problem in &settled.problems {
+        eprintln!("{problem}");
+    }
+    Ok(settled)
+}
+
+/// Downloads `entries` from the host, a line for each, or nothing if there are none. Ctrl+C ends
+/// tdl.
+fn download(
+    vault: &Vault,
+    address: &Address,
+    entries: &[net::Entry],
+) -> std::result::Result<Vec<Wad>, String> {
+    if entries.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut lines = Lines(Keys::take());
+    match net::download(address, entries, &vault.downloads_dir(), &mut lines) {
+        Ok(wads) => Ok(wads),
+        // 🧹 the partial file is gone already; finished ones stay, so a retry picks up there
+        Err(Error::Cancelled) => lines.0.end_interrupted(),
+        Err(error) => Err(format!("The download failed: {error}")),
+    }
 }
 
 /// The UZDoom to play `profile` with, if it has one and nothing it needs is broken.
@@ -252,33 +488,16 @@ fn ready_to_play(
     Ok(uzdoom)
 }
 
-/// A new profile for the host's wads: the ones already here where they are, and the rest
-/// downloaded, but only if the user says yes. Named after the host, so it is easy to find and
-/// rename in tdl. `None` if the user says no.
+/// A new profile for the host's wads: the ones already here (`local`) where they are, and the
+/// rest downloaded, but only if the user says yes. Named after the host, so it is easy to find
+/// and rename in tdl. `None` if the user says no.
 fn make_profile(
     vault: &mut Vault,
     address: &Address,
     manifest: &Manifest,
+    local: Vec<Option<Wad>>,
     always_download: bool,
 ) -> std::result::Result<Option<Profile>, String> {
-    if vault.global.uzdoom_in_effect().is_none() {
-        return Err("No UZDoom is selected: pick one in tdl with U, or pass --uzdoom".to_string());
-    }
-    let lookup = vault.lookup();
-    let checks: Vec<_> = manifest
-        .entries
-        .iter()
-        .map(|entry| lookup.check(entry))
-        .collect();
-    let local: Vec<Option<Wad>> = checks
-        .into_iter()
-        .zip(&manifest.entries)
-        .map(|(check, entry)| match check {
-            Local::Intact(wad) => Ok(Some(wad)),
-            Local::Maybe(paths) => first_match(paths, entry, &mut ()),
-        })
-        .collect::<Result<_, _>>()
-        .map_err(|error| error.to_string())?;
     let wanted: Vec<_> = manifest
         .entries
         .iter()
@@ -300,17 +519,7 @@ fn make_profile(
             return Ok(None);
         }
     }
-    let downloaded = if wanted.is_empty() {
-        Vec::new()
-    } else {
-        let mut lines = Lines(Keys::take());
-        match net::download(address, &wanted, &vault.downloads_dir(), &mut lines) {
-            Ok(wads) => wads,
-            // 🧹 the partial file is gone already; finished ones stay, so a retry picks up there
-            Err(Error::Cancelled) => lines.0.end_interrupted(),
-            Err(error) => return Err(format!("The download failed: {error}")),
-        }
-    };
+    let downloaded = download(vault, address, &wanted)?;
     let wads = fill_gaps(local, downloaded).ok_or("Fewer wads arrived than were asked for")?;
     let name = joined_name(&address.host, &vault.profiles);
     let profile = Profile::new(name, wads);
@@ -372,17 +581,22 @@ fn joined_name(host: &str, profiles: &[Profile]) -> String {
 /// Asks `question` on the terminal and says whether the answer is yes. Anything but y or yes is
 /// no, and so is having no terminal to ask on, so nothing is downloaded unless someone said so.
 fn ask(question: &str) -> bool {
+    answer(question, "[y/N]", "no").is_some_and(|answer| is_yes(&answer))
+}
+
+/// Asks `question` on the terminal, with the `answers` it takes after it, and returns what was
+/// typed, trimmed. `None` if nothing could be read, or if there is no terminal to ask on, which is
+/// said along with what is done `instead`.
+fn answer(question: &str, answers: &str, instead: &str) -> Option<String> {
     if !io::stdin().is_terminal() {
-        eprintln!("{question} No one to ask, so no");
-        return false;
+        eprintln!("{question} No one to ask, so {instead}");
+        return None;
     }
-    print!("{question} [y/N] ");
+    print!("{question} {answers} ");
     let _ = io::stdout().flush();
     let mut answer = String::new();
-    if io::stdin().lock().read_line(&mut answer).is_err() {
-        return false;
-    }
-    is_yes(&answer)
+    io::stdin().lock().read_line(&mut answer).ok()?;
+    Some(answer.trim().to_string())
 }
 
 /// Whether a typed answer means yes.

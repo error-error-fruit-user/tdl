@@ -113,7 +113,7 @@ tdl never searches for moved files. A wad (or the base wad, UZDoom or ini) that 
 
 ### Volatile wads
 
-A wad you are still working on changes constantly, so its stored hash goes stale. Press `V` on it in the editor ("Toggle Volatility") to mark it volatile; it shows a cyan `*`. A volatile wad is not flagged when its size changes, replacing it never asks about a different hash, and when you host, tdl hashes it again right before building the list, so players download the current version. When you join a game, a volatile wad matches the host's wad of the same name; if its hash differs you are asked whether to join anyway.
+A wad you are still working on changes constantly, so its stored hash goes stale. Press `V` on it in the editor ("Toggle Volatility") to mark it volatile; it shows a cyan `*`. A volatile wad is not flagged when its size changes, replacing it never asks about a different hash, and when you host, tdl hashes it again right before building the list, so players download the current version. When you join a game, a volatile wad matches the host's wad of the same name; it is hashed again, and if it really differs it is replaced by the host's version without asking, its old file kept beside it as `<file>.bak` (any older `.bak` is overwritten), and the new hash saved in every profile that uses it. A wad that isn't volatile but has the name of one of the host's and other contents is replaced the same way only if you say so, or renamed so both are kept.
 
 ## When a file is unreadable
 

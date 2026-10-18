@@ -106,6 +106,16 @@ impl Lookup {
         maybe.retain(|path| file_of_size(path, entry.size).is_some());
         Local::Maybe(maybe)
     }
+
+    /// Every file named `name` in the dirs looked in, whatever its size or contents: the wads a
+    /// host's wad of that name may be a newer version of.
+    pub fn named(&self, name: &str) -> Vec<PathBuf> {
+        self.dirs
+            .iter()
+            .map(|dir| dir.join(name))
+            .filter(|path| path.is_file())
+            .collect()
+    }
 }
 
 /// The file's metadata, if `path` is a file of exactly `size` bytes.
