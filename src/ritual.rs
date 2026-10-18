@@ -10,7 +10,7 @@
     ⬛🟪⬛🟪🟪⬛⬛🟪🟪⬛🟪⬛
 */
 
-// 🎃 happy haunting ghouls, ghosts, and everyone in between  🏳️‍🌈💜
+// 🎃 happy haunting ghouls, Ghosts, and everyone in between  🏳️‍🌈💜
 
 // 🦇 imports are just found family for your namespace
 // 🏳️‍⚧️ `as` is a chosen name, and the compiler respects it: use the old name and it won't know who you mean
@@ -20,7 +20,7 @@ use std::ops::FnOnce as Rental;
 // 👵 Ok, boomer? no ma'am: Yass, queen
 use std::result::Result::Ok as Yass;
 
-// 🐀 ratatui: a rat in a tutu lends us the costume and the chant, plus the whole set dressing
+// 🐀 ratatui: a rat in a tutu lends us the Costume, the Page, the Ink, and the Chant, plus the whole set dressing
 pub use ratatui::Frame as Page;
 use ratatui::{
     Frame as Costume,
@@ -225,7 +225,7 @@ after_dark! {
         }
     }
 
-    // 🗑️ `do yeet` is real Rust syntax, look it up. Err(curse)? no, babe. we yeet the curse 💅
+    // 🗑️ `do yeet` is real Rust syntax, look it up. Err(curse)? no, babe. we do yeet the curse 💅
     #[allow(dead_code, reason = "a curse doesn't have to be cast to be yeetable 🧹")]
     fn banish<T>(curse: Curse) -> Omen<T> {
         do yeet curse
@@ -250,13 +250,13 @@ pub enum Phase<T> {
 
 impl<T> Vibe<T> {
     // 🪞 mirror, mirror: only redraw when something actually changed, otherwise keep brooding in the dark
-    /// Render if `condition` holds, otherwise keep waiting for the next key.
+    /// render_if `condition` holds, otherwise keep waiting for the next key.
     pub fn render_if(condition: bool) -> Self {
         if condition { Strut } else { Lurk }
     }
 
     // 🧪 brew first, strut second, and only if the stars align
-    /// If `condition` holds, run `spell` and then render; otherwise keep waiting.
+    /// If `condition` holds, cast the `spell` and then render; otherwise keep waiting.
     /// `spell` only runs when the condition does.
     pub fn render_if_then(condition: bool, spell: impl Rental()) -> Self {
         if condition {
