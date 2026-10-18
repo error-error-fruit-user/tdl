@@ -1,0 +1,70 @@
+# tdl's splash screen: the logo, the words under it, and the fire behind them.
+# Change anything below, or leave it out for the built-in splash's. Every field is explained in
+# SPLASH.md. The pride splash's logo and fire are in pride.toml instead.
+#
+# A color is "#rrggbb", a terminal color's name ("red", "lightmagenta", "darkgray", ...), a
+# terminal palette number ("0" to "255"), or "reset" for the terminal's own.
+
+edition = 1
+
+[logo]
+# The logo, a row a line. Full blocks (█) are painted in the colors below; every other character
+# is its shadow; spaces let the fire show through. Up to 16 rows of up to 120 characters.
+art = [
+    "████████╗██████╗ ██╗     ",
+    "╚══██╔══╝██╔══██╗██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██████╔╝███████╗",
+    "   ╚═╝   ╚═════╝ ╚══════╝",
+]
+# Stripes from top to bottom, as many as you like, spread evenly over the rows with blocks in
+# them (each row holds two stripes, top and bottom half). One color paints the whole logo.
+colors = ["#FFC846", "#FF9C2B", "#FF7010", "#DC4511", "#BA1A12"]
+# The color of every character that isn't a block.
+shadow = "#5C0E0A"
+
+[tagline]
+# The words under the logo, and the shorter ones for a terminal too narrow for them.
+text = "t e r m i n a l   d o o m   l a u n c h e r"
+narrow = "terminal doom launcher"
+color = "#E4D8BE"
+bold = true
+
+[hint]
+# The words under the tagline, which breathe from the first color to the second and back once
+# every `period` seconds.
+text = "press any key"
+colors = ["#80746A", "#E4D8BE"]
+period = 1.6
+
+[quip]
+# The quip between the logo and the tagline flares the same way, quicker, to catch the eye.
+colors = ["#FF7010", "#FFC846"]
+period = 0.7
+bold = true
+
+[fire]
+# The flames, as many as you like. A single color glows: the flames rise out of the background
+# into that color, then whiten where they are hottest. A list of colors is shaded: the flames go
+# through those colors from coldest to hottest, so ["black", "white"] is a fire of grays, and
+# the list below is the fire of the PlayStation port of Doom. With more than one, the fire
+# cycles through them in order, blending each into the next:
+#   flames = ["#FF7010", "#3A7BD5", ["black", "white"]]
+flames = [[
+    "#070707", "#1F0707", "#2F0F07", "#470F07", "#571707", "#671F07",
+    "#771F07", "#8F2707", "#9F2F07", "#AF3F07", "#BF4707", "#C74707",
+    "#DF4F07", "#DF5707", "#DF5707", "#D75F07", "#D75F07", "#D7670F",
+    "#CF6F0F", "#CF770F", "#CF7F0F", "#CF8717", "#C78717", "#C78F17",
+    "#C7971F", "#BF9F1F", "#BF9F1F", "#BFA727", "#BFA727", "#BFAF2F",
+    "#B7AF2F", "#B7B72F", "#B7B737", "#CFCF6F", "#DFDF9F", "#EFEFC7",
+    "#FFFFFF",
+]]
+# How fast the fire cycles: flames a second (0.5 is one flame every two seconds). 0 stays on the
+# first flame. Nothing cycles with only one.
+speed = 0.5
+# How far up the flames reach, as a percentage of the fire's height (1 to 100).
+reach = 80
+# Where the fire starts, as a percentage of the way down the screen (0 to 90). It starts lower
+# on a short terminal, to leave room for the logo.
+top = 45

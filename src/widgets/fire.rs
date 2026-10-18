@@ -1,21 +1,24 @@
 //! The fire from the PlayStation port of Doom: a grid of heat that rises, drifts and cools,
 //! drawn two pixels to a cell with half blocks.
 
+use std::time::Duration;
+
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{Color, Style},
 };
 
-use crate::theme;
+use crate::theme::{
+    self,
+    dressing::{mix, rgb},
+    splash::Flame,
+};
 
 /// The hottest heat, white hot in the original's colors. Heat goes from 0 (none, drawn as the
 /// screen's own background so there is no seam where the fire meets the rest of the screen) up to
-/// this, with one color for each in the original: the theme's fire colors are spread over them.
+/// this, with one color for each in the original: a shaded flame's colors are spread over them.
 const HOTTEST: u8 = 36;
-/// How far up the flames reach, as a share of the fire's height. The original was made for a
-/// screen far taller than a terminal, so the fire cools faster here to keep its shape.
-const REACH_PERCENT: u32 = 80;
 
 pub struct Fire {
     width: usize,
@@ -28,12 +31,14 @@ pub struct Fire {
 }
 
 impl Fire {
-    /// A fire filling `area`, two pixels high per cell, burning at full heat from the bottom.
-    pub fn new(area: Rect, seed: u32) -> Self {
+    /// A fire filling `area`, two pixels high per cell, burning at full heat from the bottom, its
+    /// flames reaching `reach` percent of the way up. The original was made for a screen far
+    /// taller than a terminal, so the built-in splash has them cool faster to keep its shape.
+    pub fn new(area: Rect, seed: u32, reach: u8) -> Self {
         let (width, height) = (area.width as usize, area.height as usize * 2);
         let mut heat = vec![0; width * height];
         heat[width * height.saturating_sub(1)..].fill(HOTTEST);
-        let reach = (height as u32 * REACH_PERCENT / 100).max(1);
+        let reach = (height as u32 * u32::from(reach.clamp(1, 100)) / 100).max(1);
         Self {
             width,
             height,
@@ -46,8 +51,8 @@ impl Fire {
     /// A fire filling `area` that has already burned long enough to reach its full height, so it
     /// is at its peak from the first frame instead of climbing up from the bottom. Heat rises one
     /// pixel per [`Fire::step`], so a step for every pixel of height gets the flames to the top.
-    pub fn kindled(area: Rect, seed: u32) -> Self {
-        let mut fire = Self::new(area, seed);
+    pub fn kindled(area: Rect, seed: u32, reach: u8) -> Self {
+        let mut fire = Self::new(area, seed, reach);
         for _ in 0..fire.height {
             fire.step();
         }
@@ -91,17 +96,18 @@ impl Fire {
         }
     }
 
-    /// Draws into `area` in the theme's fire colors (the original's, built in).
-    pub fn render(&self, area: Rect, buffer: &mut Buffer) {
-        let colors = &theme::worn().splash.fire;
-        self.render_with(area, buffer, |heat| shade(colors, heat));
-    }
-
-    /// Draws into `area` in the colors of the rainbow: `hue` (0 to 1, round the color wheel from
-    /// red) for the body of the flames, the cooler wisps a little further round the wheel, and the
-    /// hottest going white. Turning `hue` over time takes the fire through every color.
-    pub fn render_rainbow(&self, area: Rect, buffer: &mut Buffer, hue: f32) {
-        self.render_with(area, buffer, |heat| rainbow(heat, hue));
+    /// Draws into `area` with `flames`, `elapsed` into a fire cycling through them at `speed`
+    /// flames a second (see [`palette`]).
+    pub fn render(
+        &self,
+        area: Rect,
+        buffer: &mut Buffer,
+        flames: &[Flame],
+        speed: f32,
+        elapsed: Duration,
+    ) {
+        let palette = palette(flames, speed, elapsed);
+        self.render_with(area, buffer, |heat| palette[usize::from(heat.min(HOTTEST))]);
     }
 
     /// Draws into `area`: each cell is an upper half block, its top pixel the foreground color
@@ -127,65 +133,73 @@ impl Fire {
     }
 }
 
-/// The color of `heat` from `colors`, cold to white hot, however many there are.
-fn shade(colors: &[Color], heat: u8) -> Color {
-    let last = colors.len().saturating_sub(1);
-    let index = usize::from(heat.min(HOTTEST)) * last / usize::from(HOTTEST);
-    colors.get(index).copied().unwrap_or(Color::Reset)
-}
-
-/// How hot the body of the flames is, as a share of the hottest: below it they darken toward
-/// black, above it they whiten.
-const BODY: f32 = 0.75;
-/// How much of the way to white the hottest pixels get.
-const WHITE_HOT: f32 = 0.7;
-/// How far round the color wheel the coldest wisps are from the body, so the flames show a few
-/// colors at once.
-const WISPS: f32 = 0.15;
-
-/// The color of `heat` in a fire of `hue`: rising out of the screen's background, so the coolest
-/// wisps melt into it, to the full color, then toward white.
-fn rainbow(heat: u8, hue: f32) -> Color {
-    let warmth = f32::from(heat.min(HOTTEST)) / f32::from(HOTTEST);
-    let (r, g, b) = full_color(hue + (1.0 - warmth) * WISPS);
-    let (light, white) = if warmth < BODY {
-        (warmth / BODY, 0.0)
-    } else {
-        (1.0, (warmth - BODY) / (1.0 - BODY) * WHITE_HOT)
-    };
+/// The color of every heat, coldest first, `elapsed` into a fire that cycles through `flames` at
+/// `speed` flames a second: the flame it is on, blended into the next as the next comes round.
+fn palette(flames: &[Flame], speed: f32, elapsed: Duration) -> Vec<Color> {
     // 🌑 a background the terminal picks (`Color::Reset`) can't be blended from, so black it is
-    let Color::Rgb(dark_r, dark_g, dark_b) = theme::worn().colors.background else {
-        return rainbow_over((0, 0, 0), (r, g, b), light, white);
+    let dark = rgb(theme::worn().colors.background).unwrap_or((0, 0, 0));
+    let Some(first) = flames.first() else {
+        return vec![theme::worn().colors.background; usize::from(HOTTEST) + 1];
     };
-    rainbow_over((dark_r, dark_g, dark_b), (r, g, b), light, white)
+    let position = elapsed.as_secs_f32() * speed;
+    let (now, next, share) = match flames.len() {
+        1 => (first, first, 0.0),
+        count => {
+            let at = position.floor() as usize % count;
+            (&flames[at], &flames[(at + 1) % count], position.fract())
+        }
+    };
+    (0..=HOTTEST)
+        .map(|heat| {
+            let color = flame_color(now, heat, dark);
+            let color = if share > 0.0 {
+                mix(color, flame_color(next, heat, dark), share)
+            } else {
+                color
+            };
+            Color::Rgb(color.0, color.1, color.2)
+        })
+        .collect()
 }
 
-/// `color` (each channel 0 to 1) risen `light` of the way out of `dark`, then `white` of the rest
-/// of the way to white.
-fn rainbow_over(dark: (u8, u8, u8), color: (f32, f32, f32), light: f32, white: f32) -> Color {
-    let channel = |dark: u8, c: f32| {
-        let lit = f32::from(dark) / 255.0 * (1.0 - light) + c * light;
-        ((lit + (1.0 - lit) * white) * 255.0) as u8
-    };
-    Color::Rgb(
-        channel(dark.0, color.0),
-        channel(dark.1, color.1),
-        channel(dark.2, color.2),
-    )
-}
+/// How hot the body of a glowing flame is, as a share of the hottest: below it the flame darkens
+/// toward the background, above it it whitens.
+const BODY: f32 = 0.75;
+/// How much of the way to white the hottest pixels of a glowing flame get.
+const WHITE_HOT: f32 = 0.7;
 
-/// The brightest, fullest color at `hue` on the color wheel (0 and 1 are red), each channel 0 to 1.
-fn full_color(hue: f32) -> (f32, f32, f32) {
-    let sixth = hue.rem_euclid(1.0) * 6.0;
-    let rising = sixth.fract();
-    let falling = 1.0 - rising;
-    match sixth as u8 {
-        0 => (1.0, rising, 0.0),
-        1 => (falling, 1.0, 0.0),
-        2 => (0.0, 1.0, rising),
-        3 => (0.0, falling, 1.0),
-        4 => (rising, 0.0, 1.0),
-        _ => (1.0, 0.0, falling),
+/// The color of `heat` in `flame`, over a background of `dark`. A glowing flame rises out of the
+/// background, so its coolest wisps melt into it, to its full color, then toward white; a shaded
+/// one goes through its colors, spread evenly from cold to hot.
+fn flame_color(flame: &Flame, heat: u8, dark: (u8, u8, u8)) -> (u8, u8, u8) {
+    let warmth = f32::from(heat.min(HOTTEST)) / f32::from(HOTTEST);
+    match flame {
+        Flame::Glow(color) => {
+            let full = rgb(*color).unwrap_or(dark);
+            if warmth < BODY {
+                mix(dark, full, warmth / BODY)
+            } else {
+                mix(
+                    full,
+                    (255, 255, 255),
+                    (warmth - BODY) / (1.0 - BODY) * WHITE_HOT,
+                )
+            }
+        }
+        Flame::Shades(shades) => {
+            let last = shades.len().saturating_sub(1);
+            let position = usize::from(heat.min(HOTTEST)) * last;
+            let (at, rest) = (
+                position / usize::from(HOTTEST),
+                position % usize::from(HOTTEST),
+            );
+            let shade = |at: usize| shades.get(at).and_then(|&color| rgb(color)).unwrap_or(dark);
+            if rest == 0 {
+                shade(at)
+            } else {
+                mix(shade(at), shade(at + 1), rest as f32 / f32::from(HOTTEST))
+            }
+        }
     }
 }
 
@@ -202,14 +216,14 @@ mod tests {
             let half = fire.width * fire.height / 2;
             fire.heat[..half].iter().map(|&h| u32::from(h)).sum()
         };
-        assert_eq!(top_half_heat(&Fire::new(area, 7)), 0);
-        let kindled = Fire::kindled(area, 7);
+        assert_eq!(top_half_heat(&Fire::new(area, 7, 80)), 0);
+        let kindled = Fire::kindled(area, 7, 80);
         assert!(
             top_half_heat(&kindled) > 0,
             "the flames reach the top half already"
         );
         // and it has settled: burning on doesn't make it any taller
-        let mut later = Fire::kindled(area, 7);
+        let mut later = Fire::kindled(area, 7, 80);
         for _ in 0..later.height * 4 {
             later.step();
         }
@@ -217,45 +231,73 @@ mod tests {
         assert!(reach(&kindled) <= reach(&later) + 2);
     }
 
-    #[test]
-    fn the_rainbow_goes_round_the_wheel_and_from_dark_to_white_hot() {
-        assert_eq!(full_color(0.0), (1.0, 0.0, 0.0));
-        assert_eq!(full_color(1.0 / 3.0), (0.0, 1.0, 0.0));
-        assert_eq!(full_color(2.0 / 3.0), (0.0, 0.0, 1.0));
-        assert_eq!(full_color(1.0), full_color(0.0));
-        // the coldest melts into the background, where the fire draws nothing at all
-        assert_eq!(rainbow(0, 0.5), theme::worn().colors.background);
-        let Color::Rgb(r, g, b) = rainbow(HOTTEST, 0.0) else {
-            unreachable!()
-        };
-        assert_eq!(r, 255);
-        assert!(g > 150 && g == b, "red going white: {g} {b}");
+    fn playstation() -> Vec<Flame> {
+        theme::splash::Splash::default().fire.flames
     }
 
     #[test]
-    fn where_the_fire_is_cold_is_the_same_as_the_rest_of_the_screen() {
-        let fire = Fire::new(AREA, 7);
-        for rainbow in [false, true] {
-            let mut buffer = Buffer::empty(AREA);
-            if rainbow {
-                fire.render_rainbow(AREA, &mut buffer, 0.3);
-            } else {
-                fire.render(AREA, &mut buffer);
-            }
-            let top = &buffer[(0, 0)];
+    fn a_shaded_flame_goes_through_its_colors_from_cold_to_hot() {
+        let dark = (0, 0, 0);
+        let gray = Flame::Shades(vec![Color::Black, Color::White]);
+        assert_eq!(flame_color(&gray, 0, dark), (0, 0, 0));
+        assert_eq!(flame_color(&gray, HOTTEST, dark), (255, 255, 255));
+        assert_eq!(flame_color(&gray, HOTTEST / 2, dark), (128, 128, 128));
+        // the original's colors are one each, exactly as they were
+        let Flame::Shades(original) = &playstation()[0] else {
+            unreachable!()
+        };
+        for heat in 0..=HOTTEST {
             assert_eq!(
-                (top.fg, top.bg),
-                (
-                    theme::worn().colors.background,
-                    theme::worn().colors.background
-                )
+                Some(flame_color(&playstation()[0], heat, dark)),
+                rgb(original[usize::from(heat)])
             );
         }
     }
 
     #[test]
+    fn a_glowing_flame_rises_out_of_the_dark_and_goes_white_hot() {
+        let red = Flame::Glow(Color::Rgb(255, 0, 0));
+        assert_eq!(flame_color(&red, 0, (10, 10, 10)), (10, 10, 10));
+        let (r, g, b) = flame_color(&red, HOTTEST, (0, 0, 0));
+        assert_eq!(r, 255);
+        assert!(g > 150 && g == b, "red going white: {g} {b}");
+    }
+
+    #[test]
+    fn several_flames_take_turns_blending_into_each_other() {
+        let flames = [
+            Flame::Shades(vec![Color::Rgb(0, 0, 0)]),
+            Flame::Shades(vec![Color::Rgb(200, 0, 0)]),
+        ];
+        let at = |seconds: f32| palette(&flames, 1.0, Duration::from_secs_f32(seconds))[5];
+        assert_eq!(at(0.0), Color::Rgb(0, 0, 0));
+        assert_eq!(at(0.5), Color::Rgb(100, 0, 0));
+        assert_eq!(at(1.0), Color::Rgb(200, 0, 0));
+        assert_eq!(at(2.0), Color::Rgb(0, 0, 0), "and round again");
+        // standing still, or with only one, it never changes
+        assert_eq!(palette(&flames, 0.0, Duration::from_secs(9))[5], at(0.0));
+        assert_eq!(
+            palette(&flames[1..], 3.0, Duration::from_millis(1234))[5],
+            at(1.0)
+        );
+    }
+
+    #[test]
+    fn where_the_fire_is_cold_is_the_same_as_the_rest_of_the_screen() {
+        let fire = Fire::new(AREA, 7, 80);
+        let rainbow = theme::pride::Pride::default().fire.flames;
+        for flames in [playstation(), rainbow] {
+            let mut buffer = Buffer::empty(AREA);
+            fire.render(AREA, &mut buffer, &flames, 1.0, Duration::from_millis(300));
+            let top = &buffer[(0, 0)];
+            let background = theme::worn().colors.background;
+            assert_eq!((top.fg, top.bg), (background, background));
+        }
+    }
+
+    #[test]
     fn a_new_fire_burns_only_at_the_bottom() {
-        let fire = Fire::new(AREA, 7);
+        let fire = Fire::new(AREA, 7, 80);
         let width = AREA.width as usize;
         assert!(fire.heat[..fire.heat.len() - width].iter().all(|&h| h == 0));
         assert!(
@@ -267,7 +309,7 @@ mod tests {
 
     #[test]
     fn heat_rises_but_never_gets_hotter_than_the_palette() {
-        let mut fire = Fire::new(AREA, 7);
+        let mut fire = Fire::new(AREA, 7, 80);
         for _ in 0..30 {
             fire.step();
         }
@@ -279,16 +321,16 @@ mod tests {
 
     #[test]
     fn drawing_fills_the_area_with_half_blocks() {
-        let mut fire = Fire::new(AREA, 7);
+        let mut fire = Fire::new(AREA, 7, 80);
         fire.step();
         let mut buffer = Buffer::empty(AREA);
-        fire.render(AREA, &mut buffer);
+        fire.render(AREA, &mut buffer, &playstation(), 0.5, Duration::ZERO);
         assert!(buffer.content().iter().all(|cell| cell.symbol() == "▀"));
     }
 
     #[test]
     fn a_fire_knows_what_size_it_was_made_for() {
-        let fire = Fire::new(AREA, 7);
+        let fire = Fire::new(AREA, 7, 80);
         assert!(fire.fits(AREA));
         assert!(!fire.fits(Rect::new(0, 0, 21, 8)));
     }
@@ -296,7 +338,7 @@ mod tests {
     #[test]
     fn the_flames_die_out_before_the_top_of_the_fire() {
         let area = Rect::new(0, 0, 60, 15);
-        let mut fire = Fire::new(area, 11);
+        let mut fire = Fire::new(area, 11, 80);
         for _ in 0..200 {
             fire.step();
         }
@@ -311,11 +353,14 @@ mod tests {
 
     #[test]
     fn a_tiny_area_does_not_panic() {
-        let mut fire = Fire::new(Rect::new(0, 0, 1, 1), 0);
+        let mut fire = Fire::new(Rect::new(0, 0, 1, 1), 0, 80);
         fire.step();
         fire.render(
             Rect::new(0, 0, 1, 1),
             &mut Buffer::empty(Rect::new(0, 0, 1, 1)),
+            &[],
+            1.0,
+            Duration::ZERO,
         );
     }
 }

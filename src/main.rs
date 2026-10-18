@@ -6,7 +6,7 @@ use crate::{
     cli::Cli,
     error::{Error, INTERRUPTED_EXIT},
     screens::launcher::{Launcher, Start},
-    theme::Theme,
+    theme::{Dressing, Theme, splash::Splash},
 };
 
 mod cli;
@@ -50,7 +50,8 @@ fn main() {
         eprintln!("{message}");
         std::process::exit(2);
     }
-    // 🧪 this run's UZDoom, base wad, ini and theme must be there, said now rather than at launch
+    // 🧪 this run's UZDoom, base wad, ini, theme and splash must be there, said now rather than at
+    // launch
     let session_file = |flag: &str, file: Option<String>| {
         file.map(|file| {
             let path = std::path::absolute(&file).unwrap_or_else(|_| file.clone().into());
@@ -65,12 +66,22 @@ fn main() {
     let base_wad = session_file("--base-wad", cli.base_wad);
     let ini = session_file("--ini", cli.ini);
     let theme = session_file("--theme", cli.theme);
+    let splash = session_file("--splash", cli.splash);
     // 👗 and the theme must be one that can be worn, from the very first window
     if let Some(path) = &theme {
         match Theme::read(path) {
             Ok(theme) => theme::wear(theme),
             Err(message) => {
                 eprintln!("--theme: {message}");
+                std::process::exit(2);
+            }
+        }
+    }
+    if let Some(path) = &splash {
+        match Splash::read(path) {
+            Ok(splash) => theme::splash::wear(splash),
+            Err(message) => {
+                eprintln!("--splash: {message}");
                 std::process::exit(2);
             }
         }
@@ -100,6 +111,8 @@ fn main() {
         keep_ini: cli.keep_ini,
         theme,
         keep_theme: cli.keep_theme,
+        splash_look: splash,
+        keep_splash: cli.keep_splash,
         command: cli.command,
     };
     // 📜 --seal draws no windows either: the loadout goes into the scroll, and tdl closes

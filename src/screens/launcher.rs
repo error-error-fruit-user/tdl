@@ -53,7 +53,7 @@ use crate::{
     slayer::plain,
     slayer::share,
     slayer::watch,
-    theme::{self, Theme},
+    theme::{self, Dressing, Theme, pride::Pride, splash::Splash},
     uzdoom,
     widgets::{
         details::Details,
@@ -90,6 +90,9 @@ pub struct Launcher {
     /// `--theme`, worn already, and whether to keep wearing it.
     session_theme: Option<PathBuf>,
     keep_theme: Keep,
+    /// `--splash`, worn already, and whether to keep it.
+    session_splash: Option<PathBuf>,
+    keep_splash: Keep,
     /// The command from the command line, until it is done.
     command: Option<Command>,
     /// Each profile's mark, by position. A profile is only checked once its row is on screen, and
@@ -158,8 +161,47 @@ pub struct Start {
     /// The `theme.toml` worn this run (already worn by then), and whether to keep wearing it.
     pub theme: Option<PathBuf>,
     pub keep_theme: Keep,
+    /// The `splash.toml` the splash wears this run (already worn by then), which plays the splash
+    /// even if the settings skip it, and whether to keep it.
+    pub splash_look: Option<PathBuf>,
+    pub keep_splash: Keep,
     /// `run`, `host` or `join`: done without the launcher, after which tdl closes.
     pub command: Option<Command>,
+}
+
+/// Wears the theme, splash or pride kept at `path`, if one is kept: one that can't be worn is
+/// said, and the built-in one is worn instead.
+fn wear_kept<T: Dressing>(
+    grimoire: &mut Grimoire,
+    path: Option<&std::ffi::OsStr>,
+    wear: fn(T),
+) -> Result<()> {
+    let Some(path) = path else {
+        return Ok(());
+    };
+    match T::read(Path::new(path)) {
+        Ok(dressing) => wear(dressing),
+        Err(problem) => {
+            wear(T::default());
+            Warning::summon(grimoire, &format!("{problem}, so the built-in one is worn"))?;
+        }
+    }
+    Ok(())
+}
+
+/// Wears the theme, splash or pride just picked in the settings at `path`, or the built-in one
+/// for none. One that can't be worn after all is said, and the one worn stays.
+fn wear_picked<T: Dressing>(
+    grimoire: &mut Grimoire,
+    path: Option<&std::ffi::OsStr>,
+    wear: fn(T),
+) -> Result<()> {
+    match path.map(|path| T::read(Path::new(path))) {
+        Some(Err(problem)) => Warning::summon(grimoire, &problem)?,
+        Some(Ok(dressing)) => wear(dressing),
+        None => wear(T::default()),
+    }
+    Ok(())
 }
 
 /// `path` as an absolute path, so a dir kept from `tdl --wads .` still means the same dir
@@ -288,6 +330,8 @@ impl Launcher {
             keep_ini: start.keep_ini,
             session_theme: start.theme,
             keep_theme: start.keep_theme,
+            session_splash: start.splash_look,
+            keep_splash: start.keep_splash,
             command: start.command,
             marks: HashMap::new(),
             passed_loadout,
@@ -333,18 +377,18 @@ impl Launcher {
         if layout::is_too_small(area.width, area.height) {
             resize::summon(grimoire)?;
         }
-        // 👗 the kept theme, unless `--theme` already put one on; one that can't be worn is said
-        if self.session_theme.is_none()
-            && let Some(path) = &self.loadout.uac.theme
-        {
-            match Theme::read(Path::new(path)) {
-                Ok(theme) => theme::wear(theme),
-                Err(problem) => {
-                    theme::wear(Theme::default());
-                    Warning::summon(grimoire, &format!("{problem}, so the built-in one is worn"))?;
-                }
-            }
+        // 👗 the kept theme, splash and pride flags, unless the command line already put one on;
+        // one that can't be worn is said
+        let uac = &self.loadout.uac;
+        let (kept_theme, kept_splash) = (uac.theme.clone(), uac.splash.clone());
+        let kept_pride = uac.pride_flags.clone();
+        if self.session_theme.is_none() {
+            wear_kept(grimoire, kept_theme.as_deref(), theme::wear)?;
         }
+        if self.session_splash.is_none() {
+            wear_kept(grimoire, kept_splash.as_deref(), theme::splash::wear)?;
+        }
+        wear_kept(grimoire, kept_pride.as_deref(), theme::pride::wear)?;
         quips::show(!self.no_quips && !self.loadout.uac.no_quips);
         // 🔇 nothing plays at all, not even on the splash
         if self.no_music || self.loadout.uac.music == Music::Off {
@@ -368,7 +412,9 @@ impl Launcher {
         if self.loadout.uac.pride {
             theme::wear_pride();
         }
-        if self.splash && (!self.loadout.uac.skip_splash || self.quip.is_some()) {
+        // 🔥 asking for a quip or a look is asking to see the splash, whatever the settings say
+        let asked = self.quip.is_some() || self.session_splash.is_some();
+        if self.splash && (!self.loadout.uac.skip_splash || asked) {
             // 💬 the command line's quip, or else the one kept in the settings, or else a random one
             let kept = quips::shown()
                 .then(|| self.loadout.uac.splash_quip.text())
@@ -817,6 +863,14 @@ impl Launcher {
             self.loadout.uac.theme = Some(theme);
             kept = true;
         }
+        if self.keep_splash == Keep::Ask
+            && let Some(splash) = self.session_splash.clone().map(PathBuf::into_os_string)
+            && self.loadout.uac.splash.as_ref() != Some(&splash)
+            && Dialog::summon(grimoire, &format!("Keep the splash {}?", shown(&splash)))?
+        {
+            self.loadout.uac.splash = Some(splash);
+            kept = true;
+        }
         if kept && self.loadout.keep_uac().is_err() {
             Warning::save_failed(grimoire)?;
         }
@@ -880,6 +934,12 @@ impl Launcher {
             && let Some(theme) = &self.session_theme
         {
             uac.theme = Some(theme.clone().into_os_string());
+            global = true;
+        }
+        if self.keep_splash == Keep::Global
+            && let Some(splash) = &self.session_splash
+        {
+            uac.splash = Some(splash.clone().into_os_string());
             global = true;
         }
         if global {
@@ -992,8 +1052,13 @@ impl Launcher {
     /// changed at all.
     fn change_settings(&mut self, grimoire: &mut Grimoire) -> Result<()> {
         let before = Settings::of(&self.loadout.uac);
-        let new_theme = self.loadout.uac_path.with_file_name(theme::FILE);
-        let Some(settings) = SettingsForm::summon(grimoire, before.clone(), new_theme)? else {
+        let config_dir = self
+            .loadout
+            .uac_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
+        let Some(settings) = SettingsForm::summon(grimoire, before.clone(), config_dir)? else {
             return Ok(());
         };
         if settings == before {
@@ -1006,7 +1071,12 @@ impl Launcher {
             );
         }
         let kept_song = self.loadout.uac.song.clone();
-        let kept_theme = self.loadout.uac.theme.clone();
+        let uac = &self.loadout.uac;
+        let kept = (
+            uac.theme.clone(),
+            uac.splash.clone(),
+            uac.pride_flags.clone(),
+        );
         let kept_music = self.loadout.uac.music;
         if let Err(problem) = settings.apply(&mut self.loadout.uac) {
             return Warning::summon(grimoire, &problem);
@@ -1022,19 +1092,22 @@ impl Launcher {
         self.follow_music(kept_music, self.loadout.uac.music);
         // 💬 the quips come and go now, unless `--no-quips` said otherwise for this run
         quips::show(!self.no_quips && !self.loadout.uac.no_quips);
-        // 👗 and the theme changes from the next frame on (the form read it, so it can be worn)
-        if self.loadout.uac.theme != kept_theme {
-            let theme = self
-                .loadout
-                .uac
-                .theme
-                .as_ref()
-                .map(|path| Theme::read(Path::new(path)));
-            match theme {
-                Some(Err(problem)) => Warning::summon(grimoire, &problem)?,
-                Some(Ok(theme)) => theme::wear(theme),
-                None => theme::wear(Theme::default()),
-            }
+        // 👗 and the theme changes from the next frame on, and the splash and pride from the next
+        // splash (the form read each, so it can be worn)
+        let uac = &self.loadout.uac;
+        let now = (
+            uac.theme.clone(),
+            uac.splash.clone(),
+            uac.pride_flags.clone(),
+        );
+        if now.0 != kept.0 {
+            wear_picked::<Theme>(grimoire, now.0.as_deref(), theme::wear)?;
+        }
+        if now.1 != kept.1 {
+            wear_picked::<Splash>(grimoire, now.1.as_deref(), theme::splash::wear)?;
+        }
+        if now.2 != kept.2 {
+            wear_picked::<Pride>(grimoire, now.2.as_deref(), theme::pride::wear)?;
         }
         if self.loadout.uac.keep(&self.loadout.uac_path).is_err() {
             Warning::save_failed(grimoire)?;

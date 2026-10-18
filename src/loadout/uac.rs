@@ -77,6 +77,14 @@ pub struct Uac {
     /// from `--theme`.
     #[serde(default, with = "optional_path")]
     pub theme: Option<OsString>,
+    /// The `splash.toml` the splash screen wears instead of the built-in one. Picked in the
+    /// settings or kept from `--splash`.
+    #[serde(default, with = "optional_path")]
+    pub splash: Option<OsString>,
+    /// The `pride.toml` the pride splash picks its flag from instead of the built-in one. Picked
+    /// in the settings.
+    #[serde(default, with = "optional_path")]
+    pub pride_flags: Option<OsString>,
     /// UZDoom from `--uzdoom`, for this session only: it is never saved, and it wins over every
     /// profile's own and the global one.
     #[serde(skip)]
@@ -285,6 +293,8 @@ mod tests {
             host_port: Some(9000),
             ini: Some("/inis/mine.ini".into()),
             theme: Some("/themes/blue.toml".into()),
+            splash: Some("/themes/splash.toml".into()),
+            pride_flags: Some("/themes/pride.toml".into()),
             ..Uac::default()
         };
         global.keep(&path).unwrap();

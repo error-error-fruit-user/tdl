@@ -1,17 +1,18 @@
 //! Every color, border and glyph the interface uses, in one [`Theme`]. The screens only ever ask
 //! the theme being worn for a role ("a screen border", "something broken"), never for a color.
 //!
-//! The built-in theme is below. Another can be worn from a `theme.toml` (see [`Theme::read`]),
-//! kept in `uac.rite` or given with `--theme`; anything it leaves out is the built-in theme's.
+//! The built-in theme is below. Another can be worn from a `theme.toml` (see [`Dressing`]), kept
+//! in `uac.rite` or given with `--theme`; anything it leaves out is the built-in theme's. The
+//! splash screen dresses up apart, in [`splash`] (`splash.toml`) and [`pride`] (`pride.toml`).
+//! Every field of all three is explained in `THEME.md` and `SPLASH.md`.
+
+pub mod dressing;
+pub mod pride;
+pub mod splash;
 
 use std::{
-    fs, io,
-    path::Path,
     str::FromStr,
-    sync::{
-        LazyLock, RwLock,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use ratatui::{
@@ -20,71 +21,28 @@ use ratatui::{
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-// The built-in palette: hot metal, old blood and toxic waste. Every role of the built-in theme is
-// picked from these.
+pub use self::dressing::Dressing;
+use self::dressing::Wardrobe;
+
+// The built-in palette: hot metal, old blood and toxic waste. Every role of the built-in theme
+// (and the built-in splash) is picked from these.
 
 /// Almost black, with a little blood in it.
-const VOID: Color = Color::Rgb(14, 8, 8);
-const BLOOD: Color = Color::Rgb(186, 26, 18);
+pub const VOID: Color = Color::Rgb(14, 8, 8);
+pub const BLOOD: Color = Color::Rgb(186, 26, 18);
 /// Dried blood: for fills that shouldn't shout.
-const GORE: Color = Color::Rgb(92, 14, 10);
-const HELLFIRE: Color = Color::Rgb(255, 112, 16);
+pub const GORE: Color = Color::Rgb(92, 14, 10);
+pub const HELLFIRE: Color = Color::Rgb(255, 112, 16);
 /// The hottest part of the flame.
-const FLAME: Color = Color::Rgb(255, 200, 70);
-const BONE: Color = Color::Rgb(228, 216, 190);
-const ASH: Color = Color::Rgb(128, 116, 106);
+pub const FLAME: Color = Color::Rgb(255, 200, 70);
+pub const BONE: Color = Color::Rgb(228, 216, 190);
+pub const ASH: Color = Color::Rgb(128, 116, 106);
 /// Cold, dark metal: for lines that only divide things.
-const IRON: Color = Color::Rgb(70, 60, 58);
+pub const IRON: Color = Color::Rgb(70, 60, 58);
 /// The green slime of Doom's toxic floors.
-const NUKAGE: Color = Color::Rgb(124, 200, 46);
+pub const NUKAGE: Color = Color::Rgb(124, 200, 46);
 /// The blue of a soul sphere.
-const SOUL: Color = Color::Rgb(96, 156, 255);
-/// The trans flag's stripes, which the pride splash's logo wears.
-const TRANS_BLUE: Color = Color::Rgb(91, 206, 250);
-const TRANS_PINK: Color = Color::Rgb(245, 169, 184);
-const TRANS_WHITE: Color = Color::Rgb(255, 255, 255);
-
-/// The fire's colors from the PlayStation port of Doom, from cold to white hot.
-const FIRE: [(u8, u8, u8); 37] = [
-    (0x07, 0x07, 0x07),
-    (0x1F, 0x07, 0x07),
-    (0x2F, 0x0F, 0x07),
-    (0x47, 0x0F, 0x07),
-    (0x57, 0x17, 0x07),
-    (0x67, 0x1F, 0x07),
-    (0x77, 0x1F, 0x07),
-    (0x8F, 0x27, 0x07),
-    (0x9F, 0x2F, 0x07),
-    (0xAF, 0x3F, 0x07),
-    (0xBF, 0x47, 0x07),
-    (0xC7, 0x47, 0x07),
-    (0xDF, 0x4F, 0x07),
-    (0xDF, 0x57, 0x07),
-    (0xDF, 0x57, 0x07),
-    (0xD7, 0x5F, 0x07),
-    (0xD7, 0x5F, 0x07),
-    (0xD7, 0x67, 0x0F),
-    (0xCF, 0x6F, 0x0F),
-    (0xCF, 0x77, 0x0F),
-    (0xCF, 0x7F, 0x0F),
-    (0xCF, 0x87, 0x17),
-    (0xC7, 0x87, 0x17),
-    (0xC7, 0x8F, 0x17),
-    (0xC7, 0x97, 0x1F),
-    (0xBF, 0x9F, 0x1F),
-    (0xBF, 0x9F, 0x1F),
-    (0xBF, 0xA7, 0x27),
-    (0xBF, 0xA7, 0x27),
-    (0xBF, 0xAF, 0x2F),
-    (0xB7, 0xAF, 0x2F),
-    (0xB7, 0xB7, 0x2F),
-    (0xB7, 0xB7, 0x37),
-    (0xCF, 0xCF, 0x6F),
-    (0xDF, 0xDF, 0x9F),
-    (0xEF, 0xEF, 0xC7),
-    (0xFF, 0xFF, 0xFF),
-];
-
+pub const SOUL: Color = Color::Rgb(96, 156, 255);
 /// The file a new theme is written to, in the standard config dir, from the settings.
 pub const FILE: &str = "theme.toml";
 
@@ -97,8 +55,6 @@ pub struct Theme {
     pub styles: Styles,
     pub borders: Borders,
     pub glyphs: Glyphs,
-    pub splash: Splash,
-    pub pride: Pride,
     pub help: Help,
 }
 
@@ -270,60 +226,6 @@ impl Default for Glyphs {
     }
 }
 
-/// The splash screen.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct Splash {
-    /// One color for each row of the logo, top to bottom.
-    pub logo: [Color; 5],
-    /// The logo's box-drawing strokes.
-    pub shadow: Color,
-    pub tagline: Color,
-    /// The hint breathes from the first to the second and back.
-    pub hint: [Color; 2],
-    /// The quip flares from the first to the second and back.
-    pub quip: [Color; 2],
-    /// The fire, from cold to white hot: as many as you like, at least two.
-    pub fire: Vec<Color>,
-}
-
-impl Default for Splash {
-    fn default() -> Self {
-        Self {
-            // white hot at the top, cooling a step a row down to blood at the bottom
-            logo: [
-                FLAME,
-                halfway(FLAME, HELLFIRE),
-                HELLFIRE,
-                halfway(HELLFIRE, BLOOD),
-                BLOOD,
-            ],
-            shadow: GORE,
-            tagline: BONE,
-            hint: [ASH, BONE],
-            quip: [HELLFIRE, FLAME],
-            fire: FIRE.iter().map(|&(r, g, b)| Color::Rgb(r, g, b)).collect(),
-        }
-    }
-}
-
-/// Pride, for `--with-pride` or the **pride** setting: the splash's fire burns through the rainbow,
-/// under the logo in these colors.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct Pride {
-    /// The whole trans flag, a stripe a row: blue, pink, white, pink, blue.
-    pub logo: [Color; 5],
-}
-
-impl Default for Pride {
-    fn default() -> Self {
-        Self {
-            logo: [TRANS_BLUE, TRANS_PINK, TRANS_WHITE, TRANS_PINK, TRANS_BLUE],
-        }
-    }
-}
-
 /// `tdl --help`.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
@@ -354,60 +256,28 @@ impl Default for Help {
     }
 }
 
-/// The color halfway between `a` and `b`, or `a` if either isn't RGB.
-pub const fn halfway(a: Color, b: Color) -> Color {
-    match (a, b) {
-        (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) => {
-            Color::Rgb(mid(r1, r2), mid(g1, g2), mid(b1, b2))
-        }
-        _ => a,
+impl Dressing for Theme {
+    const WHAT: &str = "theme";
+    const FILE: &str = FILE;
+    /// Edition 1 is the theme of tdl 1.0.0, which also dressed up the splash screen.
+    const UPGRADES: &[fn(&mut toml::Table)] = &[v1_to_v2];
+
+    fn template() -> String {
+        let body = toml::to_string(&Self::default()).expect("a theme is always plain TOML");
+        format!("{HEADER}{}\n{body}", dressing::edition_line::<Self>())
     }
 }
 
-/// The channel halfway between `x` and `y`.
-const fn mid(x: u8, y: u8) -> u8 {
-    ((x as u16 + y as u16) / 2) as u8
-}
-
-impl Theme {
-    /// The theme in a `theme.toml`. `Err` says why it can't be worn, for the user.
-    pub fn read(path: &Path) -> Result<Self, String> {
-        let text = fs::read_to_string(path)
-            .map_err(|error| format!("Couldn't read the theme {}: {error}", path.display()))?;
-        Self::parse(&text).map_err(|problem| format!("The theme {} {problem}", path.display()))
-    }
-
-    /// The theme written in `text`, as in a `theme.toml`.
-    pub fn parse(text: &str) -> Result<Self, String> {
-        let theme: Self =
-            toml::from_str(text).map_err(|error| format!("isn't one tdl can wear: {error}"))?;
-        if theme.splash.fire.len() < 2 {
-            return Err("needs at least two fire colors".to_string());
-        }
-        Ok(theme)
-    }
-
-    /// The theme as a `theme.toml`, with a note at the top on how to write the colors.
-    pub fn to_toml(&self) -> String {
-        let body = toml::to_string(self).expect("a theme is always plain TOML");
-        format!("{HEADER}{body}")
-    }
-
-    /// Writes the built-in theme to `path`, for the user to change, unless a file is there
-    /// already, which is kept as it is.
-    pub fn write_built_in(path: &Path) -> io::Result<()> {
-        if path.exists() {
-            return Ok(());
-        }
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir)?;
-        }
-        fs::write(path, Self::default().to_toml())
-    }
+/// Edition 2 leaves the splash screen to `splash.toml` and `pride.toml`, so the `[splash]` and
+/// `[pride]` an edition 1 theme may have are dropped.
+fn v1_to_v2(theme: &mut toml::Table) {
+    theme.remove("splash");
+    theme.remove("pride");
 }
 
 const HEADER: &str = "\
 # tdl's theme. Change anything below, or leave it out for the built-in theme's.
+# Every field is explained in THEME.md. The splash screen is dressed up in splash.toml instead.
 # A color is \"#rrggbb\", a terminal color's name (\"red\", \"lightmagenta\", \"darkgray\", ...),
 # a terminal palette number (\"0\" to \"255\"), or \"reset\" for the terminal's own.
 # A style is { fg = color, bg = color, bold = true }, each part optional.
@@ -486,26 +356,16 @@ mod border {
     }
 }
 
-static BUILT_IN: LazyLock<Theme> = LazyLock::new(Theme::default);
-/// The theme being worn, once one other than the built-in one has been put on. Each is leaked, so
-/// every screen can hold on to it for as long as it draws; a theme is only changed by hand.
-static WORN: RwLock<Option<&'static Theme>> = RwLock::new(None);
+static WARDROBE: Wardrobe<Theme> = Wardrobe::new();
 
 /// The theme being worn.
 pub fn worn() -> &'static Theme {
-    WORN.read().ok().and_then(|worn| *worn).unwrap_or(&BUILT_IN)
+    WARDROBE.worn()
 }
 
 /// Wears `theme` for the rest of the run, or until another is worn.
 pub fn wear(theme: Theme) {
-    let theme = if theme == *BUILT_IN {
-        None
-    } else {
-        Some(&*Box::leak(Box::new(theme)))
-    };
-    if let Ok(mut worn) = WORN.write() {
-        *worn = theme;
-    }
+    WARDROBE.wear(theme);
 }
 
 static PRIDE: AtomicBool = AtomicBool::new(false);
@@ -522,12 +382,15 @@ pub fn pride() -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
 
     #[test]
     fn the_built_in_theme_writes_out_and_reads_back_the_same() {
-        let text = Theme::default().to_toml();
+        let text = Theme::template();
         assert!(text.starts_with("# tdl's theme."));
+        assert!(text.contains("\nedition = 2\n"));
         assert!(text.contains("background = \"#0E0808\""));
         assert!(text.contains("window = \"thick\""));
         assert_eq!(Theme::parse(&text), Ok(Theme::default()));
@@ -536,7 +399,7 @@ mod tests {
     #[test]
     fn a_theme_only_needs_what_it_changes() {
         let theme = Theme::parse(
-            "[colors]\nscreen = \"#00ff00\"\nbackground = \"reset\"\n\
+            "edition = 2\n[colors]\nscreen = \"#00ff00\"\nbackground = \"reset\"\n\
              [styles]\ncursor = { fg = \"black\", bg = \"lightcyan\" }\n\
              [borders]\npopup = \"rounded\"\n[glyphs]\nbroken_mark = \"x\"",
         )
@@ -552,7 +415,6 @@ mod tests {
         // everything else is the built-in theme's
         assert_eq!(theme.colors.text, Colors::default().text);
         assert_eq!(theme.borders.window, BorderType::Thick);
-        assert_eq!(theme.splash, Splash::default());
         assert_eq!(Theme::parse(""), Ok(Theme::default()));
     }
 
@@ -564,8 +426,9 @@ mod tests {
             "[colors]\nscren = \"red\"",
             "[borders]\nwindow = \"wavy\"",
             "[styles]\ncursor = { fg = \"red\", italic = true }",
-            "[splash]\nfire = [\"red\"]",
-            "[splash]\nlogo = [\"red\"]",
+            "edition = 2\n[splash]\nshadow = \"red\"",
+            "edition = 0",
+            "edition = \"two\"",
             "this isn't toml",
         ] {
             assert!(Theme::parse(wrong).is_err(), "{wrong}");
@@ -573,23 +436,33 @@ mod tests {
     }
 
     #[test]
-    fn the_built_in_theme_is_written_once_and_a_changed_one_is_kept() {
-        let altar = crate::loadout::scribe::tests::Altar::new("theme-write");
-        let path = altar.file("dir/theme.toml");
-        Theme::write_built_in(&path).unwrap();
-        assert_eq!(Theme::read(&path), Ok(Theme::default()));
-        fs::write(&path, "[colors]\ntext = \"white\"").unwrap();
-        Theme::write_built_in(&path).unwrap();
-        assert_eq!(Theme::read(&path).unwrap().colors.text, Color::White);
-        assert!(Theme::read(&altar.file("missing.toml")).is_err());
+    fn a_theme_from_a_newer_tdl_is_refused_and_says_so() {
+        let problem = Theme::parse("edition = 3\n[colors]\nsparkle = \"red\"").unwrap_err();
+        assert!(problem.contains("newer tdl"), "{problem}");
     }
 
     #[test]
-    fn halfway_is_between_two_colors() {
-        assert_eq!(
-            halfway(Color::Rgb(0, 100, 255), Color::Rgb(100, 0, 255)),
-            Color::Rgb(50, 50, 255)
-        );
-        assert_eq!(halfway(Color::Red, Color::Rgb(0, 0, 0)), Color::Red);
+    fn a_theme_from_tdl_1_0_still_reads_without_its_splash() {
+        // edition 1 had no edition line, and dressed up the splash screen too
+        let theme = Theme::parse(
+            "[colors]\ntext = \"white\"\n\
+             [splash]\nlogo = [\"red\", \"red\", \"red\", \"red\", \"red\"]\nshadow = \"red\"\n\
+             fire = [\"black\", \"white\"]\n[pride]\nlogo = [\"blue\", \"pink\", \"white\", \"pink\", \"blue\"]",
+        )
+        .unwrap();
+        assert_eq!(theme.colors.text, Color::White);
+        assert_eq!(theme.help, Help::default());
+    }
+
+    #[test]
+    fn the_built_in_theme_is_written_once_and_a_changed_one_is_kept() {
+        let altar = crate::loadout::scribe::tests::Altar::new("theme-write");
+        let path = altar.file("dir/theme.toml");
+        Theme::write_new(&path).unwrap();
+        assert_eq!(Theme::read(&path), Ok(Theme::default()));
+        fs::write(&path, "[colors]\ntext = \"white\"").unwrap();
+        Theme::write_new(&path).unwrap();
+        assert_eq!(Theme::read(&path).unwrap().colors.text, Color::White);
+        assert!(Theme::read(&altar.file("missing.toml")).is_err());
     }
 }

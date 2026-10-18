@@ -8,7 +8,7 @@ use crate::{
     music, picker,
     popups::{legend::Legend, three_way_dialog::ThreeWayDialog, warning::Warning},
     ritual::{Grimoire, Page, Phase, Ritual},
-    theme::{self, Theme},
+    theme::{self, Dressing, Theme, pride::Pride, splash::Splash},
     widgets::{
         form::{self, Field},
         text,
@@ -32,6 +32,10 @@ pub struct Settings {
     pub song: Option<PathBuf>,
     /// The `theme.toml` worn instead of the built-in theme.
     pub theme: Option<PathBuf>,
+    /// The `splash.toml` the splash screen wears instead of the built-in one.
+    pub splash_look: Option<PathBuf>,
+    /// The `pride.toml` the pride splash picks its flags from instead of the built-in one.
+    pub pride_flags: Option<PathBuf>,
     /// The ini every profile without its own plays with, instead of UZDoom's usual one.
     pub ini: Option<PathBuf>,
 }
@@ -48,6 +52,8 @@ impl Settings {
             quip: global.splash_quip.typed(),
             song: global.song.as_ref().map(PathBuf::from),
             theme: global.theme.as_ref().map(PathBuf::from),
+            splash_look: global.splash.as_ref().map(PathBuf::from),
+            pride_flags: global.pride_flags.as_ref().map(PathBuf::from),
             ini: global.ini.as_ref().map(PathBuf::from),
         }
     }
@@ -64,6 +70,8 @@ impl Settings {
         global.music = self.music;
         global.song = self.song.map(PathBuf::into_os_string);
         global.theme = self.theme.map(PathBuf::into_os_string);
+        global.splash = self.splash_look.map(PathBuf::into_os_string);
+        global.pride_flags = self.pride_flags.map(PathBuf::into_os_string);
         global.ini = self.ini.map(PathBuf::into_os_string);
         Ok(())
     }
@@ -78,8 +86,8 @@ pub struct SettingsForm {
     focus: usize,
     /// Where the cursor is in the focused field, when it is one that is typed into.
     caret: usize,
-    /// Where a new theme is written: `theme.toml` in the standard config dir.
-    new_theme: PathBuf,
+    /// Where a new theme, splash or pride is written: the standard config dir.
+    config_dir: PathBuf,
 }
 
 impl SettingsForm {
@@ -87,7 +95,7 @@ impl SettingsForm {
     fn border_color() -> Color {
         theme::worn().colors.screen
     }
-    const FIELDS: usize = 9;
+    const FIELDS: usize = 11;
     /// The longest the UZDoom arguments may get, so the field stays something that fits a window.
     const MAX_ARGS: usize = 120;
     /// The longest a quip may be typed; the splash cuts it shorter on a narrow terminal anyway.
@@ -97,12 +105,15 @@ impl SettingsForm {
     const PRIDE: usize = 1;
     /// The one toggle with three choices instead of two.
     const MUSIC: usize = 2;
-    /// Picked with a file dialog rather than typed, as are the theme and the ini.
+    /// Picked with a file dialog rather than typed, as are the theme, the splash's look, the
+    /// pride flags and the ini.
     const SONG: usize = 4;
     const THEME: usize = 5;
-    const INI: usize = 6;
-    const ARGS: usize = 7;
-    const QUIP: usize = 8;
+    const SPLASH_LOOK: usize = 6;
+    const PRIDE_FLAGS: usize = 7;
+    const INI: usize = 8;
+    const ARGS: usize = 9;
+    const QUIP: usize = 10;
     const TOGGLE_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Save"],
         ["Tab/↓, Backtab/↑", "Traverse"],
@@ -128,6 +139,18 @@ impl SettingsForm {
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
+    const SPLASH_LEGEND: &[[&str; 2]] = &[
+        ["Enter", "Built-in, New (Write It to splash.toml) or Select"],
+        ["Backspace", "Back to the Built-in Splash"],
+        ["Tab/↓, Backtab/↑", "Traverse"],
+        ["Esc", "Quit (Asks to Save Changes)"],
+    ];
+    const PRIDE_LEGEND: &[[&str; 2]] = &[
+        ["Enter", "Built-in, New (Write It to pride.toml) or Select"],
+        ["Backspace", "Back to the Built-in Flags"],
+        ["Tab/↓, Backtab/↑", "Traverse"],
+        ["Esc", "Quit (Asks to Save Changes)"],
+    ];
     const INI_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Pick an Ini"],
         ["Backspace", "Back to UZDoom's Own"],
@@ -146,14 +169,15 @@ impl SettingsForm {
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
 
-    /// The form, starting from `settings`; a new theme would be written to `new_theme`.
-    pub fn new(settings: Settings, new_theme: PathBuf) -> Self {
+    /// The form, starting from `settings`; a new theme, splash or pride would be written to
+    /// `config_dir`.
+    pub fn new(settings: Settings, config_dir: PathBuf) -> Self {
         Self {
             original: settings.clone(),
             settings,
             focus: 0,
             caret: 0,
-            new_theme,
+            config_dir,
         }
     }
 
@@ -161,9 +185,9 @@ impl SettingsForm {
     pub fn summon(
         grimoire: &mut Grimoire,
         settings: Settings,
-        new_theme: PathBuf,
+        config_dir: PathBuf,
     ) -> Result<Option<Settings>> {
-        Self::new(settings, new_theme).invoke(grimoire)
+        Self::new(settings, config_dir).invoke(grimoire)
     }
 }
 
@@ -191,6 +215,8 @@ impl Ritual for SettingsForm {
         };
         let song = file_name(&self.settings.song);
         let theme = file_name(&self.settings.theme);
+        let splash_look = file_name(&self.settings.splash_look);
+        let pride_flags = file_name(&self.settings.pride_flags);
         let ini = file_name(&self.settings.ini);
         let fields = [
             Field {
@@ -236,6 +262,20 @@ impl Ritual for SettingsForm {
                 caret: None,
             },
             Field {
+                label: "splash look",
+                value: &splash_look,
+                placeholder: "built-in, Enter to change",
+                room: 24,
+                caret: None,
+            },
+            Field {
+                label: "pride flags",
+                value: &pride_flags,
+                placeholder: "built-in, Enter to change",
+                room: 24,
+                caret: None,
+            },
+            Field {
                 label: "ini",
                 value: &ini,
                 placeholder: "uzdoom's own, Enter to pick",
@@ -268,6 +308,8 @@ impl Ritual for SettingsForm {
             (Self::ARGS, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::ARGS_LEGEND),
             (Self::SONG, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::SONG_LEGEND),
             (Self::THEME, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::THEME_LEGEND),
+            (Self::SPLASH_LOOK, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::SPLASH_LEGEND),
+            (Self::PRIDE_FLAGS, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::PRIDE_LEGEND),
             (Self::INI, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::INI_LEGEND),
             (_, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::TOGGLE_LEGEND),
             _ => None,
@@ -281,7 +323,19 @@ impl Ritual for SettingsForm {
         if key_code == KeyCode::Enter {
             match self.focus {
                 Self::SONG => self.pick_song(grimoire)?,
-                Self::THEME => self.pick_theme(grimoire)?,
+                Self::THEME => {
+                    let picked = self.pick::<Theme>(grimoire, self.settings.theme.clone())?;
+                    self.settings.theme = picked;
+                }
+                Self::SPLASH_LOOK => {
+                    let picked =
+                        self.pick::<Splash>(grimoire, self.settings.splash_look.clone())?;
+                    self.settings.splash_look = picked;
+                }
+                Self::PRIDE_FLAGS => {
+                    let picked = self.pick::<Pride>(grimoire, self.settings.pride_flags.clone())?;
+                    self.settings.pride_flags = picked;
+                }
                 Self::INI => self.pick_ini(grimoire)?,
                 _ => return self.save(grimoire),
             }
@@ -337,37 +391,44 @@ impl SettingsForm {
         Ok(())
     }
 
-    /// Asks which theme to wear: the built-in one, a new one written out from it to change (an
-    /// existing `theme.toml` is kept as it is), or one picked from the disk. A theme that can't be
-    /// worn is said, and the theme stays as it was.
-    fn pick_theme(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+    /// Asks which theme (or splash, or pride) to wear, starting from `current`: the built-in one,
+    /// a new one written out from it to change (an existing file of that name is kept as it is),
+    /// or one picked from the disk. Returns what it is left with: one that can't be worn is said,
+    /// and `current` stays.
+    fn pick<T: Dressing>(
+        &mut self,
+        grimoire: &mut Grimoire,
+        current: Option<PathBuf>,
+    ) -> Result<Option<PathBuf>> {
         let options = ["Built-in", "New", "Select"];
-        let path = match ThreeWayDialog::summon(grimoire, "Which theme to wear?", options)? {
-            Some(0) => {
-                self.settings.theme = None;
-                return Ok(());
-            }
+        let question = format!("Which {} to wear?", T::WHAT);
+        let path = match ThreeWayDialog::summon(grimoire, &question, options)? {
+            Some(0) => return Ok(None),
             Some(1) => {
-                if let Err(error) = Theme::write_built_in(&self.new_theme) {
-                    let problem = format!("Couldn't write {}: {error}", self.new_theme.display());
-                    return Warning::summon(grimoire, &problem);
+                let new = self.config_dir.join(T::FILE);
+                if let Err(error) = T::write_new(&new) {
+                    let problem = format!("Couldn't write {}: {error}", new.display());
+                    Warning::summon(grimoire, &problem)?;
+                    return Ok(current);
                 }
-                self.new_theme.clone()
+                new
             }
             Some(_) => {
-                let start = self.settings.theme.as_deref().and_then(Path::parent);
-                match picker::file(grimoire, Some(("themes", &["toml"])), start)? {
+                let start = current.as_deref().and_then(Path::parent);
+                match picker::file(grimoire, Some(("toml", &["toml"])), start)? {
                     Some(path) => path,
-                    None => return Ok(()),
+                    None => return Ok(current),
                 }
             }
-            None => return Ok(()),
+            None => return Ok(current),
         };
-        match Theme::read(&path) {
-            Ok(_) => self.settings.theme = Some(path),
-            Err(problem) => Warning::summon(grimoire, &problem)?,
+        match T::read(&path) {
+            Ok(_) => Ok(Some(path)),
+            Err(problem) => {
+                Warning::summon(grimoire, &problem)?;
+                Ok(current)
+            }
         }
-        Ok(())
     }
 
     /// Asks for the ini to play with, starting where the current one is.
@@ -412,6 +473,12 @@ impl SettingsForm {
             }
             KeyCode::Backspace | KeyCode::Delete if self.focus == Self::THEME => {
                 Phase::render_if(self.settings.theme.take().is_some())
+            }
+            KeyCode::Backspace | KeyCode::Delete if self.focus == Self::SPLASH_LOOK => {
+                Phase::render_if(self.settings.splash_look.take().is_some())
+            }
+            KeyCode::Backspace | KeyCode::Delete if self.focus == Self::PRIDE_FLAGS => {
+                Phase::render_if(self.settings.pride_flags.take().is_some())
             }
             KeyCode::Backspace | KeyCode::Delete if self.focus == Self::INI => {
                 Phase::render_if(self.settings.ini.take().is_some())
@@ -480,6 +547,8 @@ mod tests {
             quip: "Rip and tear!".into(),
             song: Some("/songs/e1m1.ogg".into()),
             theme: Some("/themes/blue.toml".into()),
+            splash_look: Some("/themes/splash.toml".into()),
+            pride_flags: Some("/themes/pride.toml".into()),
             ini: Some("/inis/mine.ini".into()),
         }
         .apply(&mut changed)
@@ -500,6 +569,8 @@ mod tests {
         // and they come back the same way
         let back = Settings::of(&changed);
         assert_eq!(back.theme, Some("/themes/blue.toml".into()));
+        assert_eq!(back.splash_look, Some("/themes/splash.toml".into()));
+        assert_eq!(back.pride_flags, Some("/themes/pride.toml".into()));
         assert_eq!(back.ini, Some("/inis/mine.ini".into()));
     }
 
@@ -552,16 +623,23 @@ mod tests {
     }
 
     #[test]
-    fn backspace_on_the_theme_and_the_ini_goes_back_to_the_built_in_and_uzdoom_s_own() {
+    fn backspace_on_a_picked_file_goes_back_to_the_built_in_one() {
         let mut form = SettingsForm::new(
             Settings {
                 theme: Some("/themes/blue.toml".into()),
+                splash_look: Some("/themes/splash.toml".into()),
+                pride_flags: Some("/themes/pride.toml".into()),
                 ini: Some("/inis/mine.ini".into()),
                 ..Settings::of(&Uac::default())
             },
             PathBuf::new(),
         );
-        for focus in [SettingsForm::THEME, SettingsForm::INI] {
+        for focus in [
+            SettingsForm::THEME,
+            SettingsForm::SPLASH_LOOK,
+            SettingsForm::PRIDE_FLAGS,
+            SettingsForm::INI,
+        ] {
             form.focus = focus;
             assert!(
                 form.edit(KeyCode::Char('x')) == Phase::Prompt,
@@ -571,6 +649,10 @@ mod tests {
             assert!(form.edit(KeyCode::Delete) == Phase::Prompt);
         }
         assert_eq!((form.settings.theme, form.settings.ini), (None, None));
+        assert_eq!(
+            (form.settings.splash_look, form.settings.pride_flags),
+            (None, None)
+        );
     }
 
     #[test]
@@ -598,6 +680,8 @@ mod tests {
             KeyCode::Tab,
             KeyCode::Tab,
             KeyCode::Tab,
+            KeyCode::Tab,
+            KeyCode::Tab,
         ]
         .into_iter()
         .chain("-skill 4 x".chars().map(KeyCode::Char))
@@ -615,6 +699,8 @@ mod tests {
                 quip: String::new(),
                 song: None,
                 theme: None,
+                splash_look: None,
+                pride_flags: None,
                 ini: None,
             }
         );
@@ -651,6 +737,8 @@ mod tests {
                 quip: "#2".into(),
                 song: Some("/songs/e1m1.ogg".into()),
                 theme: Some("/themes/blue.toml".into()),
+                splash_look: None,
+                pride_flags: Some("/themes/pride.toml".into()),
                 ini: None,
             },
             PathBuf::new(),

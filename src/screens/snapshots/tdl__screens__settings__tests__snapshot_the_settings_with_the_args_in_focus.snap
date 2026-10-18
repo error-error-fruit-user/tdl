@@ -5,15 +5,15 @@ expression: "testing::draw(60, 20, |page| form.render(page))"
 
        ┏━━━━━━━━━━━━━━━[ settings ]━━━━━━━━━━━━━━━━┓
        ┃                                           ┃
-       ┃       pride  on                           ┃
-       ┃                                           ┃
-       ┃       music  splash only                  ┃
-       ┃                                           ┃
        ┃       quips  shown                        ┃
        ┃                                           ┃
        ┃        song  e1m1.ogg                     ┃
        ┃                                           ┃
        ┃       theme  blue.toml                    ┃
+       ┃                                           ┃
+       ┃ splash look  built-in, Enter to change    ┃
+       ┃                                           ┃
+       ┃ pride flags  pride.toml                   ┃
        ┃                                           ┃
        ┃         ini  uzdoom's own, Enter to pick  ┃
        ┃                                           ┃

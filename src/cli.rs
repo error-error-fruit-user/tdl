@@ -72,6 +72,9 @@ pub struct Cli {
     /// The theme to wear this run, and whether to keep wearing it, the same way.
     pub theme: Option<String>,
     pub keep_theme: Keep,
+    /// The splash's look (a `splash.toml`) to wear this run, and whether to keep wearing it.
+    pub splash: Option<String>,
+    pub keep_splash: Keep,
     /// `launch`, `host` or `join`: something to do straight away, after which tdl closes.
     pub command: Option<Command>,
     /// `--headless`: launch, host or join with no forms or windows, only plain lines in the
@@ -448,6 +451,28 @@ struct Args {
     )]
     keep_theme: Option<String>,
 
+    /// Play the splash screen in the look of this splash.toml, even if the splash setting skips
+    /// it; tdl asks whether to keep it
+    #[arg(
+        long,
+        value_name = "FILE",
+        global = true,
+        value_parser = NonEmptyStringValueParser::new(),
+        conflicts_with = "keep_splash",
+        help_heading = SPLASH
+    )]
+    splash: Option<String>,
+
+    /// Like --splash, and keep it without asking
+    #[arg(
+        long,
+        value_name = "FILE",
+        global = true,
+        value_parser = NonEmptyStringValueParser::new(),
+        help_heading = SPLASH
+    )]
+    keep_splash: Option<String>,
+
     /// Go straight to the launcher
     #[arg(long, global = true, help_heading = SPLASH)]
     no_splash: bool,
@@ -497,7 +522,7 @@ struct Args {
     no_music: bool,
 
     /// Nothing given on the command line is kept or asked about: the loadout, the wad dirs, UZDoom,
-    /// the base wad, the ini and the theme are just for this run, and forgetting is too. A
+    /// the base wad, the ini, the theme and the splash are just for this run, and forgetting is too. A
     /// --keep- flag still keeps its own
     #[arg(long, global = true, help_heading = THIS_RUN)]
     session: bool,
@@ -740,6 +765,7 @@ impl Cli {
         let (base_wad, keep_base_wad) = passed(args.base_wad, args.keep_base_wad);
         let (ini, keep_ini) = passed(args.ini, args.keep_ini);
         let (theme, keep_theme) = passed(args.theme, args.keep_theme);
+        let (splash, keep_splash) = passed(args.splash, args.keep_splash);
         let (wads, keep_wads) = if !args.keep_loadout_wads.is_empty() {
             (args.keep_loadout_wads, Keep::Loadout)
         } else if !args.keep_wads.is_empty() {
@@ -787,6 +813,8 @@ impl Cli {
             keep_ini,
             theme,
             keep_theme,
+            splash,
+            keep_splash,
             command,
             headless,
         })
@@ -1100,14 +1128,31 @@ mod tests {
                 keep_base_wad: Keep::Session,
                 keep_ini: Keep::Session,
                 keep_theme: Keep::Session,
+                keep_splash: Keep::Session,
                 ..Cli::default()
             })
         );
     }
 
     #[test]
+    fn a_splash_look_is_asked_about_kept_or_just_for_the_session() {
+        let asked = parse(&["--splash", "/looks/blue.toml"]).unwrap();
+        assert_eq!(
+            (asked.splash.as_deref(), asked.keep_splash),
+            (Some("/looks/blue.toml"), Keep::Ask)
+        );
+        let session = parse(&["--session", "--splash=a.toml"]).unwrap();
+        assert_eq!(session.keep_splash, Keep::Session);
+        let kept = parse(&["--session", "--keep-splash", "a.toml"]).unwrap();
+        assert_eq!(kept.keep_splash, Keep::Global);
+        // its look is not whether it plays
+        assert!(!kept.no_splash);
+        assert!(parse(&["--keep-splash", "a.toml", "--no-splash"]).is_ok());
+    }
+
+    #[test]
     fn a_file_and_its_keep_flag_go_one_at_a_time() {
-        for flag in ["uzdoom", "base-wad", "ini", "theme"] {
+        for flag in ["uzdoom", "base-wad", "ini", "theme", "splash"] {
             let plain = format!("--{flag}");
             let keep = format!("--keep-{flag}");
             assert!(parse(&[&plain, "a", &keep, "b"]).is_err(), "{flag}");
