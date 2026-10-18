@@ -26,6 +26,7 @@ use crate::{
     net::{self, Address, Manifest},
     screens::wad_namer,
     slayer::{
+        host_game,
         join_game::{fill_gaps, first_match},
         share,
         upgrade::{self, Choice, Outdated, Settled},
@@ -162,18 +163,34 @@ pub fn host(vault: &mut Vault, index: usize, overrides: &HostOverrides) -> Outco
     let base_wad = profile.base_wad(&vault.global);
     let manifest = Manifest::build(&wads, base_wad.map(|w| w.hash.clone()).unwrap_or_default())
         .map_err(|_| "One of the profile's wads can't be read")?;
+    let ini = if settings.share_ini {
+        match host_game::shared_ini(profile.ini.as_deref(), &uzdoom) {
+            Ok(ini) => Some(ini),
+            Err(problem) => {
+                eprintln!("{problem}, so it isn't shared");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let sharing = ini.is_some();
     let code = settings.code();
     let server = manifest
         .serve(
             port,
             code.clone(),
             wads.iter().map(|w| w.path.clone()).collect(),
+            ini,
         )
         .map_err(|_| format!("Could not serve the wads on port {port}: is it in use?"))?;
     println!(
         "Hosting {}: players join with port {}, code {code}",
         profile.name, server.port
     );
+    if sharing {
+        println!("Your ini is shared");
+    }
     let game = uzdoom::host(
         &uzdoom,
         base_wad.map(Wad::deref),

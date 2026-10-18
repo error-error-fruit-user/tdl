@@ -139,6 +139,7 @@ pub struct HostOverrides {
     pub map: Option<String>,
     pub port: Option<u16>,
     pub code: Option<String>,
+    pub share_ini: Option<bool>,
 }
 
 impl HostOverrides {
@@ -152,6 +153,7 @@ impl HostOverrides {
             map: self.map.clone().unwrap_or(settings.map),
             port: self.port.map_or(settings.port, |port| port.to_string()),
             code: self.code.clone().unwrap_or(settings.code),
+            share_ini: self.share_ini.unwrap_or(settings.share_ini),
         }
     }
 }
@@ -406,6 +408,12 @@ enum Commands {
         map: Option<String>,
         #[command(flatten)]
         connection: Connection,
+        /// Serve the ini you host with too, for joiners who want to play with it
+        #[arg(long, conflicts_with = "keep_ini")]
+        share_ini: bool,
+        /// Keep your ini to yourself, even if the profile's host defaults share it
+        #[arg(long)]
+        keep_ini: bool,
         /// No form and no windows, only plain lines in the terminal
         #[arg(long)]
         headless: bool,
@@ -516,6 +524,8 @@ impl Cli {
                 deathmatch,
                 map,
                 connection,
+                share_ini,
+                keep_ini,
                 headless: plain,
             } => {
                 headless = plain;
@@ -527,6 +537,7 @@ impl Cli {
                         map,
                         port: connection.port,
                         code: connection.code,
+                        share_ini: (share_ini || keep_ini).then_some(share_ini),
                     },
                 }
             }
@@ -909,6 +920,30 @@ mod tests {
             ..HostSettings::new(Some(7000))
         };
         assert_eq!(HostOverrides::default().apply(defaults.clone()), defaults);
+    }
+
+    #[test]
+    fn host_shares_its_ini_or_keeps_it_over_the_profiles_defaults() {
+        let overrides = |args: &[&str]| match parse(args).unwrap().command {
+            Some(Command::Host { overrides, .. }) => overrides,
+            _ => panic!("expected host"),
+        };
+        let sharing = HostSettings {
+            share_ini: true,
+            ..HostSettings::new(None)
+        };
+        assert!(
+            overrides(&["host", "p", "--share-ini"])
+                .apply(HostSettings::new(None))
+                .share_ini
+        );
+        assert!(
+            !overrides(&["host", "p", "--keep-ini"])
+                .apply(sharing.clone())
+                .share_ini
+        );
+        assert!(overrides(&["host", "p"]).apply(sharing).share_ini);
+        assert!(parse(&["host", "p", "--share-ini", "--keep-ini"]).is_err());
     }
 
     #[test]

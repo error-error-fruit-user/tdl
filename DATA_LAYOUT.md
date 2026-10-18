@@ -72,7 +72,7 @@ Only what belongs to the vault is here; every setting is in `global.rite`, so it
 | `base_wad` | Overrides the global base wad. Saved like an entry in `wads`. |
 | `uzdoom` | Overrides the global UZDoom path. |
 | `ini` | A UZDoom config file to pass with `-config`. If unset, UZDoom uses its own global config. Press `I` in the editor to choose: **Global** (unset), **New** (an empty `uzdoom.ini` in the profile's data dir, which UZDoom fills in on first run) or **Select** (an existing file). A profile's own ini moves with it when the profile is renamed. |
-| `host_defaults` | What the host form starts with for this profile: `player_count`, `is_deathmatch`, `map`, `port` and `code`, set with **save as default** in the host form and removed with **clear default**. An empty `port` or `code` means the default port and a random code. A saved code is stored as plain text. Missing in older files, which count as none. |
+| `host_defaults` | What the host form starts with for this profile: `player_count`, `is_deathmatch`, `map`, `port`, `code` and `share_ini` (whether the ini is served to joiners; missing in older files, which count as not sharing it), set with **save as default** in the host form and removed with **clear default**. An empty `port` or `code` means the default port and a random code. A saved code is stored as plain text. Missing in older files, which count as none. |
 | `uzdoom_args` | Extra UZDoom arguments for this profile only, set with `G` in the editor, used instead of the global ones in `config.rite`. Missing (or empty) means the global ones. |
 | `watched` | The dir the profile watches, made with `F` in the launcher or set with `T` in the editor. Wads put in it (at any depth) are added at the end, and wads whose files leave it are taken out, whenever tdl starts, before the profile is launched or hosted, and when it is opened in the editor. Missing in older files, which count as none. |
 | `dismissed` | Wads in the watched dir that were taken out of the profile by hand, so they aren't added back; each is forgotten once its file is gone. Missing in older files, which count as none. |
@@ -91,7 +91,7 @@ A `.scroll` is one or more profiles sealed up to share (`S` in the launcher: the
 
 | Field | Meaning |
 | --- | --- |
-| `profiles` | The profiles, in the launcher's order. Each has a `name` (kept on import unless it is taken, or offered to rename for a scroll of one), `wads` (in load order, each only its `name`, `size` (0 if unknown), `hash` and `volatile`: no dirs, no paths), `base_wad` (the profile's own, the same way, if it has one) and `host_defaults` (with the join code left out). |
+| `profiles` | The profiles, in the launcher's order. Each has a `name` (kept on import unless it is taken, or offered to rename for a scroll of one), `wads` (in load order, each only its `name`, `size` (0 if unknown), `hash` and `volatile`: no dirs, no paths), `base_wad` (the profile's own, the same way, if it has one) and `host_defaults` (with the join code left out, and `share_ini` off). |
 | `settings` | The maker's `music`, `no_quips` and `splash_quip` from their `global.rite`, if they chose to seal them in. Never their song, vault or wad dirs. Missing if they didn't. A splash quip over 120 characters or with control characters gets the scroll refused. |
 
 Scrolls of edition 0 (from tdl 0.6.0) held one profile, with its `name`, `wads`, `base_wad` and `host_defaults` at the top level beside `settings`. They still import, as a scroll of that one profile. tdl 0.6.0 can't read the newer edition.

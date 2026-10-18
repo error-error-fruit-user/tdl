@@ -161,8 +161,10 @@ impl SealedProfile {
                 .map(inscribe)
                 .collect::<std::result::Result<_, _>>()?,
             base_wad: profile.base_wad.as_ref().map(inscribe).transpose()?,
+            // 🔒 the code is the host's secret, and sharing an ini is for its owner to choose
             host_defaults: profile.host_defaults.clone().map(|defaults| HostSettings {
                 code: String::new(),
+                share_ini: false,
                 ..defaults
             }),
         })
@@ -694,6 +696,7 @@ mod tests {
             uzdoom: Some("/usr/bin/uzdoom".into()),
             host_defaults: Some(HostSettings {
                 code: "secret".into(),
+                share_ini: true,
                 ..HostSettings::new(Some(9000))
             }),
             ..Profile::new(
@@ -712,6 +715,10 @@ mod tests {
         assert_eq!(scroll.settings, None, "settings only go on when asked for");
         let defaults = sealed.host_defaults.clone().unwrap();
         assert_eq!(defaults.code, "");
+        assert!(
+            !defaults.share_ini,
+            "whoever unseals it chooses to share their own ini"
+        );
         assert_eq!(defaults.port, "9000");
     }
 

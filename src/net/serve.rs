@@ -15,8 +15,15 @@ use crate::{
 
 impl Manifest {
     /// Serves until the returned guard is dropped, only to requests that carry `code`.
-    /// `paths` must be in the same order as `entries`.
-    pub fn serve(self, port: u16, code: String, paths: Vec<OsString>) -> Result<ServerGuard> {
+    /// `paths` must be in the same order as `entries`. `ini` is the host's ini, if it shares it;
+    /// without one, asking for it is a 404, as it is from a tdl from before inis were shared.
+    pub fn serve(
+        self,
+        port: u16,
+        code: String,
+        paths: Vec<OsString>,
+        ini: Option<Vec<u8>>,
+    ) -> Result<ServerGuard> {
         let manifest =
             rmp_serde::to_vec(&self).map_err(|_| Error::Download("Could not encode file list"))?;
         let server = tiny_http::Server::http(("0.0.0.0", port))
@@ -52,6 +59,10 @@ impl Manifest {
 
                 if url == "manifest" {
                     let _ = request.respond(tiny_http::Response::from_data(manifest.clone()));
+                } else if url == "ini"
+                    && let Some(ini) = &ini
+                {
+                    let _ = request.respond(tiny_http::Response::from_data(ini.clone()));
                 } else if let Some(hash) = url.strip_prefix("file/") {
                     let path = self
                         .entries

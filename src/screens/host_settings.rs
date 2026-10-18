@@ -13,7 +13,8 @@ use crate::{
     },
 };
 
-/// Collects the host settings (player count, mode, map, port, join code) in a single form, with
+/// Collects the host settings (player count, mode, map, port, join code, whether the ini is
+/// shared) in a single form, with
 /// buttons to save them as the profile's defaults or to clear those.
 pub struct HostSettingsForm {
     settings: HostSettings,
@@ -41,6 +42,7 @@ impl HostSettingsForm {
     const MAP_LABEL: &str = "map";
     const PORT_LABEL: &str = "port";
     const CODE_LABEL: &str = "code";
+    const INI_LABEL: &str = "ini";
     /// The longest a map name may be typed, far longer than any real one.
     const MAX_MAP: usize = 32;
     const PLAYER_COUNT_LEGEND: &[[&str; 2]] = &[
@@ -74,6 +76,12 @@ impl HostSettingsForm {
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["a-z/0-9", "Input"],
         ["←/→/Home/End", "Move the Cursor"],
+        ["Esc", "Cancel"],
+    ];
+    const INI_LEGEND: &[[&str; 2]] = &[
+        ["Enter", "Launch"],
+        ["Tab/↓, Backtab/↑", "Traverse"],
+        ["J/K, ←/→", "Share It or Not"],
         ["Esc", "Cancel"],
     ];
     const BUTTON_LEGEND: &[[&str; 2]] = &[
@@ -160,6 +168,11 @@ impl Ritual for HostSettingsForm {
         } else {
             "cooperative"
         };
+        let ini = if self.settings.share_ini {
+            "shared"
+        } else {
+            "not shared"
+        };
         let default_port = net::DEFAULT_PORT.to_string();
         let fields = [
             Field {
@@ -197,6 +210,13 @@ impl Ritual for HostSettingsForm {
                 room: net::MAX_CODE_LENGTH as u16,
                 caret: (self.index == Index::Code).then_some(self.caret),
             },
+            Field {
+                label: Self::INI_LABEL,
+                value: ini,
+                placeholder: "",
+                room: 10,
+                caret: None,
+            },
         ];
         let buttons = [
             Button {
@@ -214,8 +234,9 @@ impl Ritual for HostSettingsForm {
             Index::Map => 2,
             Index::Port => 3,
             Index::Code => 4,
-            Index::Save => 5,
-            Index::Clear => 6,
+            Index::Ini => 5,
+            Index::Save => 6,
+            Index::Clear => 7,
         };
         form::draw_with_buttons(
             page,
@@ -238,6 +259,7 @@ impl Ritual for HostSettingsForm {
                         Index::Map => Self::MAP_LEGEND,
                         Index::Port => Self::PORT_LEGEND,
                         Index::Code => Self::CODE_LEGEND,
+                        Index::Ini => Self::INI_LEGEND,
                         Index::Save | Index::Clear => Self::BUTTON_LEGEND,
                     },
                 )?;
@@ -311,6 +333,10 @@ impl HostSettingsForm {
                 self.settings.is_deathmatch = !self.settings.is_deathmatch;
                 Phase::Render
             }
+            (KeyCode::Char('j' | 'k') | KeyCode::Left | KeyCode::Right, Index::Ini) => {
+                self.settings.share_ini = !self.settings.share_ini;
+                Phase::Render
+            }
             // ↔️ between the two buttons
             (KeyCode::Right, Index::Save) => self.move_focus(false),
             (KeyCode::Left, Index::Clear) => self.move_focus(true),
@@ -346,6 +372,7 @@ enum Index {
     Map,
     Port,
     Code,
+    Ini,
     Save,
     Clear,
 }
@@ -357,7 +384,8 @@ impl Index {
             Self::Mode => Self::Map,
             Self::Map => Self::Port,
             Self::Port => Self::Code,
-            Self::Code => Self::Save,
+            Self::Code => Self::Ini,
+            Self::Ini => Self::Save,
             Self::Save => Self::Clear,
             Self::Clear => Self::PlayerCount,
         };
@@ -370,7 +398,8 @@ impl Index {
             Self::Map => Self::Mode,
             Self::Port => Self::Map,
             Self::Code => Self::Port,
-            Self::Save => Self::Code,
+            Self::Ini => Self::Code,
+            Self::Save => Self::Ini,
             Self::Clear => Self::Save,
         };
     }
@@ -444,6 +473,17 @@ mod tests {
     }
 
     #[test]
+    fn the_ini_is_kept_to_yourself_until_switched_to_shared() {
+        let mut form = HostSettingsForm::new(None, None);
+        assert!(!form.settings.share_ini);
+        form.index = Index::Ini;
+        assert!(form.edit(KeyCode::Right) == Phase::Render);
+        assert!(form.settings.share_ini);
+        let _ = form.edit(KeyCode::Char('k'));
+        assert!(!form.settings.share_ini);
+    }
+
+    #[test]
     fn left_and_right_move_between_the_buttons() {
         let mut form = HostSettingsForm::new(None, None);
         form.index = Index::Save;
@@ -456,6 +496,8 @@ mod tests {
     #[test]
     fn the_buttons_come_after_the_fields_and_wrap_around() {
         let mut index = Index::Code;
+        index.select_next();
+        assert_eq!(index, Index::Ini);
         index.select_next();
         assert_eq!(index, Index::Save);
         index.select_next();

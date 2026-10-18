@@ -12,6 +12,10 @@ pub struct HostSettings {
     pub port: String,
     /// What joiners must enter; empty means a random one is made up.
     pub code: String,
+    /// Whether the ini the game is hosted with is served too, for joiners who want to play with
+    /// it (see [`crate::net::ini`]).
+    #[serde(default)]
+    pub share_ini: bool,
 }
 
 impl HostSettings {
@@ -22,6 +26,7 @@ impl HostSettings {
             map: String::new(),
             port: port.map(|port| port.to_string()).unwrap_or_default(),
             code: String::new(),
+            share_ini: false,
         }
     }
 
@@ -46,6 +51,30 @@ impl HostSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_saved_before_the_ini_could_be_shared_still_load_and_keep_it_to_themselves() {
+        #[derive(Serialize)]
+        struct Old {
+            player_count: String,
+            is_deathmatch: bool,
+            map: String,
+            port: String,
+            code: String,
+        }
+        let bytes = rmp_serde::to_vec_named(&Old {
+            player_count: "4".into(),
+            is_deathmatch: false,
+            map: "MAP07".into(),
+            port: "9000".into(),
+            code: "doom2".into(),
+        })
+        .unwrap();
+        let settings: HostSettings = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(settings.player_count, "4");
+        assert_eq!(settings.code, "doom2");
+        assert!(!settings.share_ini);
+    }
 
     #[test]
     fn the_port_starts_as_the_last_one_and_empty_is_the_default() {

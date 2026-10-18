@@ -16,8 +16,9 @@ use crate::{
 const TITLE: &str = "Hosting";
 const BORDER_COLOR: Color = Color::LightMagenta;
 
-/// Serves the profile's wads on the chosen port, behind the join code, then runs the game; the
-/// server stops when the game exits. The port is remembered for next time.
+/// Serves the profile's wads on the chosen port, behind the join code (and the ini it is hosted
+/// with, if the settings share it), then runs the game; the server stops when the game exits. The
+/// port is remembered for next time.
 pub fn summon(
     grimoire: &mut Grimoire,
     vault: &mut Vault,
@@ -54,11 +55,24 @@ pub fn summon(
     else {
         return Warning::wad_unreadable(grimoire);
     };
+    let ini = if settings.share_ini {
+        match shared_ini(profile.ini.as_deref(), uzdoom) {
+            Ok(ini) => Some(ini),
+            Err(problem) => {
+                Warning::summon(grimoire, &format!("{problem}, so it isn't shared"))?;
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let sharing = ini.is_some();
     let code = settings.code();
     let Ok(server) = manifest.serve(
         port,
         code.clone(),
         wads.iter().map(|w| w.path.clone()).collect(),
+        ini,
     ) else {
         return Warning::host_failed(grimoire);
     };
@@ -66,7 +80,10 @@ pub fn summon(
     // 🔌 the port the server really bound, which is the one joiners need; the window kept up while
     // the game runs shows it with the code, for the host to pass on
     let port = server.port;
-    let details = [format!("Players join with port {port}, code {code}")];
+    let mut details = vec![format!("Players join with port {port}, code {code}")];
+    if sharing {
+        details.push("Your ini is shared".to_string());
+    }
     let result = uzdoom::host(
         uzdoom,
         base_wad.map(Wad::deref),
@@ -77,4 +94,18 @@ pub fn summon(
     )
     .and_then(|game| running::summon(grimoire, "hosting", &details, game));
     Warning::report_spawn(grimoire, result)
+}
+
+/// The ini the game is hosted with, read to be served, or what stands in the way, to be said.
+pub fn shared_ini(
+    profile_ini: Option<&std::ffi::OsStr>,
+    uzdoom: &std::ffi::OsStr,
+) -> std::result::Result<Vec<u8>, String> {
+    let Some(path) = net::ini::in_use(profile_ini, uzdoom) else {
+        return Err(match profile_ini {
+            Some(_) => "The profile's ini is missing".to_string(),
+            None => "UZDoom's own ini wasn't found".to_string(),
+        });
+    };
+    net::ini::read(&path).map_err(|error| format!("Could not read {}: {error}", path.display()))
 }

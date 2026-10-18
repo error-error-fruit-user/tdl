@@ -3,6 +3,7 @@
 //! the checks on names that come from someone else.
 
 mod download;
+pub mod ini;
 mod manifest;
 mod serve;
 
@@ -146,6 +147,7 @@ pub(in crate::net) mod tests {
                 0,
                 CODE.into(),
                 wads.iter().map(|w| w.path.clone()).collect(),
+                None,
             )
             .unwrap();
         let address = local(server.port, CODE);
@@ -179,6 +181,32 @@ pub(in crate::net) mod tests {
         // and with no code at all there is nothing to find
         let bare = format!("http://127.0.0.1:{port}/manifest");
         assert!(new_agent().get(&bare).call().is_err());
+    }
+
+    #[test]
+    fn a_shared_ini_is_served_behind_the_code_and_an_unshared_one_is_not_there() {
+        let read = |address: &Address| -> Option<Vec<u8>> {
+            let mut body = Vec::new();
+            let response = new_agent().get(&address.url("ini")).call().ok()?;
+            std::io::Read::read_to_end(&mut response.into_body().into_reader(), &mut body).unwrap();
+            Some(body)
+        };
+        let manifest = Manifest::build(&[], String::new()).unwrap();
+        let server = manifest
+            .serve(0, CODE.into(), Vec::new(), Some(b"[Doom.Player]".to_vec()))
+            .unwrap();
+        assert_eq!(
+            read(&local(server.port, CODE)).as_deref(),
+            Some(&b"[Doom.Player]"[..])
+        );
+        assert_eq!(read(&local(server.port, "guess")), None);
+
+        let altar = Altar::new("net-host-no-ini");
+        let (_server, address) = host(&host_wads(&altar));
+        assert!(matches!(
+            new_agent().get(&address.url("ini")).call(),
+            Err(ureq::Error::StatusCode(404))
+        ));
     }
 
     #[test]

@@ -3,7 +3,6 @@ source: src/screens/host_settings.rs
 expression: "testing::draw(60, 20, |page| form.render(page))"
 ---
 
-
          ┏━━━━━━━━━━━━━━━━[ host ]━━━━━━━━━━━━━━━━┓
          ┃                                        ┃
          ┃       players  4                       ┃
@@ -15,6 +14,8 @@ expression: "testing::draw(60, 20, |page| form.render(page))"
          ┃          port  8080                    ┃
          ┃                                        ┃
          ┃          code  random                  ┃
+         ┃                                        ┃
+         ┃           ini  not shared              ┃
          ┃                                        ┃
          ┃ [ save as default ]  [ clear default ] ┃
          ┃                                        ┃
