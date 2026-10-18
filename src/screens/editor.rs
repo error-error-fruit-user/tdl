@@ -76,7 +76,9 @@ pub struct Editor<'a> {
 }
 
 impl<'a> Editor<'a> {
-    const BORDER_COLOR: Color = theme::SCREEN;
+    fn border_color() -> Color {
+        theme::worn().colors.screen
+    }
     /// Labels the rule between the name and the wad list.
     const DIVIDER: &str = "wads";
     /// The last row, which adds wads.
@@ -644,7 +646,7 @@ impl Ritual for Editor<'_> {
         } else {
             "new profile"
         };
-        let veil = ritual::conjure_veil(title, Self::BORDER_COLOR);
+        let veil = ritual::conjure_veil(title, Self::border_color());
         let inner = veil.inner(editor_area);
         page.render_widget(veil, editor_area);
 
@@ -683,11 +685,11 @@ impl Ritual for Editor<'_> {
                 // 🕳️ a wad that has gone missing leaves a hole in the list, not a gap in the story
                 let style = match Mark::of_wad(wad, fault.as_ref()) {
                     // 📋 picked to be copied: the badge still says what else is going on
-                    _ if self.selection.contains(i, cursor, count) => theme::SELECTED,
-                    Some(Mark::Broken) => theme::BROKEN_ROW,
-                    Some(Mark::Changed) => Style::new().fg(theme::CHANGED),
+                    _ if self.selection.contains(i, cursor, count) => theme::worn().styles.selected,
+                    Some(Mark::Broken) => theme::worn().styles.broken_row,
+                    Some(Mark::Changed) => Style::new().fg(theme::worn().colors.changed),
                     // 🌀 volatile wads are expected to shift under your feet
-                    Some(Mark::Volatile) => Style::new().fg(theme::VOLATILE),
+                    Some(Mark::Volatile) => Style::new().fg(theme::worn().colors.volatile),
                     None => Style::new(),
                 };
                 Row::new([
@@ -700,7 +702,7 @@ impl Ritual for Editor<'_> {
             .chain([Row::new([
                 Line::default(),
                 Line::default(),
-                Line::styled(Self::NEW_ROW, Style::new().fg(theme::MUTED)),
+                Line::styled(Self::NEW_ROW, Style::new().fg(theme::worn().colors.muted)),
             ])]);
         let table = Table::new(
             rows,
@@ -714,9 +716,9 @@ impl Ritual for Editor<'_> {
         let table = match (self.editing_wads, selected_fault) {
             (false, _) => table,
             (true, Some(fault)) if fault.is_blocking() => {
-                table.row_highlight_style(theme::BROKEN_CURSOR)
+                table.row_highlight_style(theme::worn().styles.broken_cursor)
             }
-            (true, _) => table.row_highlight_style(theme::CURSOR),
+            (true, _) => table.row_highlight_style(theme::worn().styles.cursor),
         };
         let list_area = Rect {
             y: inner.y + 3,
@@ -734,7 +736,11 @@ impl Ritual for Editor<'_> {
             }
         }
 
-        let panel = ritual::conjure_banner(details.title, theme::PANEL, details.title_color);
+        let panel = ritual::conjure_banner(
+            details.title,
+            theme::worn().colors.panel,
+            details.title_color,
+        );
         let fitting = details.lines_fitting(panel.inner(details_area).width);
         page.render_widget(Paragraph::new(fitting).block(panel), details_area);
 
@@ -1158,7 +1164,7 @@ pub fn paste_asking(
             grimoire,
             "copying",
             &format!("Copying to {new_name}..."),
-            theme::BUSY,
+            theme::worn().colors.busy,
         )?;
         Ok(Some(new_name))
     })?;
@@ -1190,12 +1196,12 @@ fn divider(label: &str, count: usize, width: u16) -> Line<'_> {
     let count = count.to_string();
     let rule = (width as usize).saturating_sub(label.len() + count.len() + 2);
     Line::from(vec![
-        Span::styled(label, theme::HEADER),
+        Span::styled(label, theme::worn().styles.header),
         Span::styled(
             format!(" {} ", "─".repeat(rule)),
-            Style::new().fg(theme::IRON),
+            Style::new().fg(theme::worn().colors.divider),
         ),
-        Span::styled(count, Style::new().fg(theme::MUTED)),
+        Span::styled(count, Style::new().fg(theme::worn().colors.muted)),
     ])
 }
 
@@ -1222,10 +1228,10 @@ fn found_elsewhere(wad: &Wad, fault: &Fault, wad_dirs: &[PathBuf]) -> Option<Pat
 /// and what to do about it. `found` is a file of its name in a wad dir, to offer instead.
 fn inspect_lines(wad: &Wad, fault: &Fault, found: Option<&Path>) -> Vec<Line<'static>> {
     let (color, advice) = if fault.is_blocking() {
-        (theme::BAD, "press R to pick the file again")
+        (theme::worn().colors.bad, "press R to pick the file again")
     } else {
         (
-            theme::CHANGED,
+            theme::worn().colors.changed,
             "its hash may be stale: press R to pick it again",
         )
     };
@@ -1233,11 +1239,13 @@ fn inspect_lines(wad: &Wad, fault: &Fault, found: Option<&Path>) -> Vec<Line<'st
     let mut lines = vec![
         Line::styled(
             wad.file_name().into_owned(),
-            Style::new().fg(theme::TEXT).add_modifier(Modifier::BOLD),
+            Style::new()
+                .fg(theme::worn().colors.text)
+                .add_modifier(Modifier::BOLD),
         ),
         Line::styled(
             layout::tail(&path, popups::MAX_TEXT_WIDTH as usize),
-            Style::new().fg(theme::MUTED),
+            Style::new().fg(theme::worn().colors.muted),
         ),
         Line::styled(format!("It {fault}."), Style::new().fg(color)),
     ];
@@ -1249,14 +1257,17 @@ fn inspect_lines(wad: &Wad, fault: &Fault, found: Option<&Path>) -> Vec<Line<'st
                     "found at {}",
                     layout::tail(&found, popups::MAX_TEXT_WIDTH as usize - 9)
                 ),
-                Style::new().fg(theme::GOOD),
+                Style::new().fg(theme::worn().colors.good),
             ));
             lines.push(Line::styled(
                 "press R to use it",
-                Style::new().fg(theme::MUTED),
+                Style::new().fg(theme::worn().colors.muted),
             ));
         }
-        None => lines.push(Line::styled(advice, Style::new().fg(theme::MUTED))),
+        None => lines.push(Line::styled(
+            advice,
+            Style::new().fg(theme::worn().colors.muted),
+        )),
     }
     lines
 }

@@ -48,13 +48,28 @@ pub fn answers(options: &[&str], selected: Option<usize>) -> Line<'static> {
         let first = letters.next().map(String::from).unwrap_or_default();
         let rest = letters.as_str().to_string();
         if selected == Some(i) {
-            spans.push(Span::styled(format!("[{first}]{rest}"), theme::CURSOR));
+            spans.push(Span::styled(
+                format!("[{first}]{rest}"),
+                theme::worn().styles.cursor,
+            ));
             continue;
         }
-        spans.push(Span::styled("[", Style::new().fg(theme::MUTED)));
-        spans.push(Span::styled(first, Style::new().fg(theme::KEY)));
-        spans.push(Span::styled("]", Style::new().fg(theme::MUTED)));
-        spans.push(Span::styled(rest, Style::new().fg(theme::TEXT)));
+        spans.push(Span::styled(
+            "[",
+            Style::new().fg(theme::worn().colors.muted),
+        ));
+        spans.push(Span::styled(
+            first,
+            Style::new().fg(theme::worn().colors.key),
+        ));
+        spans.push(Span::styled(
+            "]",
+            Style::new().fg(theme::worn().colors.muted),
+        ));
+        spans.push(Span::styled(
+            rest,
+            Style::new().fg(theme::worn().colors.text),
+        ));
     }
     Line::from(spans)
 }
@@ -92,7 +107,7 @@ pub fn draw(page: &mut Page, title: &str, border: Color, lines: &[Line], footer:
     let height = lines.len() as u16 + 2 + footer.as_ref().map_or(0, |_| 2);
     let (width, height) = layout::window(width, height);
     let (veil, area, ..) = ritual::conjure_window(title, width, height, border, page.area());
-    let veil = veil.border_type(theme::POPUP_BORDER);
+    let veil = veil.border_type(theme::worn().borders.popup);
     let inner = veil.inner(area);
     page.render_widget(veil, area);
     let row =
@@ -114,7 +129,7 @@ mod tests {
         let line = answers(&["Yes", "No"], None);
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(text, "[Y]es  [N]o");
-        assert_eq!(line.spans[1].style.fg, Some(theme::KEY));
+        assert_eq!(line.spans[1].style.fg, Some(theme::worn().colors.key));
     }
 
     #[test]
@@ -147,7 +162,7 @@ mod tests {
             .iter()
             .find(|span| span.content == "[N]o")
             .unwrap();
-        assert_eq!(picked.style, theme::CURSOR);
+        assert_eq!(picked.style, theme::worn().styles.cursor);
     }
 
     #[test]

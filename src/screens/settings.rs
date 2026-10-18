@@ -74,7 +74,9 @@ pub struct SettingsForm {
 
 impl SettingsForm {
     const TITLE: &str = "settings";
-    const BORDER_COLOR: Color = theme::SCREEN;
+    fn border_color() -> Color {
+        theme::worn().colors.screen
+    }
     const FIELDS: usize = 7;
     /// The longest the UZDoom arguments may get, so the field stays something that fits a window.
     const MAX_ARGS: usize = 120;
@@ -209,7 +211,7 @@ impl Ritual for SettingsForm {
                 caret: Some(self.caret),
             },
         ];
-        form::draw(page, Self::TITLE, Self::BORDER_COLOR, &fields, self.focus);
+        form::draw(page, Self::TITLE, Self::border_color(), &fields, self.focus);
     }
 
     fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Tea>> {

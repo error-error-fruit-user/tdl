@@ -39,9 +39,9 @@ impl Kind {
     /// The border and the filled part of the bar.
     fn color(self) -> Color {
         match self {
-            Self::Downloading => theme::BUSY,
-            Self::Hashing => theme::HASHING,
-            Self::Unsealing => theme::UNSEALING,
+            Self::Downloading => theme::worn().colors.busy,
+            Self::Hashing => theme::worn().colors.hashing,
+            Self::Unsealing => theme::worn().colors.unsealing,
         }
     }
 
@@ -272,18 +272,23 @@ impl Count {
 
         let gauge = Gauge::default()
             .ratio(self.ratio())
-            .gauge_style(Style::new().fg(color).bg(theme::IRON))
-            .label(Span::styled(label, Style::new().fg(theme::BONE)));
+            .gauge_style(Style::new().fg(color).bg(theme::worn().colors.gauge))
+            .label(Span::styled(
+                label,
+                Style::new().fg(theme::worn().colors.gauge_label),
+            ));
         page.render_widget(gauge, row(0));
         page.render_widget(
-            Line::styled(numbers, Style::new().fg(theme::MUTED)).centered(),
+            Line::styled(numbers, Style::new().fg(theme::worn().colors.muted)).centered(),
             row(1),
         );
         if self.show_quip {
             page.render_widget(
                 Line::styled(
                     quip,
-                    Style::new().fg(theme::QUIP).add_modifier(Modifier::ITALIC),
+                    Style::new()
+                        .fg(theme::worn().colors.quip)
+                        .add_modifier(Modifier::ITALIC),
                 )
                 .centered(),
                 row(3),
@@ -291,7 +296,7 @@ impl Count {
         }
         if let Some(footer) = self.footer {
             page.render_widget(
-                Line::styled(footer, Style::new().fg(theme::MUTED)).centered(),
+                Line::styled(footer, Style::new().fg(theme::worn().colors.muted)).centered(),
                 row(3 + quip_rows),
             );
         }

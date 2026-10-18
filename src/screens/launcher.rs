@@ -162,7 +162,9 @@ fn remembered_dirs(vault: &[OsString], global: &[OsString]) -> Vec<PathBuf> {
 
 impl Launcher {
     const TITLE: &str = "launcher";
-    const BORDER_COLOR: Color = theme::SCREEN;
+    fn border_color() -> Color {
+        theme::worn().colors.screen
+    }
     const HEADER: [&str; 2] = ["profile", "wads"];
     /// The last row, which makes a new profile.
     const NEW_ROW: &str = "+ new profile";
@@ -353,7 +355,7 @@ impl Launcher {
                 return Err(Error::Interrupted);
             }
             // ⏳ checking every page takes a moment, so don't leave the old dialog hanging there
-            status::summon(grimoire, "Upgrading", "Upgrading...", Self::BORDER_COLOR)?;
+            status::summon(grimoire, "Upgrading", "Upgrading...", Self::border_color())?;
             let Ok(upgraded) = self.vault.upgrade() else {
                 Warning::upgrade_failed(grimoire)?;
                 return Err(Error::Interrupted);
@@ -1161,7 +1163,7 @@ impl Ritual for Launcher {
             Line::from(Self::HEADER[0]),
             Line::from(Self::HEADER[1]).right_aligned(),
         ])
-        .style(theme::HEADER);
+        .style(theme::worn().styles.header);
         let (details_width, details_height) = details.size();
         let own_panel = layout::window(details_width, details_height);
         // 🌐 the global panel goes to the right of the profile's, if both fit across the terminal
@@ -1182,7 +1184,7 @@ impl Ritual for Launcher {
             return;
         };
 
-        let veil = ritual::conjure_veil(Self::TITLE, Self::BORDER_COLOR);
+        let veil = ritual::conjure_veil(Self::TITLE, Self::border_color());
         let inner = veil.inner(list_area);
         // 🔎 scroll first, so the rows about to be shown are known, then look only at those
         let visible = inner.height.saturating_sub(1) as usize;
@@ -1210,14 +1212,16 @@ impl Ritual for Launcher {
                 ]);
                 match self.marks.get(&i) {
                     // 📋 picked to be copied: the badge still says what else is going on
-                    _ if self.selection.contains(i, cursor, count) => row.style(theme::SELECTED),
-                    Some(Some(Mark::Broken)) => row.style(theme::BROKEN_ROW),
+                    _ if self.selection.contains(i, cursor, count) => {
+                        row.style(theme::worn().styles.selected)
+                    }
+                    Some(Some(Mark::Broken)) => row.style(theme::worn().styles.broken_row),
                     _ => row,
                 }
             })
             .chain([Row::new([
                 Line::default(),
-                Line::styled(Self::NEW_ROW, Style::new().fg(theme::MUTED)),
+                Line::styled(Self::NEW_ROW, Style::new().fg(theme::worn().colors.muted)),
                 Line::default(),
             ])]);
 
@@ -1233,9 +1237,9 @@ impl Ritual for Launcher {
         .header(header)
         .block(veil)
         .row_highlight_style(if is_broken {
-            theme::BROKEN_CURSOR
+            theme::worn().styles.broken_cursor
         } else {
-            theme::CURSOR
+            theme::worn().styles.cursor
         });
         page.render_stateful_widget(table, list_area, &mut self.table_state);
         // 🩸 the badges go on last, so even the cursor's highlight can't hide them
@@ -1270,7 +1274,11 @@ impl Ritual for Launcher {
             let (Some(details), Some(area)) = (details, area) else {
                 continue;
             };
-            let panel = ritual::conjure_banner(details.title, theme::PANEL, details.title_color);
+            let panel = ritual::conjure_banner(
+                details.title,
+                theme::worn().colors.panel,
+                details.title_color,
+            );
             let fitting = details.lines_fitting(panel.inner(area).width);
             page.render_widget(Paragraph::new(fitting).block(panel), area);
         }

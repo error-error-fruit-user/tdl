@@ -31,10 +31,16 @@ impl Ritual for Dialog<'_> {
     fn render(&mut self, page: &mut Page) {
         let lines: Vec<_> = popups::wrap(self.message, page.area())
             .into_iter()
-            .map(|line| Line::styled(line, Style::new().fg(theme::TEXT)))
+            .map(|line| Line::styled(line, Style::new().fg(theme::worn().colors.text)))
             .collect();
         let answers = popups::answers(&["Yes", "No"], self.selected);
-        popups::draw(page, Self::TITLE, theme::DIALOG, &lines, Some(answers));
+        popups::draw(
+            page,
+            Self::TITLE,
+            theme::worn().colors.dialog,
+            &lines,
+            Some(answers),
+        );
     }
 
     fn prompt(&mut self, _: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Return>> {

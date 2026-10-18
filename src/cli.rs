@@ -455,23 +455,49 @@ struct Connection {
     code: Option<String>,
 }
 
-/// The help in the theme's colors: hellfire headings, flame for what is typed as it is, bone for
-/// what to fill in, and blood for what went wrong.
+/// The help in the theme's colors (see [`theme::Help`]).
 fn styles() -> Styles {
     let paint = |color: Color| {
-        let Color::Rgb(red, green, blue) = color else {
-            unreachable!("the palette is all RGB")
+        let color = match color {
+            Color::Rgb(red, green, blue) => Some(styling::RgbColor(red, green, blue).into()),
+            Color::Indexed(index) => Some(styling::Ansi256Color(index).into()),
+            Color::Reset => None,
+            named => Some(styling::Color::Ansi(ansi(named))),
         };
-        styling::Style::new().fg_color(Some(styling::RgbColor(red, green, blue).into()))
+        styling::Style::new().fg_color(color)
     };
+    let help = &theme::worn().help;
     Styles::styled()
-        .header(paint(theme::HELLFIRE).bold())
-        .usage(paint(theme::HELLFIRE).bold())
-        .literal(paint(theme::FLAME).bold())
-        .placeholder(paint(theme::BONE))
-        .error(paint(theme::BLOOD).bold())
-        .valid(paint(theme::NUKAGE))
-        .invalid(paint(theme::FLAME))
+        .header(paint(help.heading).bold())
+        .usage(paint(help.heading).bold())
+        .literal(paint(help.literal).bold())
+        .placeholder(paint(help.placeholder))
+        .error(paint(help.error).bold())
+        .valid(paint(help.valid))
+        .invalid(paint(help.invalid))
+}
+
+/// One of the terminal's sixteen named colors, as the help paints it.
+fn ansi(color: Color) -> styling::AnsiColor {
+    use styling::AnsiColor as Ansi;
+    match color {
+        Color::Black => Ansi::Black,
+        Color::Red => Ansi::Red,
+        Color::Green => Ansi::Green,
+        Color::Yellow => Ansi::Yellow,
+        Color::Blue => Ansi::Blue,
+        Color::Magenta => Ansi::Magenta,
+        Color::Cyan => Ansi::Cyan,
+        Color::Gray => Ansi::White,
+        Color::DarkGray => Ansi::BrightBlack,
+        Color::LightRed => Ansi::BrightRed,
+        Color::LightGreen => Ansi::BrightGreen,
+        Color::LightYellow => Ansi::BrightYellow,
+        Color::LightBlue => Ansi::BrightBlue,
+        Color::LightMagenta => Ansi::BrightMagenta,
+        Color::LightCyan => Ansi::BrightCyan,
+        _ => Ansi::BrightWhite,
+    }
 }
 
 /// A `--splash-quip`, with every `#N` replaced by its quip.

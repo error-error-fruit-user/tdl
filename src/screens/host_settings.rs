@@ -36,7 +36,9 @@ pub enum Choice {
 
 impl HostSettingsForm {
     const TITLE: &str = "host";
-    const BORDER_COLOR: Color = theme::MULTIPLAYER;
+    fn border_color() -> Color {
+        theme::worn().colors.multiplayer
+    }
     const PLAYER_COUNT_LABEL: &str = "players";
     const MODE_LABEL: &str = "mode";
     const MAP_LABEL: &str = "map";
@@ -241,7 +243,7 @@ impl Ritual for HostSettingsForm {
         form::draw_with_buttons(
             page,
             Self::TITLE,
-            Self::BORDER_COLOR,
+            Self::border_color(),
             &fields,
             &buttons,
             focus,

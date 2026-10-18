@@ -56,12 +56,12 @@ impl<'a> Legend<'a> {
                 Line::from(vec![
                     Span::styled(
                         format!("{key:>width$}", width = key_width as usize),
-                        Style::new().fg(theme::KEY),
+                        Style::new().fg(theme::worn().colors.key),
                     ),
                     Span::raw("  "),
                     Span::styled(
                         format!("{text:<width$}", width = text_width as usize),
-                        Style::new().fg(theme::TEXT),
+                        Style::new().fg(theme::worn().colors.text),
                     ),
                 ])
             })
@@ -126,7 +126,7 @@ impl Ritual for Legend<'_> {
         if count == 1 || count * width + (count - 1) * COLUMN_GAP.len() <= room {
             self.pages = 1;
             let lines = columns(lines, rows);
-            return popups::draw(page, Self::TITLE, theme::LEGEND, &lines, None);
+            return popups::draw(page, Self::TITLE, theme::worn().colors.legend, &lines, None);
         }
         // 📖 two rows go to the footer that says there is more
         let per_page = rows.saturating_sub(2).max(1);
@@ -139,9 +139,15 @@ impl Ritual for Legend<'_> {
             .collect();
         let footer = Line::styled(
             format!("{}/{} · J/K for more", self.page + 1, self.pages),
-            Style::new().fg(theme::MUTED),
+            Style::new().fg(theme::worn().colors.muted),
         );
-        popups::draw(page, Self::TITLE, theme::LEGEND, &shown, Some(footer));
+        popups::draw(
+            page,
+            Self::TITLE,
+            theme::worn().colors.legend,
+            &shown,
+            Some(footer),
+        );
     }
 
     fn prompt(&mut self, _: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Tea>> {

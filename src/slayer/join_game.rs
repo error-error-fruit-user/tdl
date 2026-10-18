@@ -8,8 +8,6 @@ use std::{
     },
 };
 
-use ratatui::style::Color;
-
 use crate::{
     error::{Error, Result},
     net::{self, Address, Entry, Manifest, Report, ini::HostIni},
@@ -31,8 +29,6 @@ use crate::{
     vault::{Vault, lookup::Local, profile::Profile, wad::Wad},
 };
 
-const BORDER_COLOR: Color = Color::LightMagenta;
-
 /// Fetches the host's manifest and picks a profile to join with: the only compatible one, a choice
 /// among several, or a new profile downloaded from the host when none match. With
 /// `always_download`, the wads that aren't installed are downloaded without asking first.
@@ -46,7 +42,12 @@ pub fn summon(
     always_download: bool,
     host_ini: HostIni,
 ) -> Result<()> {
-    status::summon(grimoire, "Joining", "Joining...", BORDER_COLOR)?;
+    status::summon(
+        grimoire,
+        "Joining",
+        "Joining...",
+        theme::worn().colors.netplay,
+    )?;
     let manifest = match Manifest::fetch(address) {
         Ok(manifest) => manifest,
         Err(Error::Refused) => return Warning::code_refused(grimoire),
@@ -71,7 +72,7 @@ pub fn summon(
             grimoire,
             "Joining",
             "Getting the host's ini...",
-            BORDER_COLOR,
+            theme::worn().colors.netplay,
         )?;
         let keys = host_ini == HostIni::WithKeys;
         match with_host_ini(vault, address, &profile, uzdoom, keys) {
@@ -346,7 +347,7 @@ fn bring_up_to_date(
             grimoire,
             "copying",
             "Putting the host's wads in place...",
-            theme::BUSY,
+            theme::worn().colors.busy,
         )?;
     }
     let downloaded: Vec<_> = wanted.into_iter().zip(downloaded).collect();
@@ -374,7 +375,12 @@ fn fetch(
     if entries.is_empty() {
         return Ok(Some(Vec::new()));
     }
-    status::summon(grimoire, "Downloading", "Downloading...", BORDER_COLOR)?;
+    status::summon(
+        grimoire,
+        "Downloading",
+        "Downloading...",
+        theme::worn().colors.netplay,
+    )?;
     // 🚪 Esc goes back to the launcher quietly: partial files are already cleaned up, and
     // finished ones stay in the downloads dir, so trying again picks up where this stopped
     match download_wads(grimoire, address, entries, downloads_dir) {

@@ -23,7 +23,9 @@ pub struct ProfilePicker<'a> {
 
 impl<'a> ProfilePicker<'a> {
     const TITLE: &str = "pick a profile";
-    const BORDER_COLOR: Color = theme::MULTIPLAYER;
+    fn border_color() -> Color {
+        theme::worn().colors.multiplayer
+    }
     const LEGEND: &[[&str; 2]] = &[
         ["Enter", "Select Profile"],
         ["J/K", "Traverse"],
@@ -54,12 +56,17 @@ impl Ritual for ProfilePicker<'_> {
             .max()
             .unwrap_or(0);
         let (width, height) = layout::window(width, self.profiles.len() as u16);
-        let (window, window_area, indicator, indicator_area) =
-            ritual::conjure_window(Self::TITLE, width, height, Self::BORDER_COLOR, page.area());
+        let (window, window_area, indicator, indicator_area) = ritual::conjure_window(
+            Self::TITLE,
+            width,
+            height,
+            Self::border_color(),
+            page.area(),
+        );
         let rows = self.profiles.iter().map(|p| Row::new([p.name.as_str()]));
         let table = Table::new(rows, [Constraint::Fill(1)])
             .block(window)
-            .row_highlight_style(theme::CURSOR);
+            .row_highlight_style(theme::worn().styles.cursor);
         page.render_stateful_widget(table, window_area, &mut self.table_state);
         page.render_widget(indicator, indicator_area);
     }

@@ -23,7 +23,9 @@ pub struct TextPrompt<'a> {
 }
 
 impl<'a> TextPrompt<'a> {
-    const BORDER_COLOR: Color = theme::SCREEN;
+    fn border_color() -> Color {
+        theme::worn().colors.screen
+    }
     const LEGEND: &[[&str; 2]] = &[
         ["Enter", "Keep It"],
         ["Any Key", "Input"],
@@ -79,7 +81,7 @@ impl Ritual for TextPrompt<'_> {
             room: 24,
             caret: Some(self.caret),
         }];
-        form::draw(page, self.title, Self::BORDER_COLOR, &fields, 0);
+        form::draw(page, self.title, Self::border_color(), &fields, 0);
     }
 
     fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Tea>> {

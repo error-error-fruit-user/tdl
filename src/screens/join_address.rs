@@ -26,7 +26,9 @@ pub struct JoinAddressForm {
 
 impl JoinAddressForm {
     const TITLE: &str = "join";
-    const BORDER_COLOR: Color = theme::MULTIPLAYER;
+    fn border_color() -> Color {
+        theme::worn().colors.multiplayer
+    }
     const FIELDS: usize = 4;
     /// Long enough for any IPv4 address.
     const MAX_IP: usize = 15;
@@ -182,7 +184,7 @@ impl Ritual for JoinAddressForm {
                 caret: None,
             },
         ];
-        form::draw(page, Self::TITLE, Self::BORDER_COLOR, &fields, self.focus);
+        form::draw(page, Self::TITLE, Self::border_color(), &fields, self.focus);
     }
 
     fn prompt(

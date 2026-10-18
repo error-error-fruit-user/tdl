@@ -28,7 +28,7 @@ impl Warning {
     pub fn summon_lines(grimoire: &mut Grimoire, lines: &[String]) -> Result<()> {
         let lines = lines
             .iter()
-            .map(|line| Line::styled(line.clone(), Style::new().fg(theme::TEXT)))
+            .map(|line| Line::styled(line.clone(), Style::new().fg(theme::worn().colors.text)))
             .collect();
         Self::summon_styled(grimoire, lines)
     }
@@ -51,7 +51,7 @@ impl Warning {
     pub fn announce(grimoire: &mut Grimoire, title: &'static str, lines: &[String]) -> Result<()> {
         let lines = lines
             .iter()
-            .map(|line| Line::styled(line.clone(), Style::new().fg(theme::TEXT)))
+            .map(|line| Line::styled(line.clone(), Style::new().fg(theme::worn().colors.text)))
             .collect();
         Warning { title, lines }.invoke(grimoire)
     }
@@ -169,9 +169,9 @@ impl Ritual for Warning {
             })
             .collect();
         let border = if self.title == Self::TITLE {
-            theme::WARNING
+            theme::worn().colors.warning
         } else {
-            theme::DIALOG
+            theme::worn().colors.dialog
         };
         popups::draw(page, self.title, border, &lines, None);
     }

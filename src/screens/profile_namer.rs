@@ -22,7 +22,9 @@ pub struct ProfileNamer<'a> {
 
 impl<'a> ProfileNamer<'a> {
     const TITLE: &str = "name the profile";
-    const BORDER_COLOR: Color = theme::MULTIPLAYER;
+    fn border_color() -> Color {
+        theme::worn().colors.multiplayer
+    }
     const LEGEND: &[[&str; 2]] = &[
         ["Enter", "Save Profile"],
         ["A-Z/0-9/_", "Input"],
@@ -70,7 +72,7 @@ impl Ritual for ProfileNamer<'_> {
             room: 16,
             caret: Some(self.caret),
         }];
-        form::draw(page, Self::TITLE, Self::BORDER_COLOR, &fields, 0);
+        form::draw(page, Self::TITLE, Self::border_color(), &fields, 0);
     }
 
     fn prompt(

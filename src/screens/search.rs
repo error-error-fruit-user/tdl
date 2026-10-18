@@ -187,14 +187,23 @@ impl Search {
     /// cursor at the end of the query.
     pub fn render(&self, matches: usize, placeholder: &str, area: Rect, page: &mut Page) {
         let tally = match (self.query.is_empty(), matches) {
-            (true, _) => Span::styled(format!("  {placeholder}"), Style::new().fg(theme::MUTED)),
-            (false, 0) => Span::styled("  no match", Style::new().fg(theme::BAD)),
-            (false, 1) => Span::styled("  1 match", Style::new().fg(theme::MUTED)),
-            (false, n) => Span::styled(format!("  {n} matches"), Style::new().fg(theme::MUTED)),
+            (true, _) => Span::styled(
+                format!("  {placeholder}"),
+                Style::new().fg(theme::worn().colors.muted),
+            ),
+            (false, 0) => Span::styled("  no match", Style::new().fg(theme::worn().colors.bad)),
+            (false, 1) => Span::styled("  1 match", Style::new().fg(theme::worn().colors.muted)),
+            (false, n) => Span::styled(
+                format!("  {n} matches"),
+                Style::new().fg(theme::worn().colors.muted),
+            ),
         };
         let line = Line::from(vec![
-            Span::styled("/", Style::new().fg(theme::KEY)),
-            Span::styled(self.query.as_str(), Style::new().fg(theme::TEXT)),
+            Span::styled("/", Style::new().fg(theme::worn().colors.key)),
+            Span::styled(
+                self.query.as_str(),
+                Style::new().fg(theme::worn().colors.text),
+            ),
             tally,
         ]);
         page.render_widget(line, area);

@@ -9,49 +9,10 @@ use ratatui::{
 
 use crate::theme;
 
-/// From cold to white hot, as in the original. Heat is an index into this. No heat at all is
-/// drawn as the screen's own background instead of the first entry, so there is no seam where the
-/// fire meets the rest of the screen.
-const PALETTE: [(u8, u8, u8); 37] = [
-    (0x07, 0x07, 0x07),
-    (0x1F, 0x07, 0x07),
-    (0x2F, 0x0F, 0x07),
-    (0x47, 0x0F, 0x07),
-    (0x57, 0x17, 0x07),
-    (0x67, 0x1F, 0x07),
-    (0x77, 0x1F, 0x07),
-    (0x8F, 0x27, 0x07),
-    (0x9F, 0x2F, 0x07),
-    (0xAF, 0x3F, 0x07),
-    (0xBF, 0x47, 0x07),
-    (0xC7, 0x47, 0x07),
-    (0xDF, 0x4F, 0x07),
-    (0xDF, 0x57, 0x07),
-    (0xDF, 0x57, 0x07),
-    (0xD7, 0x5F, 0x07),
-    (0xD7, 0x5F, 0x07),
-    (0xD7, 0x67, 0x0F),
-    (0xCF, 0x6F, 0x0F),
-    (0xCF, 0x77, 0x0F),
-    (0xCF, 0x7F, 0x0F),
-    (0xCF, 0x87, 0x17),
-    (0xC7, 0x87, 0x17),
-    (0xC7, 0x8F, 0x17),
-    (0xC7, 0x97, 0x1F),
-    (0xBF, 0x9F, 0x1F),
-    (0xBF, 0x9F, 0x1F),
-    (0xBF, 0xA7, 0x27),
-    (0xBF, 0xA7, 0x27),
-    (0xBF, 0xAF, 0x2F),
-    (0xB7, 0xAF, 0x2F),
-    (0xB7, 0xB7, 0x2F),
-    (0xB7, 0xB7, 0x37),
-    (0xCF, 0xCF, 0x6F),
-    (0xDF, 0xDF, 0x9F),
-    (0xEF, 0xEF, 0xC7),
-    (0xFF, 0xFF, 0xFF),
-];
-const HOTTEST: u8 = PALETTE.len() as u8 - 1;
+/// The hottest heat, white hot in the original's colors. Heat goes from 0 (none, drawn as the
+/// screen's own background so there is no seam where the fire meets the rest of the screen) up to
+/// this, with one color for each in the original: the theme's fire colors are spread over them.
+const HOTTEST: u8 = 36;
 /// How far up the flames reach, as a share of the fire's height. The original was made for a
 /// screen far taller than a terminal, so the fire cools faster here to keep its shape.
 const REACH_PERCENT: u32 = 80;
@@ -130,12 +91,10 @@ impl Fire {
         }
     }
 
-    /// Draws into `area` in the original's colors.
+    /// Draws into `area` in the theme's fire colors (the original's, built in).
     pub fn render(&self, area: Rect, buffer: &mut Buffer) {
-        self.render_with(area, buffer, |heat| {
-            let (r, g, b) = PALETTE[heat.min(HOTTEST) as usize];
-            Color::Rgb(r, g, b)
-        });
+        let colors = &theme::worn().splash.fire;
+        self.render_with(area, buffer, |heat| shade(colors, heat));
     }
 
     /// Draws into `area` in the colors of the rainbow: `hue` (0 to 1, round the color wheel from
@@ -151,7 +110,7 @@ impl Fire {
     fn render_with(&self, area: Rect, buffer: &mut Buffer, color: impl Fn(u8) -> Color) {
         let color = |heat: u8| {
             if heat == 0 {
-                theme::BACKGROUND
+                theme::worn().colors.background
             } else {
                 color(heat)
             }
@@ -166,6 +125,13 @@ impl Fire {
             }
         }
     }
+}
+
+/// The color of `heat` from `colors`, cold to white hot, however many there are.
+fn shade(colors: &[Color], heat: u8) -> Color {
+    let last = colors.len().saturating_sub(1);
+    let index = usize::from(heat.min(HOTTEST)) * last / usize::from(HOTTEST);
+    colors.get(index).copied().unwrap_or(Color::Reset)
 }
 
 /// How hot the body of the flames is, as a share of the hottest: below it they darken toward
@@ -188,7 +154,7 @@ fn rainbow(heat: u8, hue: f32) -> Color {
         (1.0, (warmth - BODY) / (1.0 - BODY) * WHITE_HOT)
     };
     // 🌑 a background the terminal picks (`Color::Reset`) can't be blended from, so black it is
-    let Color::Rgb(dark_r, dark_g, dark_b) = theme::BACKGROUND else {
+    let Color::Rgb(dark_r, dark_g, dark_b) = theme::worn().colors.background else {
         return rainbow_over((0, 0, 0), (r, g, b), light, white);
     };
     rainbow_over((dark_r, dark_g, dark_b), (r, g, b), light, white)
@@ -258,7 +224,7 @@ mod tests {
         assert_eq!(full_color(2.0 / 3.0), (0.0, 0.0, 1.0));
         assert_eq!(full_color(1.0), full_color(0.0));
         // the coldest melts into the background, where the fire draws nothing at all
-        assert_eq!(rainbow(0, 0.5), theme::BACKGROUND);
+        assert_eq!(rainbow(0, 0.5), theme::worn().colors.background);
         let Color::Rgb(r, g, b) = rainbow(HOTTEST, 0.0) else {
             unreachable!()
         };
@@ -277,7 +243,13 @@ mod tests {
                 fire.render(AREA, &mut buffer);
             }
             let top = &buffer[(0, 0)];
-            assert_eq!((top.fg, top.bg), (theme::BACKGROUND, theme::BACKGROUND));
+            assert_eq!(
+                (top.fg, top.bg),
+                (
+                    theme::worn().colors.background,
+                    theme::worn().colors.background
+                )
+            );
         }
     }
 

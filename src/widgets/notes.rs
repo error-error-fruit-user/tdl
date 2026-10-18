@@ -11,11 +11,14 @@ pub fn render(left: Option<String>, right: Option<String>, area: Rect, page: &mu
     let room = area.width.saturating_sub(8) / 2;
     let fits = |note: &String| layout::width(note) <= room;
     if let Some(left) = left.filter(fits) {
-        page.render_widget(Line::styled(left, Style::new().fg(theme::KEY)), area);
+        page.render_widget(
+            Line::styled(left, Style::new().fg(theme::worn().colors.key)),
+            area,
+        );
     }
     if let Some(right) = right.filter(fits) {
         page.render_widget(
-            Line::styled(right, Style::new().fg(theme::MUTED)).right_aligned(),
+            Line::styled(right, Style::new().fg(theme::worn().colors.muted)).right_aligned(),
             area,
         );
     }

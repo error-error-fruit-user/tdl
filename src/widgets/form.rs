@@ -51,11 +51,11 @@ fn button_row<'a>(buttons: &[Button<'a>], focus: Option<usize>) -> Line<'a> {
             spans.push(Span::raw(BUTTON_GAP));
         }
         let style = if focus == Some(i) {
-            theme::CURSOR
+            theme::worn().styles.cursor
         } else if button.enabled {
-            Style::new().fg(theme::TEXT)
+            Style::new().fg(theme::worn().colors.text)
         } else {
-            Style::new().fg(theme::MUTED)
+            Style::new().fg(theme::worn().colors.muted)
         };
         spans.push(Span::styled(format!("[ {} ]", button.label), style));
     }
@@ -104,14 +104,19 @@ pub fn render(
         }
         let focused = focus == Some(i);
         let label_style = if focused {
-            Style::new().fg(theme::KEY).add_modifier(Modifier::BOLD)
+            Style::new()
+                .fg(theme::worn().colors.key)
+                .add_modifier(Modifier::BOLD)
         } else {
-            Style::new().fg(theme::MUTED)
+            Style::new().fg(theme::worn().colors.muted)
         };
         let value = if field.value.is_empty() {
-            Span::styled(field.placeholder, Style::new().fg(theme::MUTED))
+            Span::styled(
+                field.placeholder,
+                Style::new().fg(theme::worn().colors.muted),
+            )
         } else {
-            Span::styled(field.value, Style::new().fg(theme::TEXT))
+            Span::styled(field.value, Style::new().fg(theme::worn().colors.text))
         };
         let padding = " ".repeat((label_width - layout::width(field.label)) as usize);
         let line = Line::from(vec![

@@ -32,19 +32,19 @@ pub enum State {
 impl State {
     fn color(self) -> Color {
         match self {
-            Self::Good => theme::GOOD,
-            Self::Bad => theme::BAD,
-            Self::Changed => theme::CHANGED,
-            Self::Unset => theme::MUTED,
-            Self::Volatile => theme::VOLATILE,
+            Self::Good => theme::worn().colors.good,
+            Self::Bad => theme::worn().colors.bad,
+            Self::Changed => theme::worn().colors.changed,
+            Self::Unset => theme::worn().colors.muted,
+            Self::Volatile => theme::worn().colors.volatile,
         }
     }
 
     fn mark(self) -> &'static str {
         if self == Self::Unset {
-            theme::UNSET
+            &theme::worn().glyphs.unset
         } else {
-            theme::STATUS
+            &theme::worn().glyphs.status
         }
     }
 
@@ -369,7 +369,7 @@ impl Details {
         lines.extend(watched_line(profile));
         Self {
             title: "overrides",
-            title_color: theme::TITLE,
+            title_color: theme::worn().colors.title,
             lines,
         }
     }
@@ -379,7 +379,11 @@ impl Details {
         let broken = lines.iter().any(|line| line.state == State::Bad);
         Self {
             title: if broken { "broken" } else { "ready" },
-            title_color: if broken { theme::BAD } else { theme::GOOD },
+            title_color: if broken {
+                theme::worn().colors.bad
+            } else {
+                theme::worn().colors.good
+            },
             lines,
         }
     }
@@ -397,22 +401,25 @@ impl Details {
                 let mut spans = vec![
                     Span::styled(
                         format!("{:>LABEL_WIDTH$} ", detail.label),
-                        Style::new().fg(theme::MUTED),
+                        Style::new().fg(theme::worn().colors.muted),
                     ),
                     Span::styled(detail.state.mark(), Style::new().fg(detail.state.color())),
                     Span::raw(" "),
                     Span::styled(
                         layout::tail(&detail.value, VALUE_WIDTH),
                         Style::new().fg(if detail.state == State::Unset {
-                            theme::MUTED
+                            theme::worn().colors.muted
                         } else {
-                            theme::TEXT
+                            theme::worn().colors.text
                         }),
                     ),
                 ];
                 for (i, (note, state)) in detail.note.iter().enumerate() {
                     let separator = if i == 0 { "  " } else { ", " };
-                    spans.push(Span::styled(separator, Style::new().fg(theme::MUTED)));
+                    spans.push(Span::styled(
+                        separator,
+                        Style::new().fg(theme::worn().colors.muted),
+                    ));
                     spans.push(Span::styled(note.clone(), Style::new().fg(state.color())));
                 }
                 Line::from(spans)
@@ -429,7 +436,7 @@ impl Details {
                 if line.width() <= width as usize {
                     return line;
                 }
-                let ellipsis = Span::styled("…", Style::new().fg(theme::MUTED));
+                let ellipsis = Span::styled("…", Style::new().fg(theme::worn().colors.muted));
                 let mut spans = line.spans;
                 while spans.len() > 4
                     && spans.iter().map(Span::width).sum::<usize>() + 1 > width as usize
@@ -637,7 +644,7 @@ mod tests {
     fn a_line_too_wide_drops_its_last_notes_and_says_so() {
         let details = Details {
             title: "broken",
-            title_color: theme::BAD,
+            title_color: theme::worn().colors.bad,
             lines: vec![Detail {
                 label: "wads",
                 state: State::Bad,

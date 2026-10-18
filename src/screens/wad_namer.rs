@@ -38,7 +38,9 @@ enum Naming {
 }
 
 impl<F: Fn(&str) -> bool> WadNamer<F> {
-    const BORDER_COLOR: Color = theme::SCREEN;
+    fn border_color() -> Color {
+        theme::worn().colors.screen
+    }
     /// The longest a typed name gets, so it stays something a window can show.
     const MAX_LENGTH: usize = 64;
     const LEGEND: &[[&str; 2]] = &[
@@ -156,7 +158,7 @@ impl<F: Fn(&str) -> bool> Ritual for WadNamer<F> {
             room: 20,
             caret: Some(self.caret),
         }];
-        form::draw(page, &self.title, Self::BORDER_COLOR, &fields, 0);
+        form::draw(page, &self.title, Self::border_color(), &fields, 0);
     }
 
     fn prompt(&mut self, grimoire: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Tea>> {

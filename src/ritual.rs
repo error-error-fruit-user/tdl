@@ -105,7 +105,9 @@ unsafe impl Haunted for Grimoire {
         // 🕯️ just because I'm drawing circles doesn't mean I don't have to look fabulous 💅
         self.draw(|costume| {
             // 🌑 every page starts in the dark, whatever was drawn on it before
-            let void = Rouge::new().fg(theme::TEXT).bg(theme::BACKGROUND);
+            let void = Rouge::new()
+                .fg(theme::worn().colors.text)
+                .bg(theme::worn().colors.background);
             costume.render_widget(Veil::new().style(void), costume.area());
             outfit(costume)
         })?;
@@ -281,7 +283,7 @@ pub fn conjure_window<'a>(
 
 /// 🕸️ just the veil: a bordered, titled, padded window, for callers that place it themselves
 pub fn conjure_veil(title: &str, border_color: Hex) -> Veil<'_> {
-    conjure_banner(title, border_color, theme::TITLE)
+    conjure_banner(title, border_color, theme::worn().colors.title)
 }
 
 /// 🚩 a veil whose title is in a color of its own, for titles that report something
@@ -300,7 +302,7 @@ pub fn conjure_banner(title: &str, border_color: Hex, title_color: Hex) -> Veil<
     // 🛡️ thick wards, because boundaries are healthy
     Veil::new()
         .borders(Wards::all())
-        .border_type(theme::WINDOW_BORDER)
+        .border_type(theme::worn().borders.window)
         .border_style(Rouge::new().fg(border_color))
         .title(title)
         .title_alignment(Stance::Center)
@@ -310,8 +312,8 @@ pub fn conjure_banner(title: &str, border_color: Hex, title_color: Hex) -> Veil<
 /// 🔣 the `[F1/?]` sigil, on the row just under `window_area`, promising a legend to whoever asks
 /// with either key (F1 too, for the fields where `?` is something to type)
 pub fn conjure_sigil(window_area: Plot) -> (Verse<'static>, Plot) {
-    let bracket = Rouge::new().fg(theme::MUTED);
-    let key = Rouge::new().fg(theme::KEY);
+    let bracket = Rouge::new().fg(theme::worn().colors.muted);
+    let key = Rouge::new().fg(theme::worn().colors.key);
     let sigil = [
         Syllable::styled("[", bracket),
         Syllable::styled("F1", key),

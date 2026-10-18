@@ -27,39 +27,6 @@ const LOGO: [&str; 6] = [
     "   ██║   ██████╔╝███████╗",
     "   ╚═╝   ╚═════╝ ╚══════╝",
 ];
-/// One color for each row of the logo with blocks in it (the last row is only shadow), white hot
-/// at the top, cooling a step a row down to blood at the bottom.
-const LOGO_COLORS: [Color; 5] = [
-    theme::FLAME,
-    halfway(theme::FLAME, theme::HELLFIRE),
-    theme::HELLFIRE,
-    halfway(theme::HELLFIRE, theme::BLOOD),
-    theme::BLOOD,
-];
-/// With pride: the whole trans flag, a stripe a row: blue, pink, white, pink, blue.
-const TRANS_COLORS: [Color; 5] = [
-    theme::TRANS_BLUE,
-    theme::TRANS_PINK,
-    theme::TRANS_WHITE,
-    theme::TRANS_PINK,
-    theme::TRANS_BLUE,
-];
-
-/// The color halfway between `a` and `b`, for the logo's in-between rows.
-const fn halfway(a: Color, b: Color) -> Color {
-    match (a, b) {
-        (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) => {
-            Color::Rgb(mid(r1, r2), mid(g1, g2), mid(b1, b2))
-        }
-        _ => a,
-    }
-}
-
-/// The channel halfway between `x` and `y`.
-const fn mid(x: u8, y: u8) -> u8 {
-    ((x as u16 + y as u16) / 2) as u8
-}
-const SHADOW: Color = theme::GORE;
 const TAGLINE: &str = "t e r m i n a l   d o o m   l a u n c h e r";
 /// For terminals too narrow for the spaced-out tagline.
 const NARROW_TAGLINE: &str = "terminal doom launcher";
@@ -177,19 +144,22 @@ fn paint(fire: &Fire, elapsed: Duration, area: Rect, quip: Option<&str>, buffer:
     let logo_x = area.x + area.width.saturating_sub(logo_width) / 2;
     // the logo, a blank row, the tagline, a blank row, the hint, then the flames
     let logo_y = flames.y.saturating_sub(LOGO.len() as u16 + 4).max(area.y);
+    // 🎨 one color for each row with blocks in it, from the theme's splash, or its pride with pride
+    let theme = theme::worn();
     let colors = if theme::pride() {
-        TRANS_COLORS
+        theme.pride.logo
     } else {
-        LOGO_COLORS
+        theme.splash.logo
     };
+    let shadow = theme.splash.shadow;
     for (i, row) in LOGO.iter().enumerate() {
         // 🌑 the last row has no blocks, only shadow, so it has no color of its own
-        let color = colors.get(i).copied().unwrap_or(SHADOW);
+        let color = colors.get(i).copied().unwrap_or(shadow);
         for (j, character) in row.chars().enumerate() {
             let style = if character == '█' {
                 Style::new().fg(color)
             } else {
-                Style::new().fg(SHADOW)
+                Style::new().fg(shadow)
             };
             stamp(
                 buffer,
@@ -226,7 +196,9 @@ fn paint(fire: &Fire, elapsed: Duration, area: Rect, quip: Option<&str>, buffer:
     let tagline_width = tagline.chars().count() as u16;
     let tagline_x = area.x + area.width.saturating_sub(tagline_width) / 2;
     let tagline_y = logo_y + LOGO.len() as u16 + 1;
-    let style = Style::new().fg(theme::BONE).add_modifier(Modifier::BOLD);
+    let style = Style::new()
+        .fg(theme::worn().splash.tagline)
+        .add_modifier(Modifier::BOLD);
     for (j, character) in tagline.chars().enumerate() {
         stamp(
             buffer,
@@ -252,14 +224,17 @@ fn paint(fire: &Fire, elapsed: Duration, area: Rect, quip: Option<&str>, buffer:
     }
 }
 
-/// The hint's color at `elapsed`: a slow breath between ash and bone.
+/// The hint's color at `elapsed`: a slow breath between the theme's two (ash and bone).
 fn pulse(elapsed: Duration) -> Color {
-    breathe(elapsed, PULSE, theme::ASH, theme::BONE)
+    let [from, to] = theme::worn().splash.hint;
+    breathe(elapsed, PULSE, from, to)
 }
 
-/// The quip's color at `elapsed`: a quick flare between hellfire and the yellow of the flame tips.
+/// The quip's color at `elapsed`: a quick flare between the theme's two (hellfire and the yellow
+/// of the flame tips).
 fn flare(elapsed: Duration) -> Color {
-    breathe(elapsed, QUIP_PULSE, theme::HELLFIRE, theme::FLAME)
+    let [from, to] = theme::worn().splash.quip;
+    breathe(elapsed, QUIP_PULSE, from, to)
 }
 
 /// Goes from `from` to `to` and back once every `period`.
@@ -301,8 +276,8 @@ mod tests {
         assert!(LOGO.iter().all(|row| row.chars().count() == width));
         // every row with blocks in it has a color, and the shadow row under them needs none
         let with_blocks = LOGO.iter().filter(|row| row.contains('█')).count();
-        assert_eq!(with_blocks, LOGO_COLORS.len());
-        assert_eq!(with_blocks, TRANS_COLORS.len());
+        assert_eq!(with_blocks, theme::worn().splash.logo.len());
+        assert_eq!(with_blocks, theme::worn().pride.logo.len());
         assert!(LOGO[..with_blocks].iter().all(|row| row.contains('█')));
     }
 
@@ -351,8 +326,9 @@ mod tests {
 
     #[test]
     fn the_quip_flares_between_hellfire_and_flame() {
-        assert_eq!(flare(Duration::ZERO), theme::HELLFIRE);
-        assert_eq!(flare(QUIP_PULSE / 2), theme::FLAME);
+        let [hellfire, flame] = theme::worn().splash.quip;
+        assert_eq!(flare(Duration::ZERO), hellfire);
+        assert_eq!(flare(QUIP_PULSE / 2), flame);
     }
 
     #[test]
@@ -367,9 +343,10 @@ mod tests {
 
     #[test]
     fn the_hint_breathes_between_ash_and_bone() {
-        assert_eq!(pulse(Duration::ZERO), theme::ASH);
-        assert_eq!(pulse(PULSE / 2), theme::BONE);
-        assert_eq!(pulse(PULSE), theme::ASH);
+        let [ash, bone] = theme::worn().splash.hint;
+        assert_eq!(pulse(Duration::ZERO), ash);
+        assert_eq!(pulse(PULSE / 2), bone);
+        assert_eq!(pulse(PULSE), ash);
     }
 
     #[test]

@@ -21,15 +21,17 @@ pub fn summon(grimoire: &mut Grimoire) -> Result<()> {
             let lines = [
                 Line::styled(
                     "too small",
-                    Style::new().fg(theme::BAD).add_modifier(Modifier::BOLD),
+                    Style::new()
+                        .fg(theme::worn().colors.bad)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Line::styled(
                     format!("{}×{} needed", layout::MIN_WIDTH, layout::MIN_HEIGHT),
-                    Style::new().fg(theme::MUTED),
+                    Style::new().fg(theme::worn().colors.muted),
                 ),
                 Line::styled(
                     format!("{}×{} now", area.width, area.height),
-                    Style::new().fg(theme::MUTED),
+                    Style::new().fg(theme::worn().colors.muted),
                 ),
             ];
             for (i, line) in lines.into_iter().enumerate() {

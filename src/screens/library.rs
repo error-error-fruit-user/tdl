@@ -79,7 +79,9 @@ enum Item {
 impl<'a> Library<'a> {
     const TITLE: &str = "wads";
     const EVERY_TITLE: &str = "every wad";
-    const BORDER_COLOR: Color = theme::SCREEN;
+    fn border_color() -> Color {
+        theme::worn().colors.screen
+    }
     const NEW_ROW: &str = "+ add a wad dir";
     /// The size column: `999.9 MB`.
     const SIZE_WIDTH: u16 = 8;
@@ -347,7 +349,7 @@ impl<'a> Library<'a> {
             grimoire,
             "pasting",
             &format!("{doing} into {}...", dir.display()),
-            theme::BUSY,
+            theme::worn().colors.busy,
         )?;
         let pasted = shelf::paste(&paths, cut, into, &downloads, |name, dir| {
             let question = format!(
@@ -642,7 +644,7 @@ impl Ritual for Library<'_> {
         let [list_area] = layout::stack(&[list], page.area())[..] else {
             return;
         };
-        let veil = ritual::conjure_veil(title, Self::BORDER_COLOR);
+        let veil = ritual::conjure_veil(title, Self::border_color());
         let inner = veil.inner(list_area);
         let visible = inner.height as usize;
         let offset = layout::scroll(self.table_state.offset(), self.cursor(), visible);
@@ -654,7 +656,7 @@ impl Ritual for Library<'_> {
             .width
             .saturating_sub(Self::SIZE_WIDTH + Self::COLUMN_SPACING + 2)
             as usize;
-        let muted = Style::new().fg(theme::MUTED);
+        let muted = Style::new().fg(theme::worn().colors.muted);
         let rows =
             self.rows
                 .iter()
@@ -684,10 +686,12 @@ impl Ritual for Library<'_> {
                             };
                             (
                                 Line::from(vec![
-                                    Span::styled(arrow, Style::new().fg(theme::KEY)),
+                                    Span::styled(arrow, Style::new().fg(theme::worn().colors.key)),
                                     Span::styled(
                                         layout::tail(label, room),
-                                        Style::new().fg(theme::TITLE).add_modifier(Modifier::BOLD),
+                                        Style::new()
+                                            .fg(theme::worn().colors.title)
+                                            .add_modifier(Modifier::BOLD),
                                     ),
                                 ]),
                                 Line::styled(tally, muted).right_aligned(),
@@ -711,7 +715,7 @@ impl Ritual for Library<'_> {
                     };
                     let shown = Row::new([name, size]);
                     if self.selection.contains(row, cursor, count) {
-                        shown.style(theme::SELECTED)
+                        shown.style(theme::worn().styles.selected)
                     } else {
                         shown
                     }
@@ -722,7 +726,7 @@ impl Ritual for Library<'_> {
         )
         .column_spacing(Self::COLUMN_SPACING)
         .block(veil)
-        .row_highlight_style(theme::CURSOR);
+        .row_highlight_style(theme::worn().styles.cursor);
         page.render_stateful_widget(table, list_area, &mut self.table_state);
 
         let (sigil, sigil_area) = ritual::conjure_sigil(list_area);

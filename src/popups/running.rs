@@ -95,34 +95,44 @@ impl Waiting<'_> {
                     seconds / 60,
                     seconds % 60
                 ),
-                Style::new().fg(theme::TEXT).add_modifier(Modifier::BOLD),
+                Style::new()
+                    .fg(theme::worn().colors.text)
+                    .add_modifier(Modifier::BOLD),
             ),
             Line::styled(
                 shorten(&self.latest, WIDTH as usize - 4),
-                Style::new().fg(theme::MUTED),
+                Style::new().fg(theme::worn().colors.muted),
             ),
         ];
         if !self.details.is_empty() {
             lines.push(Line::raw(""));
-            lines.extend(
-                self.details
-                    .iter()
-                    .map(|detail| Line::styled(detail.clone(), Style::new().fg(theme::TEXT))),
-            );
+            lines.extend(self.details.iter().map(|detail| {
+                Line::styled(detail.clone(), Style::new().fg(theme::worn().colors.text))
+            }));
         }
         if self.show_quip {
             lines.push(Line::raw(""));
             lines.push(Line::styled(
                 quips::cycling(self.seed, self.elapsed),
-                Style::new().fg(theme::QUIP).add_modifier(Modifier::ITALIC),
+                Style::new()
+                    .fg(theme::worn().colors.quip)
+                    .add_modifier(Modifier::ITALIC),
             ));
         }
         lines.push(Line::raw(""));
-        lines.push(Line::styled(HINT, Style::new().fg(theme::MUTED)));
+        lines.push(Line::styled(
+            HINT,
+            Style::new().fg(theme::worn().colors.muted),
+        ));
 
         let (width, height) = layout::window(WIDTH, lines.len() as u16 + 2);
-        let (window, window_area, ..) =
-            ritual::conjure_window(self.title, width, height, theme::BUSY, page.area());
+        let (window, window_area, ..) = ritual::conjure_window(
+            self.title,
+            width,
+            height,
+            theme::worn().colors.busy,
+            page.area(),
+        );
         let inner = window.inner(window_area);
         page.render_widget(window, window_area);
         for (i, line) in lines.into_iter().enumerate() {

@@ -18,7 +18,7 @@ pub fn summon(
     border_color: Color,
 ) -> Result<()> {
     grimoire.bewitch(|page| {
-        let line = Line::styled(message, Style::new().fg(theme::TEXT));
+        let line = Line::styled(message, Style::new().fg(theme::worn().colors.text));
         popups::draw(page, title, border_color, &[line], None);
     })
 }

@@ -1,20 +1,17 @@
 use std::ops::Deref;
 
-use ratatui::style::Color;
-
 use crate::{
     error::{Error, Result},
     net,
     popups::{hashing, running, status, warning::Warning},
     ritual::Grimoire,
-    uzdoom,
+    theme, uzdoom,
     vault::Vault,
     vault::host_settings::HostSettings,
     vault::wad::Wad,
 };
 
 const TITLE: &str = "Hosting";
-const BORDER_COLOR: Color = Color::LightMagenta;
 
 /// Serves the profile's wads on the chosen port, behind the join code (and the ini it is hosted
 /// with, if the settings share it), then runs the game; the server stops when the game exits. The
@@ -41,7 +38,7 @@ pub fn summon(
         return Warning::uzdoom_not_selected(grimoire);
     };
     let base_wad = profile.base_wad(&vault.global);
-    status::summon(grimoire, TITLE, "Hosting...", BORDER_COLOR)?;
+    status::summon(grimoire, TITLE, "Hosting...", theme::worn().colors.netplay)?;
 
     // 🌀 volatile wads are hashed fresh, so what the manifest says is what actually gets served
     let wads = match hashing::refresh(grimoire, &profile.wads) {

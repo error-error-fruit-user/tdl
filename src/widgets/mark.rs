@@ -24,17 +24,17 @@ pub enum Mark {
 impl Mark {
     fn glyph(self) -> &'static str {
         match self {
-            Self::Broken => theme::BROKEN_MARK,
-            Self::Changed => theme::CHANGED_MARK,
-            Self::Volatile => theme::VOLATILE_MARK,
+            Self::Broken => &theme::worn().glyphs.broken_mark,
+            Self::Changed => &theme::worn().glyphs.changed_mark,
+            Self::Volatile => &theme::worn().glyphs.volatile_mark,
         }
     }
 
     fn style(self) -> Style {
         match self {
-            Self::Broken => theme::BROKEN_BADGE,
-            Self::Changed => theme::CHANGED_BADGE,
-            Self::Volatile => theme::VOLATILE_BADGE,
+            Self::Broken => theme::worn().styles.broken_badge,
+            Self::Changed => theme::worn().styles.changed_badge,
+            Self::Volatile => theme::worn().styles.volatile_badge,
         }
     }
 
@@ -164,22 +164,22 @@ mod tests {
     fn a_badge_is_painted_over_whatever_is_there_and_clipped() {
         let area = Rect::new(0, 0, 4, 1);
         let mut buffer = Buffer::empty(area);
-        buffer.set_style(area, theme::CURSOR);
+        buffer.set_style(area, theme::worn().styles.cursor);
         Mark::Broken.paint(2, 0, area, &mut buffer);
         assert_eq!(buffer[(2, 0)].symbol(), " ");
         assert_eq!(buffer[(3, 0)].symbol(), "!");
-        assert_eq!(buffer[(3, 0)].bg, theme::BLOOD);
+        assert_eq!(Some(buffer[(3, 0)].bg), theme::worn().styles.broken_badge.bg);
         // the cell before the badge keeps the cursor's style
-        assert_eq!(buffer[(1, 0)].bg, theme::HELLFIRE);
+        assert_eq!(Some(buffer[(1, 0)].bg), theme::worn().styles.cursor.bg);
     }
 
     #[test]
     fn a_badge_on_a_row_of_its_own_color_is_inverted() {
         let area = Rect::new(0, 0, 3, 1);
         let mut buffer = Buffer::empty(area);
-        buffer.set_style(area, theme::BROKEN_CURSOR);
+        buffer.set_style(area, theme::worn().styles.broken_cursor);
         Mark::Broken.paint(0, 0, area, &mut buffer);
-        assert_eq!(buffer[(1, 0)].bg, theme::BONE);
-        assert_eq!(buffer[(1, 0)].fg, theme::BLOOD);
+        assert_eq!(Some(buffer[(1, 0)].bg), theme::worn().styles.broken_badge.fg);
+        assert_eq!(Some(buffer[(1, 0)].fg), theme::worn().styles.broken_badge.bg);
     }
 }
