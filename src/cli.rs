@@ -437,7 +437,7 @@ enum Commands {
         /// Like --host-ini, and add the host's key bindings on keys you haven't bound (never one
         /// that could reach a file or rebind keys)
         #[arg(long)]
-        host_keys: bool,
+        host_ini_with_keys: bool,
         /// No form and no windows, only plain lines in the terminal (needs --code)
         #[arg(long, requires = "code")]
         headless: bool,
@@ -556,7 +556,7 @@ impl Cli {
                 connection,
                 always_download,
                 host_ini,
-                host_keys,
+                host_ini_with_keys,
                 headless: plain,
             } => {
                 headless = plain;
@@ -565,7 +565,7 @@ impl Cli {
                     port: connection.port,
                     code: connection.code,
                     always_download,
-                    host_ini: match (host_ini, host_keys) {
+                    host_ini: match (host_ini, host_ini_with_keys) {
                         (_, true) => HostIni::WithKeys,
                         (true, false) => HostIni::Settings,
                         (false, false) => HostIni::Yours,
@@ -1045,14 +1045,14 @@ mod tests {
             HostIni::Settings
         );
         assert_eq!(
-            host_ini(&["join", "10.0.0.2", "--host-keys"]),
+            host_ini(&["join", "10.0.0.2", "--host-ini-with-keys"]),
             HostIni::WithKeys
         );
         assert_eq!(
-            host_ini(&["join", "10.0.0.2", "--host-ini", "--host-keys"]),
+            host_ini(&["join", "10.0.0.2", "--host-ini", "--host-ini-with-keys"]),
             HostIni::WithKeys
         );
-        assert!(parse(&["host", "p", "--host-keys"]).is_err());
+        assert!(parse(&["host", "p", "--host-ini-with-keys"]).is_err());
         assert!(parse(&["host", "p", "--host-ini"]).is_err());
         assert!(parse(&["join", "10.0.0.2", "--share-ini"]).is_err());
     }
