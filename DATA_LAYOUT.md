@@ -30,12 +30,14 @@ A **loadout** is one pair of these dirs: the standard ones, or any others. Pass 
 | `pride` | `true` to play the pride splash every time; **pride** in the settings. |
 | `ini` | The UZDoom ini used by profiles that don't set their own, instead of UZDoom's usual one; **ini** in the settings, or kept from `--ini`. |
 | `theme` | The `theme.toml` tdl wears instead of its built-in theme; **theme** in the settings, or kept from `--theme`. Empty for the built-in one. |
+| `splash` | The `splash.toml` the splash screen wears instead of the built-in one; **splash look** in the settings, or kept from `--splash`. Empty for the built-in one. |
+| `pride_flags` | The `pride.toml` the pride splash picks its flag from instead of the built-in one; **pride flags** in the settings. Empty for the built-in one. |
 
 Any field missing from the file counts as unset, `false` or empty (`Splash` for `music`, `Random` for `splash_quip`).
 
 What `--uzdoom`, `--base-wad` and `--ini` give is used for the run over every profile's own and the global one; it reaches `uac.rite` only if you agree to keep it, or with the flag's `--keep-` form. With `--session`, nothing passed on the command line is kept or asked about.
 
-**`theme.toml`** is a theme of your own, written to the standard config dir when you pick **New** for the **theme** setting (an existing one is never written over), and referenced by `theme` above. Unlike the `.rite` files it is plain text ([TOML](https://toml.io)), for you to change: see [Themes](README.md#themes) in the README. A theme may live anywhere; `theme` holds its path.
+**`theme.toml`**, **`splash.toml`** and **`pride.toml`** are a theme, a splash and pride flags of your own, written to the standard config dir when you pick **New** for the **theme**, **splash look** or **pride flags** setting (an existing one is never written over), and referenced by `theme`, `splash` and `pride_flags` above. Unlike the `.rite` files they are plain text ([TOML](https://toml.io)), for you to change: every field is explained in [THEME.md](THEME.md) and [SPLASH.md](SPLASH.md). They may live anywhere; `uac.rite` holds their paths. Each starts with `edition = N`, the edition of its format (`theme.toml` is edition 2, the others 1; a file without one is edition 1): tdl reads older editions, and refuses a newer one rather than misread it.
 
 The macOS paths follow the `directories` crate's documentation and have not been tried on a Mac. On macOS the two dirs are the same, so the files below share one dir. That is why the profiles dir and the downloads dir start with a dot: profile names can't contain one, so those dirs can never be mistaken for a profile's data dir.
 
@@ -47,6 +49,8 @@ The macOS paths follow the `directories` crate's documentation and have not been
 ├── config.rite.bak             the config as it was before the last save
 ├── uac.rite                    (standard config dir only) every setting, the default loadout and global wad dirs
 ├── theme.toml                  (standard config dir only) a theme of your own, once the settings write one
+├── splash.toml                 (standard config dir only) the splash's look, the same way
+├── pride.toml                  (standard config dir only) the pride splash's flags, the same way
 └── .profiles/                  (the dot keeps it from ever matching a profile's name)
     ├── brutal.rite             one file per profile, named after the profile
     ├── brutal.rite.bak         that profile as it was before the last save

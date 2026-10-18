@@ -18,7 +18,7 @@ A terminal launcher for [UZDoom](https://github.com/UZDoom/UZDoom). Group your w
 - **Wads screen** (`L`): every wad in every wad dir and the downloads, by dir or all in one list, to copy or move between dirs or paste into a profile
 - **Per-profile saves** and a `session.log` of UZDoom's output
 - **Status at a glance**: a panel under the launcher shows what the selected profile would run with (UZDoom, base wad, ini, wads) and whether anything is broken, with the global settings (UZDoom, base wad, ini, UZDoom arguments) beside it
-- **Themes**: every color, border and glyph comes from a `theme.toml` you can change, or the built-in hellfire one
+- **Themes**: every color, border and glyph comes from a `theme.toml` you can change, or the built-in hellfire one, and the splash screen dresses up in its own `splash.toml` (logo, words, and a fire that can cycle through any colors) and `pride.toml` (pride flags, one picked at random each time)
 - **Placeholders, not surprises**: a wad that moved is shown in the editor with what's wrong, and only that profile is held back from launching
 - **Fits any terminal** from 40×20 up: every window is sized from what it holds, and long lists scroll
 
@@ -36,8 +36,8 @@ The profiles here are examples made for the screenshots.
 | **Searching.** `/` and a name; a `*` in front looks in the wads instead. Nothing moves until `Enter`. | **Selecting and copying.** `Shift+V` and `M` pick rows; the row under the panel says what is selected and what is copied. |
 | ![The wads screen: two wad dirs and the downloads, each with its wads and their sizes](docs/screenshots/wads.png) | ![Every wad in one list, the two brutalv22.pk3 told apart by their dirs](docs/screenshots/every-wad.png) |
 | **Wads screen.** `L`: every wad dir and the downloads, each with every wad in it, to copy or move between dirs or paste into a profile. | **Every wad.** `Tab` on the wads screen: one list by name, where wads with the same name are told apart by their dirs. |
-| ![The settings: splash, pride, music, quips, song, theme, ini, UZDoom arguments and splash quip](docs/screenshots/settings.png) | |
-| **Settings.** `O` in the launcher: the splash and the pride splash, the music, quips and song, the theme, the ini, the UZDoom arguments and the splash quip, the same in every loadout. | |
+| ![The settings: splash, pride, music, quips, song, theme, splash look, pride flags, ini, UZDoom arguments and splash quip](docs/screenshots/settings.png) | |
+| **Settings.** `O` in the launcher: the splash and the pride splash, the music, quips and song, the theme, the splash's look and the pride flags, the ini, the UZDoom arguments and the splash quip, the same in every loadout. | |
 
 ## Requirements
 
@@ -62,7 +62,7 @@ On first run, press `U` to select your UZDoom executable and `W` to select a bas
 ### Command line
 
 ```sh
-tdl [--session] [<dir> | --loadout <dir> | --keep-loadout <dir> | --forget-loadout | --keep-forget-loadout] [--wads <dir>... | --keep-wads <dir>... | --keep-loadout-wads <dir>... | --forget-wads | --keep-forget-wads] [--uzdoom <file> | --keep-uzdoom <file>] [--base-wad <file> | --keep-base-wad <file>] [--ini <file> | --keep-ini <file>] [--theme <file> | --keep-theme <file>] [--unseal <scroll> | --unseal-delete <scroll> | --unseal-delete-force <scroll>] [--no-splash] [--splash-quip <quip> | --no-quips] [[--music <song>] [--keep-music] | --no-music] [--with-pride]
+tdl [--session] [<dir> | --loadout <dir> | --keep-loadout <dir> | --forget-loadout | --keep-forget-loadout] [--wads <dir>... | --keep-wads <dir>... | --keep-loadout-wads <dir>... | --forget-wads | --keep-forget-wads] [--uzdoom <file> | --keep-uzdoom <file>] [--base-wad <file> | --keep-base-wad <file>] [--ini <file> | --keep-ini <file>] [--theme <file> | --keep-theme <file>] [--splash <file> | --keep-splash <file>] [--unseal <scroll> | --unseal-delete <scroll> | --unseal-delete-force <scroll>] [--no-splash] [--splash-quip <quip> | --no-quips] [[--music <song>] [--keep-music] | --no-music] [--with-pride]
 tdl launch|host|join ...                  # see Commands below
 tdl --seal <scroll> [--with-settings]
 tdl --list-quips
@@ -72,7 +72,7 @@ tdl --list-quips
 
 #### Keeping what you pass
 
-What you give tdl on the command line (a loadout, wad dirs, a UZDoom, a base wad, an ini, a theme) is used for the run, and then tdl asks whether to keep it. Each of those flags comes three ways:
+What you give tdl on the command line (a loadout, wad dirs, a UZDoom, a base wad, an ini, a theme, a splash) is used for the run, and then tdl asks whether to keep it. Each of those flags comes three ways:
 
 - the plain flag (`--uzdoom <file>`) uses it and **asks** whether to keep it;
 - with `--session` anywhere on the command line, every plain flag is **just for this run**: nothing is asked, and nothing is kept. Forgetting is just for the run too;
@@ -85,13 +85,14 @@ With `--headless` and `--seal` there are no windows to ask in, so the plain flag
 - `--wads <dir>` (as many times as you like) says where your wads are: file pickers open there instead of the current directory, and joining looks there for wads you already have. tdl asks whether to keep the dirs for this **[S]ession** only, **[G]lobal**ly for every loadout, or for this **[L]oadout**. Kept dirs are used whenever tdl starts without `--wads`: the loadout's own first, then the global ones. `--keep-wads <dir>` keeps them for every loadout without asking, and `--keep-loadout-wads <dir>` for this loadout.
 - `--forget-wads` looks for wads only in the downloads this run, and asks whether to forget the wad dirs kept **[G]lobal**ly, for this **[L]oadout**, or **[B]oth**. `--keep-forget-wads` forgets them all without asking.
 - `--uzdoom <file>`, `--base-wad <file>` and `--ini <file>` play with that UZDoom, base wad or UZDoom ini for the run, over every profile's own and the global one (the launcher's panels mark them **session**), for trying another UZDoom build, IWAD or config quickly. tdl then asks whether to keep each as the global one, used by every profile without its own. `--keep-uzdoom`, `--keep-base-wad` and `--keep-ini` keep it without asking. A file that isn't there stops tdl before it starts.
-- `--theme <file>` wears the theme in that `theme.toml` (see [Themes](#themes)), from the first window on, and asks whether to keep wearing it; `--keep-theme <file>` keeps it without asking. A theme tdl can't wear stops it before it starts, and says what is wrong with it.
+- `--theme <file>` wears the theme in that `theme.toml` (see [THEME.md](THEME.md)), from the first window on, and asks whether to keep wearing it; `--keep-theme <file>` keeps it without asking. A theme tdl can't wear stops it before it starts, and says what is wrong with it.
+- `--splash <file>` plays the splash screen in the look of that `splash.toml` (see [SPLASH.md](SPLASH.md)), even if the **splash** setting skips it (`--no-splash` still wins), and asks whether to keep it; `--keep-splash <file>` keeps it without asking. One tdl can't wear stops it before it starts, and says what is wrong with it.
 - `--unseal <scroll>` imports a shared `.scroll` as soon as tdl starts, just like `I` in the launcher, looking for its wads in the wad dirs: `tdl --unseal shared.scroll --wads ~/wads`.
 - `--unseal-delete <scroll>` unseals a scroll in place of the loadout's profiles: every profile is deleted first, with its saved games and logs, and the scroll's go in. The downloaded wads stay, so nothing has to be downloaded again, and so do your global settings. It asks first; `--unseal-delete-force <scroll>` doesn't. Restoring a backup made with `--seal` is `tdl --unseal-delete-force backup.scroll`.
 - `--splash-quip <quip>` shows your own quip under the splash logo instead of a random one, just for this run: `tdl --splash-quip "Rip and tear, bestie!"`. Every `#<number>` in it is replaced by that built-in quip, counting from 1 (`tdl --list-quips` prints them all with their numbers): `#12` is quip 12 alone, and `#12, hun!` is quip 12 with `, hun!` right after it, no space added. Write `##` for a plain `#` in front of digits. It plays the splash even if the **splash** setting is off, and can't go with `--no-splash`. The progress windows keep their usual quips. `--no-quips` leaves the quips out of every window for this run, the same as the **quips** setting.
 - `--music <song>` plays your own song (wav, mp3, flac or ogg) instead of "Inevitable Doom". It is checked before tdl starts, so a file it can't play is reported right away. `--keep-music` keeps the music going in the launcher after the splash, as the **music** setting does. To use your song every time, pick it in the **song** setting. `--no-music` plays no music at all for this run, not even on the splash, and can't go with the other two.
 - `--seal <scroll>` seals every profile in the loadout into a new `.scroll`, with no windows, and closes: `tdl --seal backup.scroll`. It never writes over a file that is already there. `--with-settings` seals your global settings in too (never your song); whoever unseals it gets them in place of their own.
-- `--with-pride` plays the pride splash for the run (the **pride** setting plays it every time): a fire that burns through every color of the rainbow, under the logo in the whole trans flag, a stripe a row: blue, pink, white, pink, blue. Without it the logo cools a step a row, from white-hot flame at the top to blood at the bottom.
+- `--with-pride` plays the pride splash for the run (the **pride** setting plays it every time): a fire that burns through every color of the rainbow, under the logo in the stripes of a pride flag, built in the trans flag's: blue, pink, white, pink, blue. Put more flags in with the **pride flags** setting (the rainbow flag and many others are ready to switch on) and each splash picks one at random; see [SPLASH.md](SPLASH.md). Without it the logo cools a step a row, from white-hot flame at the top to blood at the bottom.
 
 #### Commands
 
@@ -130,7 +131,7 @@ tdl join 10.0.0.2 --code abc234 --port 9000           # the join form, filled in
 | `U` | Select the UZDoom executable |
 | `W` | Select the base wad |
 | `L` | The wads screen: every wad dir and its wads (see below) |
-| `O` | Settings: the splash screen, the music, the song, the quips, and extra UZDoom arguments |
+| `O` | Settings: the splash screen and its look, pride, the music, the song, the quips, the theme, the ini, and extra UZDoom arguments |
 | `Esc` | Save and quit |
 | `F1` / `?` | Show the keys for the current screen (`F1` works everywhere, even where `?` is typed as text) |
 
@@ -186,7 +187,9 @@ Pasting a wad whose file name the profile already has asks the same three things
 - **music**: **off** (no music at all, as `--no-music` does for one run), **splash only** (it fades out with the splash), or **keeps playing** in the launcher (as `--keep-music` does for one run). `J`/`→` goes to the next choice and `K`/`←` back.
 - **quips**: **hidden** leaves the quips out of every window, the splash screen and the waiting windows alike, for every loadout. `--splash-quip` still shows its quip on the splash.
 - **song**: a song of your own (wav, mp3, flac or ogg) to play instead of "Inevitable Doom", for every loadout. `Enter` opens a file picker, and `Backspace` goes back to the built-in track. A new song plays straight away if the music is playing. `--music` still wins at startup, and a song that has gone missing is mentioned at startup and the built-in track plays instead.
-- **theme**: the [theme](#themes) tdl wears. `Enter` asks for **[B]uilt-in**, **[N]ew** (the built-in theme written out to `theme.toml` in the standard config dir, for you to change; one already there is kept as it is) or **[S]elect** (a `.toml` file of your own), and `Backspace` goes back to the built-in one. A theme tdl can't wear is said, and the theme stays as it was. The new one is worn as soon as the settings are saved. `--theme` still wins for the run it's given.
+- **theme**: the [theme](THEME.md) tdl wears. `Enter` asks for **[B]uilt-in**, **[N]ew** (the built-in theme written out to `theme.toml` in the standard config dir, for you to change; one already there is kept as it is) or **[S]elect** (a `.toml` file of your own), and `Backspace` goes back to the built-in one. A theme tdl can't wear is said, and the theme stays as it was. The new one is worn as soon as the settings are saved. `--theme` still wins for the run it's given.
+- **splash look**: the [`splash.toml`](SPLASH.md) the splash screen wears: its logo, its words and its fire. `Enter` asks for **[B]uilt-in**, **[N]ew** (written out to `splash.toml` in the standard config dir, every field explained) or **[S]elect**, and `Backspace` goes back to the built-in one. `--splash` still wins for the run it's given.
+- **pride flags**: the [`pride.toml`](SPLASH.md#pridetoml) the pride splash picks its flag from, the same way. **New** writes one with the trans flag in and every other flag in a comment, ready to put in.
 - **ini**: the UZDoom ini every profile without its own plays with (the editor's `I` → **Global**), instead of UZDoom's usual one. `Enter` opens a file picker, and `Backspace` goes back to UZDoom's own. `--ini` still wins for the run it's given.
 - **uzdoom args**: extra arguments passed to UZDoom on every launch, host and join, before the wads, such as `-nomusic +vid_fps 1`. They are split at spaces; quotes aren't understood.
 - **splash quip**: the quip under the splash logo every time tdl starts, for every loadout. Leave it empty for a random one, or type it the same way as `--splash-quip`: `#12` for built-in quip 12, your own words, or both (`#12, hun!`). `--splash-quip` still wins for the run it's given. In this field `?` is typed like any letter, so only `F1` shows its keys.
@@ -242,27 +245,12 @@ python3 upgrade_legacy.py --dry-run              # only say what would be done
 
 It upgrades the global settings, every loadout's config and profiles (their backups too, and the old `.doom` files and `profiles` dir), and the settings a loadout's config kept before they all went global, each one only if the global settings don't have it yet. Every file it upgrades is kept beside the new one as `<file>.legacy`; nothing is deleted, and running it again is harmless. The `-once` flags became `--session` (see [Keeping what you pass](#keeping-what-you-pass)), and `tdl host --keep-ini` is `--no-share-ini`.
 
-## Themes
+## Themes and the splash screen
 
-Every color, border and glyph tdl draws comes from its theme: the built-in one (hot metal, old blood and toxic waste), or a `theme.toml` of your own. Pick **New** for the **theme** setting and tdl writes the built-in theme out to `theme.toml` in the standard config dir (`~/.config/tdl/theme.toml` on Linux) and wears it; change anything in it, and tdl wears it from the next start (or pick it again in the settings). A theme only needs what it changes: anything it leaves out is the built-in theme's. `tdl --theme <file>` tries one for a run.
+Every color, border and glyph tdl draws comes from its theme: the built-in one (hot metal, old blood and toxic waste), or a `theme.toml` of your own. The splash screen dresses up apart, in a `splash.toml` (the logo's art and stripes, the tagline, the hint and the quip, and a fire of any colors, glowing or shaded from cold to hot, that can cycle through them at any speed) and a `pride.toml` (the pride splash's flags, one picked at random each time, and its fire). All three only need what they change, say which edition of their format they are written in, and are written out for you to change by **New** in the settings (**theme**, **splash look**, **pride flags**).
 
-```toml
-[colors]
-background = "reset"        # the terminal's own background
-screen = "#3a7bd5"          # the launcher's and the editor's border
-key = "lightcyan"
-
-[styles]
-cursor = { fg = "black", bg = "#3a7bd5", bold = true }
-
-[borders]
-window = "rounded"          # plain, rounded, double, thick, quadrant_inside or quadrant_outside
-
-[glyphs]
-broken_mark = "x"
-```
-
-A color is `"#rrggbb"`, a terminal color's name (`"red"`, `"lightmagenta"`, `"darkgray"`…), a palette number (`"0"` to `"255"`), or `"reset"` for the terminal's own. The sections are `[colors]` (every role: text, borders, good, bad, changed and the rest), `[styles]` (the cursor, selected and broken rows, headings and the badges), `[borders]`, `[glyphs]`, `[splash]` (the logo's rows, its shadow, the tagline, the hint's and the quip's pulses, and the fire's colors from cold to white hot, as many as you like), `[pride]` (the logo's stripes on the pride splash) and `[help]` (the colors of `tdl --help`). The written-out `theme.toml` lists every one with the built-in value. A theme with a mistake in it (a misspelled name, a color tdl doesn't know) is said at startup, with where the mistake is, and the built-in theme is worn instead.
+- [THEME.md](THEME.md) explains every field of `theme.toml`.
+- [SPLASH.md](SPLASH.md) explains every field of `splash.toml` and `pride.toml`, and how the fire's flames work.
 
 ### Tuning the rest
 
@@ -270,10 +258,11 @@ The rest of the look lives in a few small files, so it can be changed without to
 
 | File | What's in it |
 | --- | --- |
-| `src/theme.rs` | The built-in theme: the palette (blood, hellfire, bone, nukage…), what each part of the interface is drawn with, border styles, the status glyphs, the fire's colors and the trans flag's colors for the pride splash |
+| `src/theme.rs` | The built-in theme: the palette (blood, hellfire, bone, nukage…), what each part of the interface is drawn with, border styles and the status glyphs |
+| `assets/splash.toml`, `assets/pride.toml` | The built-in splash and pride, which **New** writes out (`src/theme/splash.rs` and `src/theme/pride.rs` hold the same values, and a test keeps them in step) |
 | `src/layout.rs` | The smallest terminal size, margins, padding, how far the launcher and editor grow into free space (`GROW_PERCENT`, `MAX_GROWN_WIDTH`), and how windows are centered and stacked |
-| `src/screens/splash.rs` | The startup logo, tagline, the "press any key" hint and how fast it pulses, and how fast the pride fire goes round the rainbow |
-| `src/widgets/fire.rs` | The fire itself: its rainbow, and how high the flames reach |
+| `src/screens/splash.rs` | How the splash is laid out and animated |
+| `src/widgets/fire.rs` | The fire itself: how it rises and cools, and how glowing and shaded flames are colored |
 | `src/popups.rs` | How wide popup text gets before it wraps |
 
 ## Recording the demo and the screenshots

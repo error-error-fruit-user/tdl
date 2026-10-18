@@ -259,3 +259,46 @@ mod tests {
         assert_eq!(blend(Color::Reset, Color::Red, 0.8), Color::Red);
     }
 }
+
+/// The examples in `THEME.md` and `SPLASH.md` are ones tdl can wear.
+#[cfg(test)]
+mod docs {
+    use super::*;
+    use crate::theme::{Theme, pride::Pride, splash::Splash};
+
+    /// Every ```toml block in `markdown`.
+    fn examples(markdown: &str) -> Vec<String> {
+        markdown
+            .split("```toml\n")
+            .skip(1)
+            .map(|block| block.split("```").next().unwrap().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn every_example_in_the_docs_can_be_worn() {
+        let themes = examples(include_str!("../../THEME.md"));
+        assert!(!themes.is_empty());
+        for example in themes {
+            Theme::parse(&example).unwrap_or_else(|problem| panic!("{problem}\n{example}"));
+        }
+        let splashes = examples(include_str!("../../SPLASH.md"));
+        assert_eq!(splashes.len(), 2);
+        for example in splashes {
+            let worn = if example.contains("[[flag]]") {
+                Pride::parse(&example).map(drop)
+            } else {
+                Splash::parse(&example).map(drop)
+            };
+            worn.unwrap_or_else(|problem| panic!("{problem}\n{example}"));
+        }
+    }
+
+    #[test]
+    fn color_names_care_nothing_for_case_or_dashes() {
+        let theme =
+            Theme::parse("[colors]\ntext = \"Light-Magenta\"\nkey = \"DARK_GRAY\"").unwrap();
+        assert_eq!(theme.colors.text, Color::LightMagenta);
+        assert_eq!(theme.colors.key, Color::DarkGray);
+    }
+}
