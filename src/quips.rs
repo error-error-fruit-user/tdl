@@ -83,6 +83,7 @@ pub const QUIPS: &[&str] = &[
     "Pattern matched. Demons dispatched.",
     "Big O? Big Ouch!",
     "IDCLIP through the type system!",
+    "Six, Seven!",
     "Cyberdemon, but make it async!",
     "Hello from the other side(effect)!",
     "Nightly is a lifestyle, babe!",

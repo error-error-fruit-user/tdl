@@ -4,6 +4,20 @@
 
 A terminal launcher for [UZDoom](https://github.com/UZDoom/UZDoom). Group your wads into named profiles, launch them in one keypress, and host or join multiplayer games, with missing wads downloaded automatically from the host.
 
+## Consideration
+**WARNING:** this project holds a secret evil ritual. It reveals unsafe and spooky, unstable, cursed, and useless verses that can only be read at night. It allows the user to speak with the dead and heed their omens, but beware, for the ghost has escaped their sealing circle!
+
+But seriously, why would anyone want to use a partially vibe-coded app like this? Well, it didn't start out like that. At the beginning, I was writing this almost completely by hand, with AI helping to provide documentation and examples for dependencies, along with the occasional ask for suggested names or tradeoffs for decisions. I began this project with an idea, for a better launcher, one that I could use to play wads with my good friends easily, even ones that I might be developing. As you might guess, the terminal intrigues me, and it's just simpler to develop for. Its mysterious and minimal, yet powerful nature is exactly the thing I wanted to embody within tdl. I also found along the way, that I wanted to have fun while developing and using it. It may not be so minimalistic anymore with all the features and the bloated size of the binaries, but it can be used as minimally as possible. The thing I prioritized was the fun of it all. I want myself, my friends, and any other user to enjoy using this and get Dooming! 
+
+I think one of the problems people have with AI use in a project is the fear that it wont't be maintained properly or become abandoned. I remember hearing a metaphor about programming: writing code is like gardening. You always have to tend to it, because it's never finished. You're always pulling weeds and bugs, and as you accumulate more crops, the weeds and bugs multiply. Now add super-powered, loyal, yet ultimately untrustworthy helpers into the mix and you'll get a recipe for uncertainty. Those helpers allow almost anyone to garden and let professional gardeners cultivate and transform their oases like never before. However, with it hides the possibility of even more devious cruft and infestions, especially for groundskeepers that tend to neglect or maintain unkempt wildernesses, festered by overriliance on their familiars. There are more plots being created than ever before by our AI frienemies and people in general need to be wary.
+
+I want to be a good maintainer and don't want rampant AI to fester this project. Having a comprehensive yet understandable source code and program is the ultimate goal here and I will continue that goal for the foreseeable future. 
+
+In most tested of days, in most unstable of nightly,
+No unsafe shall escape my sight.
+Let those who worship slops' might,
+Beware my words -- a lone programmer's rite!
+
 ![The tdl splash screen: the title over the Doom fire, with the quip "Hell on Earth, heaven in a terminal!"](demo.gif)
 
 ## Features
