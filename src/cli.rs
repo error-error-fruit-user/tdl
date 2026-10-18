@@ -12,7 +12,7 @@ use clap::{
 use ratatui::style::Color;
 
 use crate::{
-    net::{self, Address},
+    net::{self, Address, ini::HostIni},
     quips, theme,
     vault::host_settings::HostSettings,
 };
@@ -122,14 +122,14 @@ pub enum Command {
     },
     /// Join the game hosted at `host`, on `port` (the default if `None`) with `code`, which the
     /// join form asks for if it wasn't given. With `always_download`, wads that aren't installed
-    /// are downloaded without asking first. With `host_ini`, the game is played with the host's
-    /// ini, if it shares it.
+    /// are downloaded without asking first. `host_ini` says whether the game is played with the
+    /// host's ini (and its keys), if it shares it.
     Join {
         host: String,
         port: Option<u16>,
         code: Option<String>,
         always_download: bool,
-        host_ini: bool,
+        host_ini: HostIni,
     },
 }
 
@@ -434,6 +434,10 @@ enum Commands {
         /// stay yours)
         #[arg(long)]
         host_ini: bool,
+        /// Like --host-ini, and add the host's key bindings on keys you haven't bound (never one
+        /// that could reach a file or rebind keys)
+        #[arg(long)]
+        host_keys: bool,
         /// No form and no windows, only plain lines in the terminal (needs --code)
         #[arg(long, requires = "code")]
         headless: bool,
@@ -552,6 +556,7 @@ impl Cli {
                 connection,
                 always_download,
                 host_ini,
+                host_keys,
                 headless: plain,
             } => {
                 headless = plain;
@@ -560,7 +565,11 @@ impl Cli {
                     port: connection.port,
                     code: connection.code,
                     always_download,
-                    host_ini,
+                    host_ini: match (host_ini, host_keys) {
+                        (_, true) => HostIni::WithKeys,
+                        (true, false) => HostIni::Settings,
+                        (false, false) => HostIni::Yours,
+                    },
                 }
             }
         });
@@ -979,7 +988,7 @@ mod tests {
                 port: None,
                 code: Some("abc234".into()),
                 always_download: false,
-                host_ini: false,
+                host_ini: HostIni::Yours,
             })
         );
         let with_port = parse(&["join", "10.0.0.2", "--port=9000", "--code=abc234"]).unwrap();
@@ -1026,11 +1035,24 @@ mod tests {
 
     #[test]
     fn the_hosts_ini_is_asked_for_on_join_and_shared_on_host() {
-        let cli = parse(&["join", "10.0.0.2", "--host-ini"]).unwrap();
-        assert!(matches!(
-            cli.command,
-            Some(Command::Join { host_ini: true, .. })
-        ));
+        let host_ini = |args: &[&str]| match parse(args).unwrap().command {
+            Some(Command::Join { host_ini, .. }) => host_ini,
+            _ => panic!("expected join"),
+        };
+        assert_eq!(host_ini(&["join", "10.0.0.2"]), HostIni::Yours);
+        assert_eq!(
+            host_ini(&["join", "10.0.0.2", "--host-ini"]),
+            HostIni::Settings
+        );
+        assert_eq!(
+            host_ini(&["join", "10.0.0.2", "--host-keys"]),
+            HostIni::WithKeys
+        );
+        assert_eq!(
+            host_ini(&["join", "10.0.0.2", "--host-ini", "--host-keys"]),
+            HostIni::WithKeys
+        );
+        assert!(parse(&["host", "p", "--host-keys"]).is_err());
         assert!(parse(&["host", "p", "--host-ini"]).is_err());
         assert!(parse(&["join", "10.0.0.2", "--share-ini"]).is_err());
     }

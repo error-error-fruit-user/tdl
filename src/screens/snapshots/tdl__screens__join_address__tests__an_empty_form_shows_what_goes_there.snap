@@ -3,15 +3,15 @@ source: src/screens/join_address.rs
 expression: "testing::draw(50, 14, |page| form.render(page))"
 ---
 
-           ┏━━━━━━━━[ join ]━━━━━━━━━┓
-           ┃                         ┃
-           ┃ host  ip address        ┃
-           ┃                         ┃
-           ┃ port  8080              ┃
-           ┃                         ┃
-           ┃ code  from the host     ┃
-           ┃                         ┃
-           ┃  ini  yours             ┃
-           ┃                         ┃
-           ┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
-                     [F1/?]
+         ┏━━━━━━━━━━━[ join ]━━━━━━━━━━━┓
+         ┃                              ┃
+         ┃ host  ip address             ┃
+         ┃                              ┃
+         ┃ port  8080                   ┃
+         ┃                              ┃
+         ┃ code  from the host          ┃
+         ┃                              ┃
+         ┃  ini  yours                  ┃
+         ┃                              ┃
+         ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                      [F1/?]

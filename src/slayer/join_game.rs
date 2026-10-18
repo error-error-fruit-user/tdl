@@ -12,7 +12,7 @@ use ratatui::style::Color;
 
 use crate::{
     error::{Error, Result},
-    net::{self, Address, Entry, Manifest, Report},
+    net::{self, Address, Entry, Manifest, Report, ini::HostIni},
     popups::{
         cancel::CancelHandler,
         dialog::Dialog,
@@ -35,15 +35,16 @@ const BORDER_COLOR: Color = Color::LightMagenta;
 
 /// Fetches the host's manifest and picks a profile to join with: the only compatible one, a choice
 /// among several, or a new profile downloaded from the host when none match. With
-/// `always_download`, the wads that aren't installed are downloaded without asking first. With
-/// `host_ini`, the game is played with the host's ini, if it shares it (see [`net::ini`]).
+/// `always_download`, the wads that aren't installed are downloaded without asking first.
+/// `host_ini` says whether the game is played with the host's ini, if it shares it, and its keys
+/// (see [`net::ini`]).
 pub fn summon(
     grimoire: &mut Grimoire,
     vault: &mut Vault,
     index: &mut usize,
     address: &Address,
     always_download: bool,
-    host_ini: bool,
+    host_ini: HostIni,
 ) -> Result<()> {
     status::summon(grimoire, "Joining", "Joining...", BORDER_COLOR)?;
     let manifest = match Manifest::fetch(address) {
@@ -65,15 +66,21 @@ pub fn summon(
     let Some(uzdoom) = profile.uzdoom(&vault.global) else {
         return Warning::uzdoom_not_selected(grimoire);
     };
-    let profile = if host_ini {
+    let profile = if host_ini != HostIni::Yours {
         status::summon(
             grimoire,
             "Joining",
             "Getting the host's ini...",
             BORDER_COLOR,
         )?;
-        match with_host_ini(vault, address, &profile, uzdoom) {
-            Ok(Some(joining)) => joining,
+        let keys = host_ini == HostIni::WithKeys;
+        match with_host_ini(vault, address, &profile, uzdoom, keys) {
+            Ok(Some((joining, warnings))) => {
+                if !warnings.is_empty() {
+                    Warning::summon_lines(grimoire, &warnings)?;
+                }
+                joining
+            }
             Ok(None) => {
                 Warning::summon(grimoire, "The host doesn't share its ini, so yours is used")?;
                 profile.clone()
@@ -109,19 +116,25 @@ pub fn summon(
     }
 }
 
-/// `profile` as it joins with the host's ini (see [`net::ini::take`]), kept in its own data dir
-/// as `host.ini`; nothing is saved to the profile. `None` if the host shares no ini.
+/// `profile` as it joins with the host's ini (see [`net::ini::take`]), with its keys if `keys`,
+/// kept in its own data dir as `host.ini` (nothing is saved to the profile), and the warnings
+/// about what was left out. `None` if the host shares no ini.
 pub fn with_host_ini(
     vault: &Vault,
     address: &Address,
     profile: &Profile,
     uzdoom: &std::ffi::OsStr,
-) -> std::result::Result<Option<Profile>, String> {
+    keys: bool,
+) -> std::result::Result<Option<(Profile, Vec<String>)>, String> {
     let own = net::ini::in_use(profile.ini.as_deref(), uzdoom);
-    let taken = net::ini::take(address, own.as_deref(), &vault.data_dir.join(&profile.name))?;
-    Ok(taken.map(|ini| Profile {
-        ini: Some(ini.into_os_string()),
-        ..profile.clone()
+    let dir = vault.data_dir.join(&profile.name);
+    let taken = net::ini::take(address, own.as_deref(), keys, &dir)?;
+    Ok(taken.map(|taken| {
+        let joining = Profile {
+            ini: Some(taken.path.into_os_string()),
+            ..profile.clone()
+        };
+        (joining, taken.warnings)
     }))
 }
 

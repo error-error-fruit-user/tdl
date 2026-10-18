@@ -2,7 +2,7 @@ use ratatui::{crossterm::event::KeyCode, style::Color};
 
 use crate::{
     error::Result,
-    net::{self, Address},
+    net::{self, Address, ini::HostIni},
     popups::{legend::Legend, warning::Warning},
     ritual::{Grimoire, Page, Phase, Ritual},
     theme,
@@ -13,12 +13,12 @@ use crate::{
 };
 
 /// Prompts for where the host is: its IP address, the port its wads are served on, and the join
-/// code it was given, and whether to play with the host's ini, if it shares it.
+/// code it was given, and whether to play with the host's ini (and its keys), if it shares it.
 pub struct JoinAddressForm {
     ip: String,
     port: String,
     code: String,
-    host_ini: bool,
+    host_ini: HostIni,
     focus: usize,
     /// Where the cursor is in the focused field.
     caret: usize,
@@ -55,7 +55,7 @@ impl JoinAddressForm {
     const INI_LEGEND: &[[&str; 2]] = &[
         ["Enter", "Launch"],
         ["Tab/↓, Backtab/↑", "Traverse"],
-        ["J/K, ←/→", "Yours or the Host's"],
+        ["J/K, ←/→", "Yours, the Host's, or It and Its Keys"],
         ["Esc", "Cancel"],
     ];
 
@@ -64,7 +64,7 @@ impl JoinAddressForm {
             ip: String::new(),
             port: String::new(),
             code: String::new(),
-            host_ini: false,
+            host_ini: HostIni::Yours,
             focus: 0,
             caret: 0,
         }
@@ -82,13 +82,13 @@ impl JoinAddressForm {
         host: &str,
         port: Option<u16>,
         code: Option<&str>,
-        host_ini: bool,
+        host_ini: HostIni,
     ) -> Result<Option<Joining>> {
         Self::filled(host, port, code, host_ini).invoke(grimoire)
     }
 
-    /// A form filled in with `host`, `port`, `code` and whether to play with the host's ini.
-    fn filled(host: &str, port: Option<u16>, code: Option<&str>, host_ini: bool) -> Self {
+    /// A form filled in with `host`, `port`, `code` and which ini to play with.
+    fn filled(host: &str, port: Option<u16>, code: Option<&str>, host_ini: HostIni) -> Self {
         let mut form = Self {
             ip: host.to_string(),
             port: port.map(|port| port.to_string()).unwrap_or_default(),
@@ -136,11 +136,11 @@ impl JoinAddressForm {
     }
 }
 
-/// What the join form was left with: where the host is, and whether to play with its ini.
+/// What the join form was left with: where the host is, and which ini to play with.
 #[derive(Debug, PartialEq)]
 pub struct Joining {
     pub address: Address,
-    pub host_ini: bool,
+    pub host_ini: HostIni,
 }
 
 impl Ritual for JoinAddressForm {
@@ -172,9 +172,13 @@ impl Ritual for JoinAddressForm {
             },
             Field {
                 label: "ini",
-                value: if self.host_ini { "the host's" } else { "yours" },
+                value: match self.host_ini {
+                    HostIni::Yours => "yours",
+                    HostIni::Settings => "the host's",
+                    HostIni::WithKeys => "the host's + its keys",
+                },
                 placeholder: "",
-                room: 10,
+                room: 21,
                 caret: None,
             },
         ];
@@ -228,8 +232,20 @@ impl JoinAddressForm {
         match key_code {
             KeyCode::Tab | KeyCode::Down => self.move_focus(1),
             KeyCode::BackTab | KeyCode::Up => self.move_focus(Self::FIELDS - 1),
-            KeyCode::Char('j' | 'k') | KeyCode::Left | KeyCode::Right if self.focus == 3 => {
-                self.host_ini = !self.host_ini;
+            KeyCode::Char('j') | KeyCode::Right if self.focus == 3 => {
+                self.host_ini = match self.host_ini {
+                    HostIni::Yours => HostIni::Settings,
+                    HostIni::Settings => HostIni::WithKeys,
+                    HostIni::WithKeys => HostIni::Yours,
+                };
+                Phase::Render
+            }
+            KeyCode::Char('k') | KeyCode::Left if self.focus == 3 => {
+                self.host_ini = match self.host_ini {
+                    HostIni::Yours => HostIni::WithKeys,
+                    HostIni::Settings => HostIni::Yours,
+                    HostIni::WithKeys => HostIni::Settings,
+                };
                 Phase::Render
             }
             _ if self.focus == 3 => Phase::Prompt,
@@ -315,13 +331,13 @@ mod tests {
 
     #[test]
     fn a_filled_form_waits_on_the_missing_code_and_gives_the_address_as_it_is() {
-        let form = JoinAddressForm::filled("10.0.0.2", Some(9000), None, false);
+        let form = JoinAddressForm::filled("10.0.0.2", Some(9000), None, HostIni::Yours);
         assert_eq!(form.focus, 2);
         assert_eq!(form.port, "9000");
-        assert!(!form.host_ini);
-        let full = JoinAddressForm::filled("10.0.0.2", None, Some("abc234"), true);
+        assert_eq!(form.host_ini, HostIni::Yours);
+        let full = JoinAddressForm::filled("10.0.0.2", None, Some("abc234"), HostIni::WithKeys);
         assert_eq!(full.focus, 0);
-        assert!(full.host_ini);
+        assert_eq!(full.host_ini, HostIni::WithKeys);
         assert_eq!(
             full.address(),
             Ok(Address {
@@ -335,13 +351,17 @@ mod tests {
     #[test]
     fn the_ini_is_yours_until_switched_to_the_hosts_and_takes_no_typing() {
         let mut form = JoinAddressForm::new();
-        assert!(!form.host_ini);
+        assert_eq!(form.host_ini, HostIni::Yours);
         form.focus = 3;
         assert!(form.edit(KeyCode::Right) == Phase::Render);
-        assert!(form.host_ini);
+        assert_eq!(form.host_ini, HostIni::Settings);
         assert!(form.edit(KeyCode::Char('x')) == Phase::Prompt);
         let _ = form.edit(KeyCode::Char('j'));
-        assert!(!form.host_ini);
+        assert_eq!(form.host_ini, HostIni::WithKeys);
+        let _ = form.edit(KeyCode::Right);
+        assert_eq!(form.host_ini, HostIni::Yours, "round again");
+        let _ = form.edit(KeyCode::Left);
+        assert_eq!(form.host_ini, HostIni::WithKeys);
         assert!(form.edit(KeyCode::Down) == Phase::Render);
         assert_eq!(form.focus, 0, "wrapping around to the ip");
     }

@@ -23,7 +23,7 @@ use crate::{
     cli::HostOverrides,
     error::{Error, INTERRUPTED_EXIT, Result as TdlResult},
     layout::show_size,
-    net::{self, Address, Manifest},
+    net::{self, Address, Manifest, ini::HostIni},
     screens::wad_namer,
     slayer::{
         host_game,
@@ -210,13 +210,13 @@ pub fn host(vault: &mut Vault, index: usize, overrides: &HostOverrides) -> Outco
 
 /// Joins the game at `address` with the first profile that matches the host's wads, or a new one
 /// made from the wads already here and downloads of the rest (after asking, unless
-/// `always_download`), with the host's ini if `host_ini` and it shares one, and returns when the
-/// game ends.
+/// `always_download`), with the host's ini (and its keys) as `host_ini` says, if it shares one,
+/// and returns when the game ends.
 pub fn join(
     vault: &mut Vault,
     address: &Address,
     always_download: bool,
-    host_ini: bool,
+    host_ini: HostIni,
 ) -> Outcome {
     let where_to = format!("{}:{}", address.host, address.port);
     let manifest = match Manifest::fetch(address) {
@@ -233,9 +233,13 @@ pub fn join(
     };
     let uzdoom = ready_to_play(vault, &profile)?;
     let profile = upgrade_volatile(vault, address, &manifest, profile)?;
-    let profile = if host_ini {
-        match join_game::with_host_ini(vault, address, &profile, &uzdoom) {
-            Ok(Some(joining)) => {
+    let profile = if host_ini != HostIni::Yours {
+        let keys = host_ini == HostIni::WithKeys;
+        match join_game::with_host_ini(vault, address, &profile, &uzdoom, keys) {
+            Ok(Some((joining, warnings))) => {
+                for warning in &warnings {
+                    eprintln!("{warning}");
+                }
                 println!("Playing with the host's ini");
                 joining
             }
