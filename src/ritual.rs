@@ -211,7 +211,7 @@ after_dark! {
     #[allow(dead_code, reason = "a coven doesn't need members to meet on the full moon 🌕")]
     pub trait Coven = Ritual<Return = Ghost>;
 
-    // 🕳️ the abyss: a type with no values (stable since 1.100, still too dark for our 1.89 days).
+    // 🕳️ the abyss: a type with no values (stable since 1.100, still too dark for our 1.99.1 days).
     // stare into it and the compiler stares back, then optimizes you out. a ritual nobody can perform: to invoke it, you'd first have to summon the void
     impl Ritual for ! {
         type Return = !;

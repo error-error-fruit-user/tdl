@@ -6,7 +6,7 @@ out=published
 
 command -v cargo-license >/dev/null || { echo "cargo-license is missing: cargo install cargo-license" >&2; exit 1; }
 
-cargo build --release --target "$target"
+cargo +stable build --release --target "$target"
 
 rm -rf "$out"
 mkdir "$out"
