@@ -55,7 +55,7 @@ The profiles here are examples made for the screenshots.
 
 ## Requirements
 
-- Rust **1.89** or later, stable or nightly (on nightly, `--features spooky` turns on the unstable features the code was written for; the build is the same either way)
+- Rust **1.99.1** or later, stable or nightly (on nightly, `--features spooky` turns on the unstable features the code was written for; the build is the same either way)
 - [UZDoom](https://github.com/UZDoom/UZDoom) installed
 - A Doom base wad (e.g. `DOOM2.WAD`, or the free [Freedoom](https://freedoom.github.io/))
 - Python 3.8 or later, only to [upgrade the files of a tdl before 1.0.0](#upgrading-from-before-100)
