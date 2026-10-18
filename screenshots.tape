@@ -19,7 +19,7 @@ Set Padding 10
 Set TypingSpeed 0
 
 Hide
-Type "mkdir -p /tmp/tdl-shots/home && clear && HOME=/tmp/tdl-shots/home ./target/release/tdl --vault-once /tmp/tdl-shots/vault --no-splash --no-music" Enter
+Type "mkdir -p /tmp/tdl-shots/home && clear && HOME=/tmp/tdl-shots/home ./target/release/tdl --vault-once /tmp/tdl-shots/vault --wads-once /tmp/tdl-shots/wads --wads-once /tmp/tdl-shots/mods --no-splash --no-music" Enter
 Sleep 1s
 Show
 
@@ -65,6 +65,18 @@ Sleep 300ms
 Type "o"
 Sleep 500ms
 Screenshot "docs/screenshots/settings.png"
+Sleep 1s
+Escape
+Sleep 300ms
+
+# 📚 the wads screen, each dir with its wads, then every wad in one list
+Type "l"
+Sleep 500ms
+Screenshot "docs/screenshots/wads.png"
+Sleep 1s
+Tab
+Sleep 500ms
+Screenshot "docs/screenshots/every-wad.png"
 Sleep 1s
 Escape
 Sleep 300ms

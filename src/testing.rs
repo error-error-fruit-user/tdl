@@ -108,6 +108,12 @@ fn screenshot_vault() {
     let config = altar.file("home/.config/tdl");
     fs::create_dir_all(&config).unwrap();
     fs::copy(Global::path(&altar.file(STANDARD)), Global::path(&config)).unwrap();
+    // 📚 a second wad dir for the wads screen, with an older brutalv22.pk3 of the same name
+    let mods = altar.file("mods");
+    fs::create_dir_all(&mods).unwrap();
+    for name in ["brutalv22.pk3", "nashgore.pk3", "smooth_weapons.pk3"] {
+        fs::write(mods.join(name), format!("old {name}")).unwrap();
+    }
     // 📸 kept, unlike every other altar: the screenshots are taken from it afterwards
     std::mem::forget(altar);
 }
