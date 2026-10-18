@@ -11,7 +11,7 @@ expression: "testing::draw(60, 20, |page| form.render(page))"
        ┃                                           ┃
        ┃       theme  blue.toml                    ┃
        ┃                                           ┃
-       ┃ splash look  built-in, Enter to change    ┃
+       ┃ splash look  built-in, ←/→ or Enter       ┃
        ┃                                           ┃
        ┃ pride flags  pride.toml                   ┃
        ┃                                           ┃

@@ -134,18 +134,21 @@ impl SettingsForm {
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
     const THEME_LEGEND: &[[&str; 2]] = &[
+        ["J/K, ←/→", "Built-in, Then Each by Name"],
         ["Enter", "Built-in, New (Write It to theme.toml) or Select"],
         ["Backspace", "Back to the Built-in Theme"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
     const SPLASH_LEGEND: &[[&str; 2]] = &[
+        ["J/K, ←/→", "Built-in, Then Each by Name"],
         ["Enter", "Built-in, New (Write It to splash.toml) or Select"],
         ["Backspace", "Back to the Built-in Splash"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
     const PRIDE_LEGEND: &[[&str; 2]] = &[
+        ["J/K, ←/→", "Built-in, Then Each by Name"],
         ["Enter", "Built-in, New (Write It to pride.toml) or Select"],
         ["Backspace", "Back to the Built-in Flags"],
         ["Tab/↓, Backtab/↑", "Traverse"],
@@ -257,21 +260,21 @@ impl Ritual for SettingsForm {
             Field {
                 label: "theme",
                 value: &theme,
-                placeholder: "built-in, Enter to change",
+                placeholder: "built-in, ←/→ or Enter",
                 room: 24,
                 caret: None,
             },
             Field {
                 label: "splash look",
                 value: &splash_look,
-                placeholder: "built-in, Enter to change",
+                placeholder: "built-in, ←/→ or Enter",
                 room: 24,
                 caret: None,
             },
             Field {
                 label: "pride flags",
                 value: &pride_flags,
-                placeholder: "built-in, Enter to change",
+                placeholder: "built-in, ←/→ or Enter",
                 room: 24,
                 caret: None,
             },
@@ -457,6 +460,10 @@ impl SettingsForm {
                 self.settings.music = self.settings.music.previous();
                 Phase::Render
             }
+            // 👗 the theme, the splash and the pride go round the ones that can be picked by name
+            KeyCode::Char(key @ ('j' | 'k')) if self.is_dressing() => self.cycle(key == 'j'),
+            KeyCode::Right if self.is_dressing() => self.cycle(true),
+            KeyCode::Left if self.is_dressing() => self.cycle(false),
             KeyCode::Char('j' | 'k') | KeyCode::Left | KeyCode::Right
                 if self.focus < Self::TOGGLES =>
             {
@@ -497,6 +504,26 @@ impl SettingsForm {
         }
     }
 
+    /// Whether the focus is on the theme, the splash's look or the pride flags.
+    fn is_dressing(&self) -> bool {
+        matches!(
+            self.focus,
+            Self::THEME | Self::SPLASH_LOOK | Self::PRIDE_FLAGS
+        )
+    }
+
+    /// Goes on to the next (or `forward` false, the previous) theme, splash or pride by name.
+    fn cycle(&mut self, forward: bool) -> Phase<Option<Settings>> {
+        let dir = &self.config_dir;
+        let (field, names) = match self.focus {
+            Self::THEME => (&mut self.settings.theme, names::<Theme>(dir)),
+            Self::SPLASH_LOOK => (&mut self.settings.splash_look, names::<Splash>(dir)),
+            _ => (&mut self.settings.pride_flags, names::<Pride>(dir)),
+        };
+        let next = step(field.as_deref(), &names, forward);
+        Phase::render_if(std::mem::replace(field, next) != *field)
+    }
+
     /// Moves to the field `by` away, wrapping around, with the cursor at the end of its text.
     fn move_focus(&mut self, by: usize) -> Phase<Option<Settings>> {
         self.focus = (self.focus + by) % Self::FIELDS;
@@ -507,6 +534,48 @@ impl SettingsForm {
         };
         Phase::Render
     }
+}
+
+/// The names a theme, splash or pride can be picked by with `←`/`→`, in order: the ones that come
+/// with tdl but `hellfire` (the built-in one, which is no name at all here), then the user's own
+/// `<name><SUFFIX>` files in `config_dir`, in alphabetical order, that can be worn.
+fn names<T: Dressing>(config_dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = T::BUNDLED
+        .iter()
+        .filter(|&&name| name != "hellfire")
+        .map(|name| name.to_string())
+        .collect();
+    let mut own: Vec<String> = std::fs::read_dir(config_dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let file = entry.file_name().into_string().ok()?;
+            let name = file.strip_suffix(T::SUFFIX)?.to_string();
+            let wearable = theme::dressing::is_name(&name) && T::read(&entry.path()).is_ok();
+            (wearable && !names.contains(&name)).then_some(name)
+        })
+        .collect();
+    own.sort();
+    names.extend(own);
+    names
+}
+
+/// What comes after `current` (or before it, going back) among the built-in one (`None`) and
+/// `names`, wrapping around. A file that isn't one of them goes on to the built-in one.
+fn step(current: Option<&Path>, names: &[String], forward: bool) -> Option<PathBuf> {
+    let choices: Vec<Option<&str>> = std::iter::once(None)
+        .chain(names.iter().map(|name| Some(name.as_str())))
+        .collect();
+    let at = choices
+        .iter()
+        .position(|choice| choice.map(Path::new) == current);
+    let next = match (at, forward) {
+        (None, _) => 0,
+        (Some(at), true) => (at + 1) % choices.len(),
+        (Some(at), false) => (at + choices.len() - 1) % choices.len(),
+    };
+    choices[next].map(PathBuf::from)
 }
 
 #[cfg(test)]
@@ -653,6 +722,38 @@ mod tests {
             (form.settings.splash_look, form.settings.pride_flags),
             (None, None)
         );
+    }
+
+    #[test]
+    fn the_theme_and_the_splash_go_round_their_names_and_the_users_own() {
+        let altar = crate::loadout::scribe::tests::Altar::new("settings-names");
+        std::fs::write(altar.file("night_theme.toml"), "[colors]\ntext = \"white\"").unwrap();
+        std::fs::write(altar.file("broken_theme.toml"), "[colors]\nnope = 1").unwrap();
+        std::fs::write(altar.file("void_theme.toml"), "").unwrap();
+        assert_eq!(names::<Theme>(&altar.0), ["void", "night"]);
+        assert!(names::<Pride>(&altar.0).is_empty());
+
+        let mut form = SettingsForm::new(Settings::of(&Uac::default()), altar.0.clone());
+        form.focus = SettingsForm::THEME;
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            assert!(form.edit(KeyCode::Right) == Phase::Render);
+            seen.push(form.settings.theme.clone());
+        }
+        assert_eq!(seen, [Some("void".into()), Some("night".into()), None]);
+        assert!(form.edit(KeyCode::Char('k')) == Phase::Render);
+        assert_eq!(form.settings.theme, Some("night".into()));
+        // a file of the user's own anywhere else goes on to the built-in one
+        form.settings.theme = Some("/themes/blue.toml".into());
+        assert!(form.edit(KeyCode::Left) == Phase::Render);
+        assert_eq!(form.settings.theme, None);
+        // the splash goes round its own, and pride has none to go round
+        form.focus = SettingsForm::SPLASH_LOOK;
+        assert!(form.edit(KeyCode::Char('j')) == Phase::Render);
+        assert_eq!(form.settings.splash_look, Some("void".into()));
+        form.focus = SettingsForm::PRIDE_FLAGS;
+        assert!(form.edit(KeyCode::Right) == Phase::Prompt);
+        assert_eq!(form.settings.pride_flags, None);
     }
 
     #[test]
