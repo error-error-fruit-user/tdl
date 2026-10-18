@@ -1,6 +1,6 @@
 #![feature(associated_type_defaults)]
 
-use std::io::Write;
+use std::{io::Write, path::PathBuf};
 
 use crate::{
     cli::Cli,
@@ -65,11 +65,18 @@ fn main() {
     let uzdoom = session_file("--uzdoom", cli.uzdoom);
     let base_wad = session_file("--base-wad", cli.base_wad);
     let ini = session_file("--ini", cli.ini);
-    let theme = session_file("--theme", cli.theme);
-    let splash = session_file("--splash", cli.splash);
-    // 👗 and the theme must be one that can be worn, from the very first window
-    if let Some(path) = &theme {
-        match Theme::read(path) {
+    // 👗 a theme or a splash may be a name instead (`--theme void`), found in the standard config
+    // dir or among the ones that come with tdl, and must be one that can be worn, from the very
+    // first window
+    let config_dir = Launcher::standard_config_dir().unwrap_or_default();
+    let dressing = |flag: &str, given: Option<String>| match given {
+        Some(name) if theme::dressing::is_name(&name) => Some(PathBuf::from(name)),
+        given => session_file(flag, given),
+    };
+    let theme = dressing("--theme", cli.theme);
+    let splash = dressing("--splash", cli.splash);
+    if let Some(given) = &theme {
+        match Theme::load(given.as_os_str(), &config_dir) {
             Ok(theme) => theme::wear(theme),
             Err(message) => {
                 eprintln!("--theme: {message}");
@@ -77,8 +84,8 @@ fn main() {
             }
         }
     }
-    if let Some(path) = &splash {
-        match Splash::read(path) {
+    if let Some(given) = &splash {
+        match Splash::load(given.as_os_str(), &config_dir) {
             Ok(splash) => theme::splash::wear(splash),
             Err(message) => {
                 eprintln!("--splash: {message}");

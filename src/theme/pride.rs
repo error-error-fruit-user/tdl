@@ -92,6 +92,7 @@ impl Pride {
 impl Dressing for Pride {
     const WHAT: &str = "pride flags";
     const FILE: &str = "pride.toml";
+    const SUFFIX: &str = "_pride.toml";
     const UPGRADES: &[fn(&mut toml::Table)] = &[];
 
     fn template() -> String {

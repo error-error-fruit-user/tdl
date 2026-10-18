@@ -5,9 +5,22 @@ Every color, border and glyph tdl draws (everywhere but the splash screen) comes
 ## Wearing a theme
 
 - **In the settings** (`O` in the launcher), the **theme** row: `Enter` asks for **[B]uilt-in**, **[N]ew** or **[S]elect**. **New** writes the built-in theme out to `theme.toml` in the standard config dir (`~/.config/tdl/theme.toml` on Linux), with every field below in it, and wears it; a `theme.toml` already there is kept as it is. **Select** picks any `.toml` file. `Backspace` goes back to the built-in theme. The theme's path is kept in `uac.rite`, so it is worn every time tdl starts.
-- **For one run**: `tdl --theme my.toml` wears it and asks whether to keep wearing it; `--keep-theme my.toml` keeps it without asking, and with `--session` nothing is asked or kept (see the README's [Keeping what you pass](README.md#keeping-what-you-pass)).
+- **For one run**: `tdl --theme my.toml` (or a name, below) wears it and asks whether to keep wearing it; `--keep-theme my.toml` keeps it without asking, and with `--session` nothing is asked or kept (see the README's [Keeping what you pass](README.md#keeping-what-you-pass)).
 
 Change the file, and tdl wears the change from the next start (or pick it again in the settings to wear it now). A theme tdl can't wear (a misspelled name, a color it doesn't know, a file from a newer tdl) is said at startup, with the line the mistake is on, and the built-in theme is worn instead; `--theme` with such a file stops tdl before it starts.
+
+## By name
+
+`--theme` and `--keep-theme` take a name as well as a path: `tdl --theme void`. A name is letters, digits, `-` and `_` (so `void.toml` or `./void` is a path). tdl looks for `<name>_theme.toml` in the standard config dir first, so a theme of your own saved as `~/.config/tdl/night_theme.toml` is `--theme night`; if there is none, it is one of the themes that come with tdl:
+
+| Name | What it is |
+| --- | --- |
+| `hellfire` | The built-in theme: hot metal, old blood and toxic waste. |
+| `void` | The dark between the stars: violet and teal over near black, white titles, pink for what's broken, rounded borders and diamond marks. Goes with `--splash void`. |
+
+A kept name is kept as the name, so `--keep-theme void` wears void every time. A name tdl can't find stops it before it starts, and says which names it has.
+
+`void` is written out in [assets/void_theme.toml](assets/void_theme.toml), every field set: a good place to start a theme of your own.
 
 ## Writing one
 

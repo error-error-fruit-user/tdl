@@ -5,9 +5,20 @@ The splash screen (the logo over the Doom fire, with a quip, a tagline and "pres
 ## Wearing one
 
 - **In the settings** (`O` in the launcher): the **splash look** row for `splash.toml`, and **pride flags** for `pride.toml`. `Enter` asks for **[B]uilt-in**, **[N]ew** or **[S]elect**. **New** writes the built-in one out to `splash.toml` or `pride.toml` in the standard config dir (`~/.config/tdl/` on Linux), every field explained in comments, for you to change; a file already there is kept as it is. **Select** picks any `.toml` file. `Backspace` goes back to the built-in one. The path is kept in `uac.rite`, and the change shows the next time the splash plays.
-- **For one run**: `tdl --splash my.toml` plays the splash in that look (even if the **splash** setting skips it; `--no-splash` still wins) and asks whether to keep it; `--keep-splash my.toml` keeps it without asking, and with `--session` nothing is asked or kept (see the README's [Keeping what you pass](README.md#keeping-what-you-pass)).
+- **For one run**: `tdl --splash my.toml` (or a name, below) plays the splash in that look (even if the **splash** setting skips it; `--no-splash` still wins) and asks whether to keep it; `--keep-splash my.toml` keeps it without asking, and with `--session` nothing is asked or kept (see the README's [Keeping what you pass](README.md#keeping-what-you-pass)).
 
 Change the file, and the change shows from the next start. A file tdl can't wear (a misspelled name, a color it doesn't know, a fire with no flames, a file from a newer tdl) is said at startup with what is wrong, and the built-in one is worn instead; `--splash` with such a file stops tdl before it starts.
+
+### By name
+
+`--splash` and `--keep-splash` take a name as well as a path: `tdl --splash void`. A name is letters, digits, `-` and `_` (so `void.toml` or `./void` is a path). tdl looks for `<name>_splash.toml` in the standard config dir first, so a splash of your own saved as `~/.config/tdl/ember_splash.toml` is `--splash ember`; if there is none, it is one of the splashes that come with tdl:
+
+| Name | What it is |
+| --- | --- |
+| `hellfire` | The built-in splash: the TDL logo cooling from flame to blood over the fire of the PlayStation port of Doom. |
+| `void` | A white fire burning in the dark, its embers turning slowly from violet to teal and back, under the logo going from white through violet to teal. Goes with `--theme void`. |
+
+A kept name is kept as the name. A name tdl can't find stops it before it starts, and says which names it has. `void` is written out in [assets/void_splash.toml](assets/void_splash.toml), every field set.
 
 Both files only need what they change: anything left out is the built-in one's, and an empty file is the built-in one. A color is written as in a theme: `"#rrggbb"`, a terminal color's name (`"red"`, `"lightmagenta"`, `"darkgray"`…), a palette number (`"0"` to `"255"`), or `"reset"` for the terminal's own.
 

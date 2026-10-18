@@ -169,17 +169,19 @@ pub struct Start {
     pub command: Option<Command>,
 }
 
-/// Wears the theme, splash or pride kept at `path`, if one is kept: one that can't be worn is
-/// said, and the built-in one is worn instead.
+/// Wears the theme, splash or pride kept as `given` (a path or a name, looked for in
+/// `config_dir`), if one is kept: one that can't be worn is said, and the built-in one is worn
+/// instead.
 fn wear_kept<T: Dressing>(
     grimoire: &mut Grimoire,
-    path: Option<&std::ffi::OsStr>,
+    given: Option<&std::ffi::OsStr>,
+    config_dir: &Path,
     wear: fn(T),
 ) -> Result<()> {
-    let Some(path) = path else {
+    let Some(given) = given else {
         return Ok(());
     };
-    match T::read(Path::new(path)) {
+    match T::load(given, config_dir) {
         Ok(dressing) => wear(dressing),
         Err(problem) => {
             wear(T::default());
@@ -189,14 +191,15 @@ fn wear_kept<T: Dressing>(
     Ok(())
 }
 
-/// Wears the theme, splash or pride just picked in the settings at `path`, or the built-in one
+/// Wears the theme, splash or pride just picked in the settings as `given`, or the built-in one
 /// for none. One that can't be worn after all is said, and the one worn stays.
 fn wear_picked<T: Dressing>(
     grimoire: &mut Grimoire,
-    path: Option<&std::ffi::OsStr>,
+    given: Option<&std::ffi::OsStr>,
+    config_dir: &Path,
     wear: fn(T),
 ) -> Result<()> {
-    match path.map(|path| T::read(Path::new(path))) {
+    match given.map(|given| T::load(given, config_dir)) {
         Some(Err(problem)) => Warning::summon(grimoire, &problem)?,
         Some(Ok(dressing)) => wear(dressing),
         None => wear(T::default()),
@@ -382,13 +385,24 @@ impl Launcher {
         let uac = &self.loadout.uac;
         let (kept_theme, kept_splash) = (uac.theme.clone(), uac.splash.clone());
         let kept_pride = uac.pride_flags.clone();
+        let config_dir = self.standard_dir();
         if self.session_theme.is_none() {
-            wear_kept(grimoire, kept_theme.as_deref(), theme::wear)?;
+            wear_kept(grimoire, kept_theme.as_deref(), &config_dir, theme::wear)?;
         }
         if self.session_splash.is_none() {
-            wear_kept(grimoire, kept_splash.as_deref(), theme::splash::wear)?;
+            wear_kept(
+                grimoire,
+                kept_splash.as_deref(),
+                &config_dir,
+                theme::splash::wear,
+            )?;
         }
-        wear_kept(grimoire, kept_pride.as_deref(), theme::pride::wear)?;
+        wear_kept(
+            grimoire,
+            kept_pride.as_deref(),
+            &config_dir,
+            theme::pride::wear,
+        )?;
         quips::show(!self.no_quips && !self.loadout.uac.no_quips);
         // 🔇 nothing plays at all, not even on the splash
         if self.no_music || self.loadout.uac.music == Music::Off {
@@ -978,9 +992,24 @@ impl Launcher {
     /// The theme kept in the global settings, from the standard config dir, before any window is
     /// up: `None` if there is none, else whether it can be worn.
     pub fn kept_theme() -> Option<std::result::Result<Theme, String>> {
-        let project_dirs = ProjectDirs::from("error.error.fruit", "eef", "tdl")?;
-        let uac = Uac::open(&Uac::path(project_dirs.config_dir()))?;
-        Some(Theme::read(Path::new(&uac.theme?)))
+        let config_dir = Self::standard_config_dir()?;
+        let uac = Uac::open(&Uac::path(&config_dir))?;
+        Some(Theme::load(&uac.theme?, &config_dir))
+    }
+
+    /// The platform's standard config dir, where `uac.rite` is and where a theme or splash given
+    /// by name is looked for.
+    pub fn standard_config_dir() -> Option<PathBuf> {
+        ProjectDirs::from("error.error.fruit", "eef", "tdl").map(|dirs| dirs.config_dir().into())
+    }
+
+    /// The standard config dir this launcher was opened with: where `uac.rite` is.
+    fn standard_dir(&self) -> PathBuf {
+        self.loadout
+            .uac_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default()
     }
 
     /// `--forget-wads`: asks whether to forget the wad dirs kept for every loadout, for this one, or
@@ -1052,12 +1081,7 @@ impl Launcher {
     /// changed at all.
     fn change_settings(&mut self, grimoire: &mut Grimoire) -> Result<()> {
         let before = Settings::of(&self.loadout.uac);
-        let config_dir = self
-            .loadout
-            .uac_path
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_default();
+        let config_dir = self.standard_dir();
         let Some(settings) = SettingsForm::summon(grimoire, before.clone(), config_dir)? else {
             return Ok(());
         };
@@ -1100,14 +1124,15 @@ impl Launcher {
             uac.splash.clone(),
             uac.pride_flags.clone(),
         );
+        let config_dir = self.standard_dir();
         if now.0 != kept.0 {
-            wear_picked::<Theme>(grimoire, now.0.as_deref(), theme::wear)?;
+            wear_picked::<Theme>(grimoire, now.0.as_deref(), &config_dir, theme::wear)?;
         }
         if now.1 != kept.1 {
-            wear_picked::<Splash>(grimoire, now.1.as_deref(), theme::splash::wear)?;
+            wear_picked::<Splash>(grimoire, now.1.as_deref(), &config_dir, theme::splash::wear)?;
         }
         if now.2 != kept.2 {
-            wear_picked::<Pride>(grimoire, now.2.as_deref(), theme::pride::wear)?;
+            wear_picked::<Pride>(grimoire, now.2.as_deref(), &config_dir, theme::pride::wear)?;
         }
         if self.loadout.uac.keep(&self.loadout.uac_path).is_err() {
             Warning::save_failed(grimoire)?;

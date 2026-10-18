@@ -1,0 +1,59 @@
+# void: tdl's theme of the dark between the stars, in violet and teal over near black, with
+# white for what matters. Comes with tdl: wear it with `tdl --theme void`. Every field is
+# explained in THEME.md; it goes with `--splash void`.
+
+edition = 2
+
+[colors]
+background = "#0B0A12"
+text = "#ECEAF5"
+muted = "#7A7590"
+title = "#FFFFFF"
+key = "#B388FF"
+screen = "#8B5CF6"
+multiplayer = "#2DD4BF"
+netplay = "#5EEAD4"
+dialog = "#ECEAF5"
+warning = "#FF5C8A"
+legend = "#7A7590"
+panel = "#3A3550"
+busy = "#8B5CF6"
+hashing = "#2DD4BF"
+unsealing = "#B388FF"
+quip = "#FFFFFF"
+good = "#2DD4BF"
+bad = "#FF5C8A"
+changed = "#F0ABFC"
+volatile = "#67E8F9"
+divider = "#3A3550"
+gauge = "#3A3550"
+gauge_label = "#ECEAF5"
+
+[styles]
+cursor = { fg = "#0B0A12", bg = "#B388FF", bold = true }
+broken_cursor = { fg = "#FFFFFF", bg = "#FF5C8A", bold = true }
+selected = { fg = "#ECEAF5", bg = "#3A3550" }
+broken_row = { fg = "#ECEAF5", bg = "#3D1430" }
+header = { fg = "#7A7590", bold = true }
+broken_badge = { fg = "#FFFFFF", bg = "#FF5C8A", bold = true }
+changed_badge = { fg = "#0B0A12", bg = "#F0ABFC", bold = true }
+volatile_badge = { fg = "#0B0A12", bg = "#67E8F9", bold = true }
+
+[borders]
+window = "rounded"
+popup = "plain"
+
+[glyphs]
+status = "◆"
+unset = "◇"
+broken_mark = "!"
+changed_mark = "~"
+volatile_mark = "*"
+
+[help]
+heading = "#B388FF"
+literal = "#2DD4BF"
+placeholder = "#ECEAF5"
+error = "#FF5C8A"
+valid = "#2DD4BF"
+invalid = "#F0ABFC"

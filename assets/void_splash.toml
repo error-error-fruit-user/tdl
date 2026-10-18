@@ -1,0 +1,45 @@
+# void: tdl's splash of a white fire burning in the dark between the stars, its embers going from
+# violet to teal and back. Comes with tdl: play it with `tdl --splash void`. Every field is
+# explained in SPLASH.md; it goes with `--theme void`.
+
+edition = 1
+
+[logo]
+art = [
+    "████████╗██████╗ ██╗     ",
+    "╚══██╔══╝██╔══██╗██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██║  ██║██║     ",
+    "   ██║   ██████╔╝███████╗",
+    "   ╚═╝   ╚═════╝ ╚══════╝",
+]
+# white at the top, cooling through lavender and violet to teal
+colors = ["#FFFFFF", "#E0D4FF", "#B388FF", "#8B5CF6", "#2DD4BF"]
+shadow = "#2A1F4A"
+
+[tagline]
+text = "t e r m i n a l   d o o m   l a u n c h e r"
+narrow = "terminal doom launcher"
+color = "#ECEAF5"
+bold = true
+
+[hint]
+text = "press any key"
+colors = ["#4A4560", "#ECEAF5"]
+period = 1.6
+
+[quip]
+colors = ["#2DD4BF", "#B388FF"]
+period = 0.7
+bold = true
+
+[fire]
+# Two white flames, shaded from the dark through their embers to white hot: one with violet
+# embers, one with teal, taking turns slowly.
+flames = [
+    ["#0B0A12", "#1E1838", "#4C2F86", "#8B5CF6", "#C9B6FF", "#FFFFFF"],
+    ["#0B0A12", "#0F2A2E", "#14706A", "#2DD4BF", "#B8F5EC", "#FFFFFF"],
+]
+speed = 0.25
+reach = 80
+top = 45

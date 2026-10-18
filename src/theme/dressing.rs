@@ -4,6 +4,9 @@
 //! instead of misreading it. Each is worn for the whole run, swapped only by hand (see
 //! [`Wardrobe`]).
 //!
+//! One can be given by path, or by name (see [`Dressing::load`]): `void` is the user's own
+//! `void_theme.toml` in the standard config dir if there is one, else the one that comes with tdl.
+//!
 //! # Making a breaking change
 //! Adding a field with a default is not breaking. Renaming, retyping or removing one is: write a
 //! function `vN_to_vM(&mut toml::Table)` that fixes up the old file's table, and **append** it to
@@ -11,6 +14,7 @@
 //! reorder, edit or remove an entry, and add a test that reads a file of the previous edition.
 
 use std::{
+    ffi::OsStr,
     fs, io,
     path::Path,
     sync::{LazyLock, RwLock},
@@ -27,6 +31,11 @@ pub trait Dressing: Serialize + DeserializeOwned + Default + PartialEq + Sized +
     const WHAT: &str;
     /// The file a new one is written to, in the standard config dir.
     const FILE: &str;
+    /// What the file of one given by name ends in, in the standard config dir: `void` is
+    /// `void` followed by this.
+    const SUFFIX: &str;
+    /// The names of the ones that come with tdl, for [`Dressing::bundled`].
+    const BUNDLED: &[&str] = &[];
     /// One function per breaking change. Entry `n` turns edition `n + 1` into edition `n + 2`. A
     /// file with no edition is edition 1.
     const UPGRADES: &[fn(&mut toml::Table)];
@@ -43,6 +52,11 @@ pub trait Dressing: Serialize + DeserializeOwned + Default + PartialEq + Sized +
 
     /// The file a new one starts as: its built-in values, explained.
     fn template() -> String;
+
+    /// The text of the one called `name` that comes with tdl, if there is one.
+    fn bundled(_name: &str) -> Option<String> {
+        None
+    }
 
     /// It as written in `text`. `Err` says why it can't be worn, for the user.
     fn parse(text: &str) -> Result<Self, String> {
@@ -85,6 +99,30 @@ pub trait Dressing: Serialize + DeserializeOwned + Default + PartialEq + Sized +
             .map_err(|problem| format!("The {} {} {problem}", Self::WHAT, path.display()))
     }
 
+    /// The one `given` names: a path to its file, or a name (see [`is_name`]), which is the file
+    /// `<name><SUFFIX>` in `config_dir` (the standard config dir) if there is one, else the one
+    /// of that name that comes with tdl. `Err` says why it can't be worn, for the user.
+    fn load(given: &OsStr, config_dir: &Path) -> Result<Self, String> {
+        let Some(name) = given.to_str().filter(|given| is_name(given)) else {
+            return Self::read(Path::new(given));
+        };
+        let file = config_dir.join(format!("{name}{}", Self::SUFFIX));
+        if file.is_file() {
+            return Self::read(&file);
+        }
+        match Self::bundled(name) {
+            Some(text) => Self::parse(&text)
+                .map_err(|problem| format!("The {} '{name}' {problem}", Self::WHAT)),
+            None => Err(format!(
+                "There is no {} called '{name}': {} isn't there, and the ones that come with tdl \
+                 are {}",
+                Self::WHAT,
+                file.display(),
+                Self::BUNDLED.join(", ")
+            )),
+        }
+    }
+
     /// Writes [`Dressing::template`] to `path`, for the user to change, unless a file is there
     /// already, which is kept as it is.
     fn write_new(path: &Path) -> io::Result<()> {
@@ -96,6 +134,16 @@ pub trait Dressing: Serialize + DeserializeOwned + Default + PartialEq + Sized +
         }
         fs::write(path, Self::template())
     }
+}
+
+/// Whether `given` is a name rather than a path: letters, digits, `-` and `_`, up to 64 of them. A
+/// file in the working dir whose name looks like one is given as `./void`.
+pub fn is_name(given: &str) -> bool {
+    !given.is_empty()
+        && given.len() <= 64
+        && given
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
 /// The `edition = N` line a written file starts with, after its comments.
@@ -231,6 +279,23 @@ pub fn is_printable(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_name_is_letters_digits_dashes_and_underscores() {
+        for name in ["void", "my-theme", "Night_2"] {
+            assert!(is_name(name), "{name}");
+        }
+        for path in [
+            "",
+            "void.toml",
+            "./void",
+            "/themes/void",
+            "a b",
+            &"x".repeat(65),
+        ] {
+            assert!(!is_name(path), "{path}");
+        }
+    }
 
     #[test]
     fn every_kind_of_color_has_red_green_and_blue_but_the_terminals_own() {

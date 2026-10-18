@@ -15,6 +15,8 @@ use super::{
 
 /// What a new `splash.toml` starts as: the built-in splash, explained.
 pub const TEMPLATE: &str = include_str!("../../assets/splash.toml");
+/// The `void` splash that comes with tdl.
+const VOID: &str = include_str!("../../assets/void_splash.toml");
 
 /// The fire of the PlayStation port of Doom, from cold to white hot.
 const PLAYSTATION: [(u8, u8, u8); 37] = [
@@ -248,10 +250,21 @@ fn is_period(period: f32) -> bool {
 impl Dressing for Splash {
     const WHAT: &str = "splash";
     const FILE: &str = "splash.toml";
+    const SUFFIX: &str = "_splash.toml";
+    const BUNDLED: &[&str] = &["hellfire", "void"];
     const UPGRADES: &[fn(&mut toml::Table)] = &[];
 
     fn template() -> String {
         TEMPLATE.to_string()
+    }
+
+    /// `hellfire` is the built-in splash, and `void` a white fire with violet and teal embers.
+    fn bundled(name: &str) -> Option<String> {
+        match name {
+            "hellfire" => Some(TEMPLATE.to_string()),
+            "void" => Some(VOID.to_string()),
+            _ => None,
+        }
     }
 
     fn check(&self) -> Result<(), String> {
@@ -343,6 +356,23 @@ mod tests {
         // everything else is the built-in splash's
         assert_eq!(splash.tagline, Tagline::default());
         assert_eq!(splash.fire.reach, 80);
+    }
+
+    #[test]
+    fn the_void_splash_burns_white_with_violet_and_teal() {
+        let altar = crate::loadout::scribe::tests::Altar::new("splash-void");
+        let void = Splash::load("void".as_ref(), &altar.0).unwrap();
+        assert_eq!(void.fire.flames.len(), 2);
+        for flame in &void.fire.flames {
+            let Flame::Shades(shades) = flame else {
+                panic!("a shaded flame")
+            };
+            assert_eq!(shades.last(), Some(&Color::Rgb(255, 255, 255)), "white hot");
+        }
+        assert_eq!(
+            Splash::load("hellfire".as_ref(), &altar.0),
+            Ok(Splash::default())
+        );
     }
 
     #[test]

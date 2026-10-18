@@ -43,6 +43,9 @@ pub const IRON: Color = Color::Rgb(70, 60, 58);
 pub const NUKAGE: Color = Color::Rgb(124, 200, 46);
 /// The blue of a soul sphere.
 pub const SOUL: Color = Color::Rgb(96, 156, 255);
+/// The `void` theme that comes with tdl.
+const VOID_THEME: &str = include_str!("../assets/void_theme.toml");
+
 /// The file a new theme is written to, in the standard config dir, from the settings.
 pub const FILE: &str = "theme.toml";
 
@@ -259,12 +262,23 @@ impl Default for Help {
 impl Dressing for Theme {
     const WHAT: &str = "theme";
     const FILE: &str = FILE;
+    const SUFFIX: &str = "_theme.toml";
+    const BUNDLED: &[&str] = &["hellfire", "void"];
     /// Edition 1 is the theme of tdl 1.0.0, which also dressed up the splash screen.
     const UPGRADES: &[fn(&mut toml::Table)] = &[v1_to_v2];
 
     fn template() -> String {
         let body = toml::to_string(&Self::default()).expect("a theme is always plain TOML");
         format!("{HEADER}{}\n{body}", dressing::edition_line::<Self>())
+    }
+
+    /// `hellfire` is the built-in theme, and `void` violet and teal over near black.
+    fn bundled(name: &str) -> Option<String> {
+        match name {
+            "hellfire" => Some(Self::template()),
+            "void" => Some(VOID_THEME.to_string()),
+            _ => None,
+        }
     }
 }
 
@@ -433,6 +447,32 @@ mod tests {
         ] {
             assert!(Theme::parse(wrong).is_err(), "{wrong}");
         }
+    }
+
+    #[test]
+    fn a_theme_is_found_by_name_the_users_own_first() {
+        let altar = crate::loadout::scribe::tests::Altar::new("theme-names");
+        let void = Theme::load("void".as_ref(), &altar.0).unwrap();
+        assert_eq!(void.colors.screen, Color::Rgb(0x8B, 0x5C, 0xF6));
+        assert_eq!(
+            Theme::load("hellfire".as_ref(), &altar.0),
+            Ok(Theme::default())
+        );
+        // the user's own void_theme.toml wins over the one that comes with tdl
+        fs::write(altar.file("void_theme.toml"), "[colors]\ntext = \"white\"").unwrap();
+        let mine = Theme::load("void".as_ref(), &altar.0).unwrap();
+        assert_eq!(mine.colors.text, Color::White);
+        assert_eq!(mine.colors.screen, Colors::default().screen);
+        fs::write(altar.file("mine_theme.toml"), "").unwrap();
+        assert_eq!(Theme::load("mine".as_ref(), &altar.0), Ok(Theme::default()));
+        let missing = Theme::load("nope".as_ref(), &altar.0).unwrap_err();
+        assert!(missing.contains("hellfire, void"), "{missing}");
+        // and a path is a path
+        let path = altar.file("mine_theme.toml");
+        assert_eq!(
+            Theme::load(path.as_os_str(), &altar.0),
+            Ok(Theme::default())
+        );
     }
 
     #[test]
