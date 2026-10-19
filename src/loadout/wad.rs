@@ -13,13 +13,14 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error::Result,
     loadout::{
-        hash,
+        hash, pack,
         saved::{SavedPath, SavedWad},
     },
     tally::Tally,
 };
 
-/// A wad or pk3 file, identified across machines by the BLAKE3 hash of its contents.
+/// A wad or pk3 file, identified across machines by the BLAKE3 hash of its contents, or a mod's
+/// folder, which UZDoom loads as if it were a pk3.
 ///
 /// `Deref`s to its path so it can be passed straight to a command line. Saved as a
 /// [`SavedWad`], so the path reads back on any OS.
@@ -41,6 +42,11 @@ pub struct Wad {
     /// size it says whether the file can still be trusted to have its hash without reading it
     /// again. 0 means unknown. Only means anything on the machine that recorded it.
     pub modified: u64,
+    /// A mod's folder rather than a file, for playing a mod from its source without packing it.
+    /// A folder has no hash or size (both stay empty), and is packed into a pk3 to be hosted (see
+    /// [`Wad::served`]), since a joiner can only download files.
+    #[serde(default)]
+    pub folder: bool,
 }
 
 impl From<SavedWad> for Wad {
@@ -51,6 +57,7 @@ impl From<SavedWad> for Wad {
             size: saved.size,
             volatile: saved.volatile,
             modified: saved.modified,
+            folder: saved.folder,
         }
     }
 }
@@ -63,6 +70,7 @@ impl From<Wad> for SavedWad {
             size: wad.size,
             volatile: wad.volatile,
             modified: wad.modified,
+            folder: wad.folder,
         }
     }
 }
@@ -87,6 +95,15 @@ impl Wad {
             size,
             volatile: false,
             modified: 0,
+            folder: false,
+        }
+    }
+
+    /// The mod folder at `path`. Nothing is read: a folder has no hash.
+    pub fn folder(path: &Path) -> Self {
+        Self {
+            folder: true,
+            ..Self::new(path.as_os_str().into(), String::new(), 0)
         }
     }
 
@@ -167,6 +184,9 @@ impl Wad {
     /// What is wrong with the file this wad points at, if anything. One look at the disk, no hashing.
     /// A volatile wad is expected to change, so its size is not compared.
     pub fn check(&self) -> Option<Fault> {
+        if self.folder {
+            return Fault::of_folder(Path::new(&self.path));
+        }
         Fault::of(
             Path::new(&self.path),
             if self.volatile { 0 } else { self.size },
@@ -185,6 +205,17 @@ impl Wad {
             ..Self::hashed(Path::new(&self.path), tally)?
         })
     }
+
+    /// What hosting serves for this wad: a folder is packed into a pk3 in `packed_dir` (again only
+    /// if it changed since the last time, see [`pack::packed`]) and that pk3 hashed, anything else
+    /// is [`Wad::refreshed`]. `tally` only hears about the wads that are hashed.
+    pub fn served(&self, packed_dir: &Path, tally: &mut impl Tally) -> Result<Self> {
+        if !self.folder {
+            return self.refreshed(tally);
+        }
+        let pk3 = pack::packed(Path::new(&self.path), packed_dir)?;
+        Self::hashed(&pk3, tally)
+    }
 }
 
 impl Deref for Wad {
@@ -202,6 +233,8 @@ pub enum Fault {
     Missing,
     /// The path leads to a dir, or something else that isn't a regular file.
     NotAFile,
+    /// A folder wad's path leads to a file, or something else that isn't a dir.
+    NotAFolder,
     /// It exists but can't be opened, with the reason from the OS.
     Unreadable(String),
     /// It is a different size than when it was added, so the stored hash may be stale.
@@ -227,11 +260,26 @@ impl Fault {
         (expected != 0 && expected != found).then_some(Self::Changed { expected, found })
     }
 
+    /// Looks at the folder at `path`, which has no size to compare.
+    pub fn of_folder(path: &Path) -> Option<Self> {
+        match fs::metadata(path) {
+            Ok(metadata) if !metadata.is_dir() => return Some(Self::NotAFolder),
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Some(Self::Missing),
+            Err(error) => return Some(Self::Unreadable(error.to_string())),
+        }
+        // 🔦 as with a file, a folder can be there and still refuse to be listed
+        fs::read_dir(path)
+            .err()
+            .map(|error| Self::Unreadable(error.to_string()))
+    }
+
     /// One or two words for tight spaces, like the launcher's status panel.
     pub fn short(&self) -> &'static str {
         match self {
             Self::Missing => "missing",
             Self::NotAFile => "not a file",
+            Self::NotAFolder => "not a folder",
             Self::Unreadable(_) => "unreadable",
             Self::Changed { .. } => "changed",
         }
@@ -249,6 +297,7 @@ impl fmt::Display for Fault {
         match self {
             Self::Missing => write!(f, "was not found"),
             Self::NotAFile => write!(f, "is not a file"),
+            Self::NotAFolder => write!(f, "is not a folder"),
             Self::Unreadable(reason) => write!(f, "can't be read ({reason})"),
             Self::Changed { expected, found } => {
                 write!(f, "changed size (was {expected} bytes, now {found})")
@@ -406,6 +455,46 @@ mod tests {
         fs::remove_file(altar.file("a.wad")).unwrap();
         assert!(a.copied_to(&altar.file("c.wad")).is_err());
         assert!(!altar.file("c.wad").exists());
+    }
+
+    #[test]
+    fn a_folder_is_checked_as_a_folder() {
+        let altar = Altar::new("wad-folder");
+        fs::create_dir(altar.file("nacht")).unwrap();
+        fs::write(altar.file("nacht.pk3"), b"pk").unwrap();
+        assert_eq!(Wad::folder(&altar.file("nacht")).check(), None);
+        assert_eq!(
+            Wad::folder(&altar.file("nacht.pk3")).check(),
+            Some(Fault::NotAFolder)
+        );
+        assert_eq!(
+            Wad::folder(&altar.file("gone")).check(),
+            Some(Fault::Missing)
+        );
+        assert!(!Wad::folder(&altar.file("nacht")).is_unchanged());
+    }
+
+    #[test]
+    fn a_folder_is_served_as_its_packed_pk3() {
+        if std::process::Command::new("python3")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("skipped: python3 couldn't be run");
+            return;
+        }
+        let altar = Altar::new("wad-folder-served");
+        fs::create_dir(altar.file("nacht")).unwrap();
+        fs::write(altar.file("nacht/MAPINFO.txt"), b"map MAP01 {}").unwrap();
+        let served = Wad::folder(&altar.file("nacht"))
+            .served(&altar.file("packed"), &mut ())
+            .unwrap();
+        assert!(!served.folder);
+        assert_eq!(Path::new(&served.path).file_name().unwrap(), "nacht.pk3");
+        let bytes = fs::read(&served.path).unwrap();
+        assert_eq!(served.hash, blake3::hash(&bytes).to_hex().to_string());
+        assert_eq!(served.size, bytes.len() as u64);
     }
 
     #[test]

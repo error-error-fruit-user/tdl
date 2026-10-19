@@ -87,4 +87,6 @@ pub struct SavedWad {
     pub volatile: bool,
     #[serde(default)]
     pub modified: u64,
+    #[serde(default)]
+    pub folder: bool,
 }

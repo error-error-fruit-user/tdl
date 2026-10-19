@@ -155,13 +155,17 @@ pub fn host(loadout: &mut Loadout, index: usize, overrides: &HostOverrides) -> O
             eprintln!("Could not save the port for next time, is the disk full?");
         }
     }
-    // 🌀 volatile wads are hashed fresh, so what is served is what is described
+    // 🌀 volatile wads are hashed fresh and folders packed, so what is served is what is described
+    let packed_dir = loadout.packed_dir();
     let wads: Vec<Wad> = profile
         .wads
         .iter()
-        .map(|wad| wad.refreshed(&mut ()))
+        .map(|wad| wad.served(&packed_dir, &mut ()))
         .collect::<Result<_, _>>()
-        .map_err(|_| "One of the profile's wads can't be read")?;
+        .map_err(|error| match error {
+            Error::Pack(problem) => problem,
+            _ => "One of the profile's wads can't be read".to_string(),
+        })?;
     let base_wad = profile.base_wad(&loadout.uac);
     let manifest = Manifest::build(&wads, base_wad.map(|w| w.hash.clone()).unwrap_or_default())
         .map_err(|_| "One of the profile's wads can't be read")?;

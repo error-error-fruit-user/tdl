@@ -40,11 +40,13 @@ pub fn summon(
     let base_wad = profile.base_wad(&loadout.uac);
     status::summon(grimoire, TITLE, "Hosting...", theme::worn().colors.netplay)?;
 
-    // 🌀 volatile wads are hashed fresh, so what the manifest says is what actually gets served
-    let wads = match hashing::refresh(grimoire, &profile.wads) {
+    // 🌀 volatile wads are hashed fresh and folders packed, so what the manifest says is what
+    // actually gets served; the game itself still plays the folders
+    let wads = match hashing::served(grimoire, &profile.wads, &loadout.packed_dir()) {
         Ok(Some(wads)) => wads,
         Ok(None) => return Ok(()),
         Err(Error::Interrupted) => return Err(Error::Interrupted),
+        Err(Error::Pack(problem)) => return Warning::summon(grimoire, &problem),
         Err(_) => return Warning::wad_unreadable(grimoire),
     };
     let Ok(manifest) =

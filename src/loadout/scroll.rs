@@ -71,6 +71,10 @@ pub struct Inscribed {
     /// to have moved on.
     #[serde(default)]
     pub volatile: bool,
+    /// A mod's folder: found by its name alone, as a folder, and with no size or hash (both stay
+    /// empty).
+    #[serde(default)]
+    pub folder: bool,
 }
 
 impl Edition for Scroll {
@@ -100,9 +104,18 @@ pub struct UnsealedProfile {
 impl SealedProfile {
     /// `profile` as it goes on a scroll. Fails, naming the profile and the wad, if a wad has no
     /// hash to share, since whoever reads the scroll would have no way to know they found the
-    /// right file.
+    /// right file. A folder is shared by its name, since it has no hash at all.
     pub fn of(profile: &Profile) -> std::result::Result<Self, String> {
         let inscribe = |wad: &Wad| {
+            if wad.folder {
+                return Ok(Inscribed {
+                    name: wad.file_name().into_owned(),
+                    size: 0,
+                    hash: String::new(),
+                    volatile: false,
+                    folder: true,
+                });
+            }
             if wad.hash.is_empty() {
                 return Err(format!(
                     "{} in '{}' has no hash to share: pick it again with R in the editor",
@@ -115,6 +128,7 @@ impl SealedProfile {
                 size: wad.size,
                 hash: wad.hash.clone(),
                 volatile: wad.volatile,
+                folder: false,
             })
         };
         Ok(Self {
@@ -187,7 +201,7 @@ impl Scroll {
             .profiles
             .iter()
             .flat_map(SealedProfile::all_wads)
-            .all(|wad| net::is_safe(&wad.name, &wad.hash))
+            .all(Inscribed::is_safe)
         {
             return Err("The scroll lists a wad with a name or hash that isn't safe");
         }
@@ -198,7 +212,8 @@ impl Scroll {
     }
 
     /// Finds each wad by joining its name onto `dirs`, in order. A file is taken only if its
-    /// size matches and then its hash does (a volatile wad only needs its name). Anything not found
+    /// size matches and then its hash does (a volatile wad only needs its name, and a folder only a
+    /// folder of its name). Anything not found
     /// becomes a placeholder in the first dir, so the editor can say where it was looked for.
     ///
     /// `tally` hears about every wad as it is checked, then about the bytes of each file hashed.
@@ -207,6 +222,16 @@ impl Scroll {
         let mut missing = 0;
         let mut find = |wad: &Inscribed| -> Result<Wad> {
             tally.count_file(OsStr::new(&wad.name), wad.size)?;
+            if wad.folder {
+                let found = dirs
+                    .iter()
+                    .map(|dir| dir.join(&wad.name))
+                    .find(|path| path.is_dir());
+                missing += usize::from(found.is_none());
+                return Ok(Wad::folder(
+                    &found.unwrap_or_else(|| dirs[0].join(&wad.name)),
+                ));
+            }
             for dir in dirs {
                 if let Some(found) = check(&dir.join(&wad.name), wad, tally)? {
                     return Ok(found);
@@ -237,6 +262,17 @@ impl Scroll {
     /// The file name a scroll called `name` gets by default: `<name>.scroll`.
     pub fn file_name(name: &str) -> String {
         format!("{name}.{EXTENSION}")
+    }
+}
+
+impl Inscribed {
+    /// Whether the name is a bare file name and the hash a real one, or for a folder, empty.
+    fn is_safe(&self) -> bool {
+        if self.folder {
+            net::is_safe_name(&self.name) && self.hash.is_empty()
+        } else {
+            net::is_safe(&self.name, &self.hash)
+        }
     }
 }
 
@@ -285,6 +321,7 @@ mod tests {
             size: contents.len() as u64,
             hash: blake3::hash(contents).to_hex().to_string(),
             volatile: false,
+            folder: false,
         }
     }
 
@@ -424,6 +461,53 @@ mod tests {
             unsealed.profiles[0].wads[0].hash,
             blake3::hash(b"newer and bigger").to_hex().to_string()
         );
+    }
+
+    #[test]
+    fn a_folder_goes_on_by_name_and_is_found_as_a_folder() {
+        let altar = Altar::new("scroll-folder");
+        let [first, second] = dirs(&altar);
+        fs::create_dir(second.join("nacht")).unwrap();
+        // a file of the name is not the folder
+        fs::write(first.join("nacht"), b"not a folder").unwrap();
+        let profile = Profile::new(
+            "dev".into(),
+            vec![
+                Wad::folder(&second.join("nacht")),
+                Wad::folder(&second.join("hh")),
+            ],
+        );
+        let sealed = Scroll::of([&profile]).unwrap();
+        assert!(
+            sealed.profiles[0]
+                .wads
+                .iter()
+                .all(|wad| wad.folder && wad.hash.is_empty())
+        );
+        assert_eq!(sealed.check(), Ok(()));
+
+        let unsealed = sealed
+            .unseal(&[first.clone(), second.clone()], &mut ())
+            .unwrap();
+        assert_eq!(unsealed.missing, 1);
+        let wads = &unsealed.profiles[0].wads;
+        assert_eq!(wads[0], Wad::folder(&second.join("nacht")));
+        assert_eq!(wads[0].check(), None);
+        // 🕳️ not found: a placeholder folder in the first dir
+        assert_eq!(wads[1], Wad::folder(&first.join("hh")));
+
+        // a folder with a hash, or an unsafe name, is refused
+        let hashed = Inscribed {
+            folder: true,
+            ..inscribed("nacht", b"a")
+        };
+        assert!(scroll(vec![hashed]).check().is_err());
+        let climbing = Inscribed {
+            hash: String::new(),
+            folder: true,
+            ..inscribed("../nacht", b"")
+        };
+        assert!(scroll(vec![climbing]).check().is_err());
     }
 
     #[test]

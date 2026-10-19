@@ -22,17 +22,32 @@ while [[ $# -gt 0 ]]; do
             FLAGS+=("$2")
             shift
         fi
+    elif [[ -d "$1" ]]; then
+        # a mod folder: --file-forwarding only forwards files ("Invalid fd passed"), so the folder
+        # is let into the sandbox for this run, read-only, and passed by its own path
+        dir="$(readlink -f "$1")"
+        FS_ARGS+=(--filesystem="$dir:ro")
+        FILES+=("dir:$dir")
     else
-        FILES+=("$1")
+        FILES+=("file:$1")
     fi
     shift
 done
 
 CMD=(flatpak run --file-forwarding "${FS_ARGS[@]}" org.zdoom.UZDoom "${FLAGS[@]}")
 
-if [ ${#FILES[@]} -gt 0 ]; then
-    CMD+=(@@ "${FILES[@]}" @@)
-fi
+# in load order, each run of files between @@ marks so flatpak forwards them, folders outside them
+forwarding=0
+for f in "${FILES[@]}"; do
+    if [[ "$f" == file:* ]]; then
+        (( forwarding )) || { CMD+=(@@); forwarding=1; }
+        CMD+=("${f#file:}")
+    else
+        (( forwarding )) && { CMD+=(@@); forwarding=0; }
+        CMD+=("${f#dir:}")
+    fi
+done
+(( forwarding )) && CMD+=(@@)
 
 echo "${CMD[@]}"
 "${CMD[@]}"

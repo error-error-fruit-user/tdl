@@ -4,6 +4,7 @@ pub mod hash;
 pub mod host_settings;
 pub mod legacy;
 pub mod lookup;
+pub mod pack;
 pub mod profile;
 pub mod saved;
 pub mod scribe;
@@ -318,6 +319,12 @@ impl Loadout {
     /// Wads fetched from hosts, stored as `<hash>/<name>` and shared by every downloaded profile.
     pub fn downloads_dir(&self) -> PathBuf {
         self.data_dir.join(".downloads")
+    }
+
+    /// Folders packed to be hosted, stored as `<key>/<name>.pk3` next to the packer that made
+    /// them (see [`pack::packed`]).
+    pub fn packed_dir(&self) -> PathBuf {
+        self.data_dir.join(".packed")
     }
 
     /// Inserts at `index`; if that was the last row, moves `index` down so the `+` row stays last.

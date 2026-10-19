@@ -97,6 +97,9 @@ enum SavedEntry {
         size: u64,
         volatile: bool,
         modified: u64,
+        /// Missing in files from before folders could be wads.
+        #[serde(default)]
+        folder: bool,
     },
     /// A wad saved with its whole path, for one whose file name isn't valid UTF-8 (or that has no
     /// dir to speak of).
@@ -125,6 +128,7 @@ impl From<Profile> for SavedProfile {
                         size: wad.size,
                         volatile: wad.volatile,
                         modified: wad.modified,
+                        folder: wad.folder,
                     }
                 }
                 _ => SavedEntry::Loose(wad.into()),
@@ -170,6 +174,7 @@ impl TryFrom<SavedProfile> for Profile {
                     size,
                     volatile,
                     modified,
+                    folder,
                 } => {
                     let dir = dirs
                         .get(dir as usize)
@@ -180,6 +185,7 @@ impl TryFrom<SavedProfile> for Profile {
                         size,
                         volatile,
                         modified,
+                        folder,
                     })
                 }
                 SavedEntry::Loose(saved) => Ok(Wad::from(saved)),

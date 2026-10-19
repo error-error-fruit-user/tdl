@@ -38,6 +38,21 @@ pub fn refresh(grimoire: &mut Grimoire, wads: &[Wad]) -> Result<Option<Vec<Wad>>
     })
 }
 
+/// `wads` as hosting serves them: folders packed into pk3s and hashed, and volatile wads hashed
+/// again (see [`Wad::served`]). `None` if Esc was pressed.
+pub fn served(
+    grimoire: &mut Grimoire,
+    wads: &[Wad],
+    packed_dir: &Path,
+) -> Result<Option<Vec<Wad>>> {
+    let hashed = wads.iter().filter(|wad| wad.volatile || wad.folder).count();
+    watch(grimoire, hashed, |tally| {
+        wads.iter()
+            .map(|wad| wad.served(packed_dir, tally))
+            .collect()
+    })
+}
+
 /// Runs `work` with a hashing window watching it, and turns Esc into `None`. `files` is how many
 /// files `work` may hash, for the window's count.
 pub fn watch<T>(

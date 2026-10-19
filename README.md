@@ -58,7 +58,7 @@ The profiles here are examples made for the screenshots.
 - Rust **1.99.1** or later, stable or nightly (on nightly, `--features spooky` turns on the unstable features the code was written for; the build is the same either way)
 - [UZDoom](https://github.com/UZDoom/UZDoom) installed
 - A Doom base wad (e.g. `DOOM2.WAD`, or the free [Freedoom](https://freedoom.github.io/))
-- Python 3.8 or later, only to [upgrade the files of a tdl before 1.0.0](#upgrading-from-before-100)
+- Python 3.8 or later, only to [upgrade the files of a tdl before 1.0.0](#upgrading-from-before-100) and to [host a mod folder](#mod-folders)
 
 ## Install
 
@@ -150,7 +150,7 @@ tdl join 10.0.0.2 --code abc234 --port 9000           # the join form, filled in
 | `Esc` | Save and quit |
 | `F1` / `?` | Show the keys for the current screen (`F1` works everywhere, even where `?` is typed as text) |
 
-Inside the profile editor, `Enter` saves and leaves; `Esc` leaves too, but if the profile changed it first asks whether to **[S]ave**, **[D]iscard**, or go **[B]ack**. Saving under a name another profile has asks whether to replace that profile (deleting it and its saves; an edited profile keeps its place and its own saves), or go back to the editor. `Tab` switches between the name and the wad list, where `A` adds a wad, `F` imports a dir, `D` removes one, `}`/`{` reorder, `U`/`W`/`I` set the profile's own UZDoom, base wad and ini (for the ini, **Global** is the one from the settings, or UZDoom's usual one), and `G` its own UZDoom arguments (used instead of the global ones from the settings; left empty, the global ones count). `/` searches the wads by file name (never by dir) and `;`/`,` step through the matches. `Shift+V` and `M` select wads, `Y` copies the selected ones (or the one under the cursor), `Shift+Y` copies every wad, `X` cuts (copies, then takes them out), and `P` pastes in front of the cursor; copied profiles paste as all their wads. `N` renames a wad's file (see [the wads screen](#the-wads-screen)), `L` opens the wads screen, and `T` makes the profile watch a dir, or stop watching one.
+Inside the profile editor, `Enter` saves and leaves; `Esc` leaves too, but if the profile changed it first asks whether to **[S]ave**, **[D]iscard**, or go **[B]ack**. Saving under a name another profile has asks whether to replace that profile (deleting it and its saves; an edited profile keeps its place and its own saves), or go back to the editor. `Tab` switches between the name and the wad list, where `A` adds a wad, `Shift+A` a [mod folder](#mod-folders), `F` imports a dir, `D` removes one, `}`/`{` reorder, `U`/`W`/`I` set the profile's own UZDoom, base wad and ini (for the ini, **Global** is the one from the settings, or UZDoom's usual one), and `G` its own UZDoom arguments (used instead of the global ones from the settings; left empty, the global ones count). `/` searches the wads by file name (never by dir) and `;`/`,` step through the matches. `Shift+V` and `M` select wads, `Y` copies the selected ones (or the one under the cursor), `Shift+Y` copies every wad, `X` cuts (copies, then takes them out), and `P` pastes in front of the cursor; copied profiles paste as all their wads. `N` renames a wad's file (see [the wads screen](#the-wads-screen)), `L` opens the wads screen, and `T` makes the profile watch a dir, or stop watching one.
 
 ### Profiles that watch a dir
 
@@ -168,6 +168,16 @@ A wad you are still working on changes all the time, so the hash and size tdl st
 When you join, a volatile wad stands in for the host's wad of the same file name, whatever its contents, so a profile that only differs from the host's in volatile wads still counts as matching. tdl hashes each of those wads again first, since the stored hash is often only out of date. If the file turns out to be the host's version after all, the new hash is just saved. If it really differs, the host's version is downloaded and put in its place **without asking**: your old file is kept beside it as `<file>.bak` (writing over any older `.bak`), and every profile using it is updated with the new hash and stays volatile. The same goes for any file with the name of one of the host's wads that a profile of yours has as volatile, even when no profile matches. If the download fails, tdl says so and asks whether to join anyway with your own versions. Headless joins do all the same, saying each wad they replace, and join with your own versions if a download fails.
 
 That keeps everyone in step with a mod that is still in progress: whoever hosts serves the latest build, and the others get it as they join. It also means a volatile wad of yours is never safe from an older version on the host's side, so if you are the one working on it, host the game yourself, or copy your work somewhere else before joining (only one `.bak` is kept). A wad that isn't volatile is never replaced without asking (see Multiplayer).
+
+### Mod folders
+
+UZDoom loads a folder as if it were a pk3, so a mod you are working on can be played straight from its source, with nothing to pack. `Shift+A` in the editor's wad list adds a folder; it shows with a `/` after its name (`nacht/`) and goes to UZDoom as `-file <folder>`, in its place in the load order. A folder has no hash or size, so it is never marked `~`, `V` leaves it as it is, `R` picks a folder again, and `N` leaves renaming it to wherever it lives.
+
+Joiners can only download files, so when you host, each folder is packed into `<folder>.pk3` first, with tdl's own copy of [`pack_pk3.py`](pack_pk3.py) (which needs Python 3.8 or later), and that pk3 is what is served; your game still plays the folder. The pk3 is kept, and packed again only when something in the folder is newer than it, or when a newer tdl brings a newer packer, so hosting the same unchanged folder twice is quick. The packing is reproducible (the same folder always packs to the same bytes) and leaves out dot files, Ultimate Doom Builder's `.dbs` and backup files, and other editor leftovers. A sealed scroll holds a folder by its name, and breaking the seal looks for a folder of that name in the wad dirs.
+
+`pack_pk3.py` also works on its own: `python3 pack_pk3.py nacht hh --into out/` writes `out/nacht.pk3` and `out/hh.pk3`, and `--out FILE` names the pk3 of a single folder.
+
+If UZDoom is the flatpak, its `--file-forwarding` hands files to the sandbox but refuses folders; [`uzdoom.sh`](uzdoom.sh) lets each folder into the sandbox, read-only, for that run.
 
 ### The wads screen
 

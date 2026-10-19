@@ -36,6 +36,10 @@ pub enum Error {
     #[error("Could not start UZDoom: {0}!")]
     Spawn(std::io::Error),
 
+    /// A folder couldn't be packed into a pk3 to be hosted: what went wrong, to be shown.
+    #[error("{0}")]
+    Pack(String),
+
     #[error("Upgrade Error: {0}!")]
     Upgrade(&'static str),
 

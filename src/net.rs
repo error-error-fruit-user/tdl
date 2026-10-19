@@ -88,9 +88,13 @@ fn codes_match(given: &str, expected: &str) -> bool {
 /// safe to join onto a real dir: the name a bare file name, so `../../x` can't climb out of
 /// the dir, and the hash a BLAKE3 hex digest, since it becomes a dir name in the downloads.
 pub fn is_safe(name: &str, hash: &str) -> bool {
+    is_safe_name(name) && hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Whether `name` from someone else is a bare file name, the half of [`is_safe`] that needs no
+/// hash: a folder on a scroll has none.
+pub fn is_safe_name(name: &str) -> bool {
     Path::new(name).file_name() == Some(OsStr::new(name))
-        && hash.len() == 64
-        && hash.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// An HTTP agent with timeouts short enough that an unreachable host fails quickly.

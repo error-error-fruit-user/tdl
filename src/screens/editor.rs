@@ -113,7 +113,7 @@ impl<'a> Editor<'a> {
         Selection::LEGEND,
         ["Y/Shift+Y", "Copy Selected/All Wads"],
         ["X/P", "Cut/Paste Wads"],
-        ["A", "Add"],
+        ["A/Shift+A", "Add Files/a Mod Folder"],
         ["F", "Import from Dir"],
         ["L", "Wads (Every Dir)"],
         ["T", "Watch a Dir/Stop Watching"],
@@ -380,6 +380,14 @@ impl<'a> Editor<'a> {
         let wad = &self.profile.wads[index];
         let from = PathBuf::from(&wad.path);
         let current = wad.file_name().into_owned();
+        // 📁 a mod's folder is its source, which is for its own tools to rename
+        if wad.folder {
+            Warning::summon(
+                grimoire,
+                &format!("'{current}' is a folder: rename it where it lives"),
+            )?;
+            return Ok(false);
+        }
         let Some(dir) = from.parent().filter(|_| from.is_file()) else {
             Warning::summon(
                 grimoire,
@@ -598,11 +606,16 @@ impl<'a> Editor<'a> {
     }
 
     /// Flips whether the wad at `index` is volatile, and checks it again, since volatile wads
-    /// aren't flagged for changing size.
-    fn toggle_volatility(&mut self, index: usize) {
+    /// aren't flagged for changing size. A folder has no hash or size to trust, so it stays as it
+    /// is. Returns whether it flipped.
+    fn toggle_volatility(&mut self, index: usize) -> bool {
         let wad = &mut self.profile.wads[index];
+        if wad.folder {
+            return false;
+        }
         wad.volatile = !wad.volatile;
         self.faults[index] = wad.check();
+        true
     }
 }
 
@@ -696,7 +709,12 @@ impl Ritual for Editor<'_> {
                 Row::new([
                     Line::default(),
                     Line::from(format!("{}.", i + 1)).right_aligned(),
-                    Line::from(wad.file_name().into_owned()),
+                    // 📁 a folder reads as one
+                    Line::from(if wad.folder {
+                        format!("{}/", wad.file_name())
+                    } else {
+                        wad.file_name().into_owned()
+                    }),
                 ])
                 .style(style)
             })
@@ -914,9 +932,8 @@ impl Ritual for Editor<'_> {
             }
             KeyCode::Char('v') if self.editing_wads => {
                 let index = *index;
-                Ok(Phase::render_if_then(
-                    index != self.profile.wads.len(),
-                    || self.toggle_volatility(index),
+                Ok(Phase::render_if(
+                    index != self.profile.wads.len() && self.toggle_volatility(index),
                 ))
             }
             KeyCode::Char('r') if self.editing_wads && *index != self.profile.wads.len() => {
@@ -933,21 +950,30 @@ impl Ritual for Editor<'_> {
                     )?,
                     None => false,
                 };
+                let folder = wad.folder;
                 let path = match found {
                     Some(found) if use_found => found,
                     _ => {
                         // 📂 start where the wad used to live, since it probably only moved a little
                         let start = Path::new(&self.profile.wads[index].path).parent();
-                        let Some(path) =
+                        let picked = if folder {
+                            picker::dir(grimoire, start)?
+                        } else {
                             picker::file(grimoire, Some(("wads", Wad::EXTENSIONS)), start)?
-                        else {
+                        };
+                        let Some(path) = picked else {
                             return Ok(Phase::Render);
                         };
                         path
                     }
                 };
-                let Some(replacement) = hashing::wad(grimoire, &path)? else {
-                    return Ok(Phase::Render);
+                let replacement = if folder {
+                    Wad::folder(&path)
+                } else {
+                    let Some(replacement) = hashing::wad(grimoire, &path)? else {
+                        return Ok(Phase::Render);
+                    };
+                    replacement
                 };
                 let replaced = self.replace_wad(index, replacement, || {
                     Dialog::should_use_different_file(grimoire)
@@ -972,6 +998,14 @@ impl Ritual for Editor<'_> {
                     return Ok(Phase::Render);
                 };
                 self.insert_wads(wads);
+                Ok(Phase::Render)
+            }
+            KeyCode::Char('A') => {
+                // 📁 a mod's folder, played as UZDoom plays a pk3, so it needs no packing
+                let Some(dir) = picker::dir(grimoire, None)? else {
+                    return Ok(Phase::Prompt);
+                };
+                self.insert_wads(vec![Wad::folder(&dir)]);
                 Ok(Phase::Render)
             }
             KeyCode::Char('l') => {
@@ -1215,18 +1249,21 @@ fn check_wads(wads: &[Wad]) -> Vec<Option<Fault>> {
     wads.iter().map(Wad::check).collect()
 }
 
-/// A file with a missing wad's name in one of `wad_dirs`, the first one there is. It's only a
-/// direct join of the name onto each dir, never a search, and the file isn't read: whether it
-/// really is the wad is checked by its hash once it's picked.
+/// A file (or for a folder, a folder) with a missing wad's name in one of `wad_dirs`, the first
+/// one there is. It's only a direct join of the name onto each dir, never a search, and the file
+/// isn't read: whether it really is the wad is checked by its hash once it's picked.
 fn found_elsewhere(wad: &Wad, fault: &Fault, wad_dirs: &[PathBuf]) -> Option<PathBuf> {
     if *fault != Fault::Missing {
         return None;
     }
     let name = Path::new(&wad.path).file_name()?;
-    wad_dirs
-        .iter()
-        .map(|dir| dir.join(name))
-        .find(|path| path.is_file() && path.as_os_str() != wad.path)
+    wad_dirs.iter().map(|dir| dir.join(name)).find(|path| {
+        (if wad.folder {
+            path.is_dir()
+        } else {
+            path.is_file()
+        }) && path.as_os_str() != wad.path
+    })
 }
 
 /// What to tell the user about a wad with a fault: its name, where it should be, what is wrong,

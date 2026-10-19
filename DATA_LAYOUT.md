@@ -66,9 +66,13 @@ The macOS paths follow the `directories` crate's documentation and have not been
 ├── nacht/
 │   ├── saves/
 │   └── session.log
-└── .downloads/                 wads fetched from hosts, shared by every profile
-    └── <hash>/
-        └── <file name>         stored by the BLAKE3 hash of its contents
+├── .downloads/                 wads fetched from hosts, shared by every profile
+│   └── <hash>/
+│       └── <file name>         stored by the BLAKE3 hash of its contents
+└── .packed/                    mod folders packed to be hosted (see the README's "Mod folders")
+    ├── pack_pk3.py             the packer, written by tdl; a new one makes every pk3 here stale
+    └── <key>/                  one per folder, from the BLAKE3 hash of its path
+        └── <folder>.pk3        packed again whenever something in the folder is newer
 ```
 
 If a file can't be read when tdl starts, it is renamed to `<file>.corrupt` (for example `brutal.rite.corrupt`) and left there for you to inspect. tdl never overwrites it.
@@ -98,7 +102,7 @@ Only what belongs to the loadout is here; every setting is in `uac.rite`, so it 
 | --- | --- |
 | `name` | The profile's name. Letters, digits and `_` only, since it is also the file and dir name. |
 | `dirs` | Every dir the profile's wads are in, each listed once. |
-| `wads` | The wads in load order. Each names its `dir` (a position in `dirs`) and its file `name`, plus its `hash`, `size`, `modified` and `volatile`. The size (0 if unknown) lets tdl notice when a file has changed since it was added. `modified` (nanoseconds since 1970, 0 if unknown) is the file's modified time when it was hashed: when joining, a wad of unchanged size and modified time is trusted without being read again. `volatile` marks a wad you are still developing: see below. A wad whose file name isn't valid UTF-8 is saved with its whole `path` instead. |
+| `wads` | The wads in load order. Each names its `dir` (a position in `dirs`) and its file `name`, plus its `hash`, `size`, `modified` and `volatile`. The size (0 if unknown) lets tdl notice when a file has changed since it was added. `modified` (nanoseconds since 1970, 0 if unknown) is the file's modified time when it was hashed: when joining, a wad of unchanged size and modified time is trusted without being read again. `volatile` marks a wad you are still developing: see below. `folder` (missing means `false`) marks a mod folder rather than a file, whose `hash` is empty and `size` 0. A wad whose file name isn't valid UTF-8 is saved with its whole `path` instead. |
 | `base_wad` | Overrides the global base wad. Saved like an entry in `wads`. |
 | `uzdoom` | Overrides the global UZDoom path. |
 | `ini` | A UZDoom config file to pass with `-config`. If unset, the global one from `uac.rite` is used, or else UZDoom uses its own usual config. Press `I` in the editor to choose: **Global** (unset), **New** (an empty `uzdoom.ini` in the profile's data dir, which UZDoom fills in on first run) or **Select** (an existing file). A profile's own ini moves with it when the profile is renamed. |
@@ -115,7 +119,7 @@ A `.scroll` is one or more profiles sealed up to share (`S` in the launcher: the
 
 | Field | Meaning |
 | --- | --- |
-| `profiles` | The profiles, in the launcher's order. Each has a `name` (kept on import unless it is taken, or offered to rename for a scroll of one), `wads` (in load order, each only its `name`, `size` (0 if unknown), `hash` and `volatile`: no dirs, no paths), `base_wad` (the profile's own, the same way, if it has one) and `host_defaults` (with the join code left out, and `share_ini` off). |
+| `profiles` | The profiles, in the launcher's order. Each has a `name` (kept on import unless it is taken, or offered to rename for a scroll of one), `wads` (in load order, each only its `name`, `size` (0 if unknown), `hash`, `volatile` and `folder`: no dirs, no paths; a folder has an empty `hash` and is looked for as a folder), `base_wad` (the profile's own, the same way, if it has one) and `host_defaults` (with the join code left out, and `share_ini` off). |
 | `settings` | The maker's `music`, `no_quips` and `splash_quip` from their `uac.rite`, if they chose to seal them in. Never their song, loadout or wad dirs. Missing if they didn't. A splash quip over 120 characters or with control characters gets the scroll refused. |
 
 Scrolls of edition 0 (from tdl 0.6.0) held one profile, with its `name`, `wads`, `base_wad` and `host_defaults` at the top level beside `settings`. tdl 1.0.0 doesn't import them; `python3 upgrade_legacy.py --scroll <file>` makes one a scroll of that one profile (see [Legacy files](#legacy-files)). tdl 0.6.0 can't read the newer edition.
