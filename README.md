@@ -5,7 +5,7 @@
 A terminal launcher for [UZDoom](https://github.com/UZDoom/UZDoom). Group your wads into named profiles, launch them in one keypress, and host or join multiplayer games, with missing wads downloaded automatically from the host.
 
 ## Consideration
-**WARNING:** this project holds a secret evil ritual. It reveals unsafe and spooky, unstable, cursed, and useless verses that can only be read at night. It allows the user to speak with the dead and heed their omens, but beware, for the ghost has escaped their sealing circle!
+**WARNING:** this project holds a secret evil ritual. It reveals unsafe and spooky, unstable, cursed, and useless verses that can only be read at night. It allows the user to speak with the dead and heed their omens, but beware, for the ghosts has escaped their sealing circle!
 
 But seriously, why would anyone want to use a partially vibe-coded app like this? Well, it didn't start out like that. At the beginning, I was writing this almost completely by hand, with AI helping to provide documentation and examples for dependencies, along with the occasional ask for suggested names or tradeoffs for decisions. I began this project with an idea, for a better launcher, one that I could use to play wads with my good friends simply, even ones that I might be developing. As you might guess, the terminal intrigues me, and it's just simpler to develop for. Its mysterious and minimal, yet powerful nature is exactly the thing I wanted to embody within tdl. It may not be so minimalistic anymore with all the features and the bloated size of the binaries, but it can be used as minimally as possible. The thing I prioritized was the fun of it all. I want myself, my friends, and any other users to enjoy using this and get Dooming! 
 
@@ -13,10 +13,10 @@ I think one of the problems people have with AI use in a project is the fear tha
 
 I want to be a good maintainer and don't want rampant AI to fester this project. Having a comprehensive yet understandable source code and program is the ultimate goal here and I will continue that goal for the foreseeable future. 
 
-In most tested of days, in most unstable of nightly,\
-No unsafe shall escape my sight.\
+In most bug-ridden of days, in most unstable of nightly,\
+No error shall escape my sight.\
 Let those who worship slops' might,\
-Beware my words -- a lone programmer's rite!
+Beware the code -- a programmer's rite!
 
 ![The tdl splash screen: the title over the Doom fire, with the quip "Hell on Earth, heaven in a terminal!"](demo.gif)
 
