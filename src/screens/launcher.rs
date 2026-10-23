@@ -43,7 +43,7 @@ use crate::{
     screens::host_settings::HostSettingsForm,
     screens::join_address::JoinAddressForm,
     screens::library::Library,
-    screens::profile_namer::ask_copy_name,
+    screens::profile_namer::{ProfileNamer, ask_copy_name},
     screens::search::{self, Found, Search, Typed},
     screens::selection::{self, Selection},
     screens::settings::{Places, Settings, SettingsForm},
@@ -241,21 +241,28 @@ impl Launcher {
     const COLUMN_SPACING: u16 = 1;
     const LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Launch"],
-        ["H", "Host"],
-        ["N", "Join"],
-        ["J↓/K↑/Home/End", "Traverse"],
+        ["H⟨host⟩", "Host"],
+        ["N⟨join⟩", "Join"],
+        ["J↓/K↑", "Traverse (Home/End: First/Last)"],
         Search::LEGEND,
-        ["}/{", "Swap (Selected, If Any)"],
+        ["}⟨rb+down⟩/{⟨rb+up⟩", "Swap (Selected, If Any)"],
         Selection::LEGEND,
         ["Y/Shift+Y", "Copy Selected/All Profiles"],
         ["X", "Cut (Selected, If Any)"],
-        ["P", "Paste"],
-        ["A/E/D", "Add/Edit/Delete (Selected, If Any)"],
-        ["F", "Add a Profile That Watches a Dir"],
-        ["S/I", "Seal (Selected or All)/Import Scroll"],
-        ["U/W", "Select UZDoom/Base Wad"],
-        ["L", "Wads (Every Dir)"],
-        ["O", "Settings"],
+        ["P/Shift+P", "Paste/Paste Wads as a New Profile"],
+        ["A⟨lb+a⟩", "Add a Profile"],
+        ["E⟨lb+x⟩", "Edit"],
+        ["D⟨lb+b⟩", "Delete (Selected, If Any)"],
+        ["F⟨lb+rb+left⟩", "Add a Profile That Watches a Dir"],
+        ["S⟨lb+left⟩", "Seal (Selected or All)"],
+        ["I⟨lb+right⟩", "Import Scroll"],
+        ["U⟨rb+a⟩", "Select UZDoom"],
+        [
+            "B⟨rb+b⟩/Shift+B⟨rb+x⟩",
+            "Pick the Base Wad From the Wads/a File",
+        ],
+        ["W/L", "Wads (Every Dir)"],
+        ["O⟨home⟩", "Settings"],
         ["Esc", "Save and Quit (unselects first)"],
     ];
 
@@ -598,6 +605,25 @@ impl Launcher {
         let settings = seal.with_settings.then(|| launcher.loadout.uac.shared());
         plain::seal(&launcher.loadout, settings, &seal.scroll)?;
         Ok(())
+    }
+
+    /// `tdl --setup`: keeps what the `--keep-` flags give (this run's UZDoom, base wad, ini and
+    /// the rest, as [`Launcher::keep_unasked`] says) with no windows, and what couldn't be kept
+    /// is an error. Nothing is kept without a `--keep-` flag, since nothing can be asked.
+    pub fn setup_plain(start: Start) -> std::result::Result<(), String> {
+        let mut launcher = Self::open_plain(start)?;
+        launcher.use_session_files();
+        if let Some(path) = launcher.session_base_wad.take() {
+            let wad = Wad::hashed(&path, &mut ())
+                .map_err(|error| format!("Could not read --base-wad: {error}"))?;
+            launcher.loadout.uac.session_base_wad = Some(wad);
+            launcher.loadout.forget_lookup();
+        }
+        let problems = launcher.keep_unasked();
+        if problems.is_empty() {
+            return Ok(());
+        }
+        Err(problems.join("\n"))
     }
 
     /// Does a command from the command line. Whatever happens (the game ends, it couldn't start,
@@ -1518,6 +1544,48 @@ impl Launcher {
         Ok(())
     }
 
+    /// Hashes the file at `path` and makes it the base wad of the settings in use.
+    fn set_base_wad(&mut self, grimoire: &mut Grimoire, path: &Path) -> Result<()> {
+        if let Some(wad) = hashing::wad(grimoire, path)? {
+            self.loadout.uac.base_wad = Some(wad);
+            self.loadout.forget_lookup();
+            if self.loadout.keep_uac().is_err() {
+                Warning::save_failed(grimoire)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Makes a new profile of whatever wads are on the clipboard (the files from the wads screen
+    /// are hashed first, and the wads of copied profiles are taken from each), named by the user,
+    /// and puts it in front of the cursor.
+    fn paste_as_profile(&mut self, grimoire: &mut Grimoire) -> Result<Phase<()>> {
+        let wads = match self.loadout.clipboard.clone() {
+            Clipboard::Files { paths, .. } => match hashing::wads(grimoire, &paths)? {
+                Some(wads) => wads,
+                None => return Ok(Phase::Render),
+            },
+            clipboard => clipboard.wads(),
+        };
+        if wads.is_empty() {
+            return Ok(Phase::Prompt);
+        }
+        if let Some(name) = ProfileNamer::summon(grimoire, &self.loadout.profiles)? {
+            let at = self.cursor();
+            let mut index = at;
+            if self
+                .loadout
+                .insert(&mut index, Profile::new(name, wads))
+                .is_err()
+            {
+                Warning::save_failed(grimoire)?;
+            } else {
+                self.table_state.select(Some(at));
+            }
+        }
+        Ok(Phase::Render)
+    }
+
     /// Adds the copied `wads` to the end of the profile under the cursor, after asking, or from the
     /// new-profile row starts a new profile with them.
     fn paste_wads(&mut self, grimoire: &mut Grimoire, wads: Vec<Wad>) -> Result<()> {
@@ -1578,6 +1646,10 @@ fn profile_score(profile: &Profile, query: &str) -> Option<search::Score> {
 
 impl Ritual for Launcher {
     type Return = ();
+
+    fn typing(&self) -> bool {
+        self.search.is_some()
+    }
 
     /// Gets everything ready before the launcher is first drawn (see [`Launcher::prepare`]).
     fn attach(&mut self, grimoire: &mut Grimoire) -> Result<()> {
@@ -1822,7 +1894,7 @@ impl Ritual for Launcher {
                     Ok(Phase::Render)
                 }
             }
-            KeyCode::Char('h') => {
+            KeyCode::Char('h') | KeyCode::F(2) => {
                 if *index != self.loadout.profiles.len() {
                     let index = *index;
                     self.host_profile(grimoire, index, None)?;
@@ -1831,7 +1903,7 @@ impl Ritual for Launcher {
                     Ok(Phase::Prompt)
                 }
             }
-            KeyCode::Char('n') => {
+            KeyCode::Char('n') | KeyCode::F(3) => {
                 if let Some(joining) = JoinAddressForm::summon(grimoire)? {
                     join_game::summon(
                         grimoire,
@@ -1952,23 +2024,35 @@ impl Ritual for Launcher {
                 }
                 Ok(Phase::Prompt)
             }
-            KeyCode::Char('w') => {
+            // 🖼️ both ways of picking the base wad redraw either way, since the hashing window may
+            // have covered the launcher
+            KeyCode::Char('b') => {
+                let mut shelf = self.loadout.shelf();
+                let picked = Library::pick_wad(
+                    grimoire,
+                    &mut shelf,
+                    &mut self.loadout.clipboard,
+                    "base wad",
+                )?;
+                if self.loadout.restock(shelf).is_err() {
+                    Warning::save_failed(grimoire)?;
+                }
+                if let Some(path) = picked {
+                    self.set_base_wad(grimoire, &path)?;
+                }
+                Ok(Phase::Render)
+            }
+            KeyCode::Char('B') => {
                 if let Some(path) =
                     picker::file(grimoire, Some(("base wad", Wad::EXTENSIONS)), None)?
                 {
-                    // 🖼️ redrawn either way, since the hashing window may have covered the launcher
-                    if let Some(wad) = hashing::wad(grimoire, &path)? {
-                        self.loadout.uac.base_wad = Some(wad);
-                        self.loadout.forget_lookup();
-                        if self.loadout.keep_uac().is_err() {
-                            Warning::save_failed(grimoire)?;
-                        }
-                    }
+                    self.set_base_wad(grimoire, &path)?;
                     return Ok(Phase::Render);
                 }
                 Ok(Phase::Prompt)
             }
-            KeyCode::Char('l') => {
+            KeyCode::Char('P') => self.paste_as_profile(grimoire),
+            KeyCode::Char('l' | 'w') => {
                 let mut shelf = self.loadout.shelf();
                 Library::summon(grimoire, &mut shelf, &mut self.loadout.clipboard)?;
                 if self.loadout.restock(shelf).is_err() {
@@ -2013,9 +2097,51 @@ mod tests {
     use insta::assert_snapshot;
 
     use super::*;
+
+    #[test]
+    fn select_and_home_are_shown_as_the_wads_and_the_settings_on_the_launcher() {
+        use crate::gamepad::{Family, relabel};
+        let key = |text: &str| {
+            Launcher::LEGEND
+                .iter()
+                .find(|[_, said]| said.starts_with(text))
+                .map(|[key, _]| relabel(key, Family::Xbox))
+        };
+        assert_eq!(key("Wads").as_deref(), Some("(View)/L"));
+        assert_eq!(key("Settings").as_deref(), Some("(Xbox)"));
+        // the buttons make the keys that open them
+        let key_of = |button| crate::gamepad::Prompt::of(button, Family::Xbox).map(|p| p.chant());
+        assert_eq!(key_of(gilrs::Button::Select), Some(KeyCode::Char('w')));
+        assert_eq!(key_of(gilrs::Button::Mode), Some(KeyCode::Char('o')));
+    }
+
+    #[test]
+    fn the_legends_name_the_chords_that_make_their_keys() {
+        crate::gamepad::assert_chords_match(Launcher::LEGEND);
+    }
     use crate::{
         loadout::InsertedCopies, loadout::config::Config, loadout::scribe::tests::Altar, testing,
     };
+
+    #[test]
+    fn snapshot_the_keyboard_over_the_launchers_search() {
+        let altar = Altar::new("snap-launcher-keyboard");
+        let mut launcher = launcher(&altar, 0);
+        launcher.search = Some(Search::default());
+        insta::assert_snapshot!(crate::keyboard::over(|page| launcher.render(page)));
+    }
+
+    #[test]
+    fn a_profile_with_spaces_and_dashes_is_found_by_name_whatever_the_case() {
+        let profiles = [
+            Profile::new("my profile".into(), vec![]),
+            Profile::new("sigil-run".into(), vec![]),
+        ];
+        assert_eq!(find_profile(&profiles, "my profile"), Some(0));
+        assert_eq!(find_profile(&profiles, "My Profile"), Some(0));
+        assert_eq!(find_profile(&profiles, "SIGIL-RUN"), Some(1));
+        assert_eq!(find_profile(&profiles, "my_profile"), None);
+    }
 
     fn launcher(altar: &Altar, row: usize) -> Launcher {
         let loadout = testing::example_loadout(altar);

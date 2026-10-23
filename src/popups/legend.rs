@@ -6,6 +6,7 @@ use ratatui::{
 
 use crate::{
     error::Result,
+    gamepad::{self, Family},
     layout, popups,
     ritual::{Grimoire, Page, Phase, Ritual},
     theme,
@@ -13,9 +14,12 @@ use crate::{
 
 /// A popup listing `[key, description]` pairs, one per row with the keys right-aligned, dismissed
 /// by any key. One too tall for the terminal is split into columns if they fit, or else into
-/// pages, turned with `J`/`↓` and `K`/`↑`.
+/// pages, turned with `J`/`↓` and `K`/`↑`. Once a controller is used, every key it has a button
+/// for is shown as that button.
 pub struct Legend<'a> {
     legend: &'a [[&'a str; 2]],
+    /// The controller used last, if it was used after the keyboard.
+    family: Option<Family>,
     /// The page on screen, and how many there were when it was last drawn.
     page: usize,
     pages: usize,
@@ -27,6 +31,7 @@ impl<'a> Legend<'a> {
     pub fn new(legend: &'a [[&'a str; 2]]) -> Self {
         Self {
             legend,
+            family: gamepad::shown(),
             page: 0,
             pages: 1,
         }
@@ -36,23 +41,31 @@ impl<'a> Legend<'a> {
         Legend::new(legend).invoke(grimoire)
     }
 
+    /// `key` as the user would press it: the controller's button for it, if one was used last.
+    fn relabel(&self, key: &str) -> String {
+        match self.family {
+            Some(family) => gamepad::relabel(key, family),
+            None => gamepad::plain(key).into_owned(),
+        }
+    }
+
     /// Every row padded to the same width, so the columns line up once the rows are centered.
     fn lines(&self) -> Vec<Line<'a>> {
-        let key_width = self
+        let keys: Vec<String> = self
             .legend
             .iter()
-            .map(|[key, _]| layout::width(key))
-            .max()
-            .unwrap_or(0);
+            .map(|[key, _]| self.relabel(key))
+            .collect();
+        let key_width = keys.iter().map(|key| layout::width(key)).max().unwrap_or(0);
         let text_width = self
             .legend
             .iter()
             .map(|[_, text]| layout::width(text))
             .max()
             .unwrap_or(0);
-        self.legend
-            .iter()
-            .map(|[key, text]| {
+        keys.iter()
+            .zip(self.legend)
+            .map(|(key, [_, text])| {
                 Line::from(vec![
                     Span::styled(
                         format!("{key:>width$}", width = key_width as usize),
@@ -138,7 +151,12 @@ impl Ritual for Legend<'_> {
             .take(per_page)
             .collect();
         let footer = Line::styled(
-            format!("{}/{} · J/K for more", self.page + 1, self.pages),
+            format!(
+                "{}/{} · {} for more",
+                self.page + 1,
+                self.pages,
+                self.relabel("J/K")
+            ),
             Style::new().fg(theme::worn().colors.muted),
         );
         popups::draw(
@@ -242,5 +260,32 @@ mod tests {
         ];
         let mut popup = Legend::new(&legend);
         insta::assert_snapshot!(crate::testing::draw(50, 14, |page| popup.render(page)));
+    }
+
+    #[test]
+    fn snapshot_the_launcher_keys_on_each_controller() {
+        let legend = [
+            ["Enter", "Launch"],
+            ["H", "Host"],
+            ["J↓/K↑", "Traverse"],
+            ["Tab/↓, Backtab/↑", "Next/Previous"],
+            ["?", "Keys"],
+            ["Esc", "Save and Quit"],
+        ];
+        for family in [
+            Family::Xbox,
+            Family::PlayStation,
+            Family::Nintendo,
+            Family::SteamDeck,
+            Family::SteamController,
+            Family::Generic,
+        ] {
+            let mut popup = Legend::new(&legend);
+            popup.family = Some(family);
+            insta::assert_snapshot!(
+                format!("controller_{family:?}"),
+                crate::testing::draw(50, 16, |page| popup.render(page))
+            );
+        }
     }
 }

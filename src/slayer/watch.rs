@@ -76,7 +76,7 @@ pub fn create(grimoire: &mut Grimoire, loadout: &mut Loadout, index: &mut usize)
     let dir = std::path::absolute(&dir).unwrap_or(dir);
     let suggested = dir
         .file_name()
-        .map(|name| name.to_string_lossy().replace(['-', ' ', '.'], "_"))
+        .map(|name| name.to_string_lossy().replace('.', "_"))
         .unwrap_or_default();
     let Some(name) = ProfileNamer::summon_suggesting(grimoire, &loadout.profiles, &suggested)?
     else {

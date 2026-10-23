@@ -72,8 +72,8 @@ impl Game {
 
     /// Waits for UZDoom to quit and for the last of its output to reach the log.
     ///
-    /// Keys pressed during the game would otherwise all land at once afterwards, so they are
-    /// tossed. That is best effort, since a terminal that can't be read (as under a test) has
+    /// Keys (and controller presses) made during the game would otherwise all land at once
+    /// afterwards, so they are tossed. That is best effort, since a terminal that can't be read (as under a test) has
     /// nothing to toss.
     pub fn wait(mut self) -> Result<()> {
         self.child.wait()?;
@@ -83,6 +83,7 @@ impl Game {
         while let Ok(true) = ratatui::crossterm::event::poll(Duration::ZERO) {
             let _ = ratatui::crossterm::event::read();
         }
+        crate::gamepad::forget();
         Ok(())
     }
 }

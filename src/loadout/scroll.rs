@@ -34,7 +34,8 @@ pub const MAX_WADS: usize = 4096;
 /// The most profiles a scroll may hold, for the same reason.
 pub const MAX_PROFILES: usize = 512;
 /// The longest name a profile on a scroll may have.
-const MAX_NAME: usize = 64;
+#[cfg(test)]
+const MAX_NAME: usize = super::profile::MAX_NAME;
 
 /// Profiles to share, in order, and, if their maker chose to, their global settings.
 ///
@@ -276,12 +277,10 @@ impl Inscribed {
     }
 }
 
-/// Whether `name` is one a profile could have: not empty, not too long, and only the characters
-/// a profile's name may hold, since it becomes a file and a dir name.
+/// Whether `name` is one a profile could have (see [`super::profile::is_valid_name`]), since it
+/// becomes a file and a dir name.
 fn is_profile_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= MAX_NAME
-        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    super::profile::is_valid_name(name)
 }
 
 /// `path`, if it is `wad`: the right size (unless the size is unknown) and then the right hash.
@@ -665,8 +664,11 @@ mod tests {
         for bad in [
             "",
             "../config",
-            "has space",
             "dot.name",
+            "-starts-with-a-dash",
+            " starts with a space",
+            "ends with a space ",
+            "tab\tbed",
             &"a".repeat(MAX_NAME + 1),
         ] {
             let named = Scroll {
@@ -676,6 +678,12 @@ mod tests {
             assert!(named.check().is_err(), "{bad:?}");
         }
         assert!(scroll(vec![]).check().is_ok());
+        // spaces and dashes inside a name are fine
+        let spaced = Scroll {
+            profiles: vec![sealed("my profile-2", vec![])],
+            settings: None,
+        };
+        assert!(spaced.check().is_ok());
         let empty = Scroll {
             profiles: Vec::new(),
             settings: None,

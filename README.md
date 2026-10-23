@@ -35,6 +35,7 @@ Beware the code -- a programmer's rite!
 - **Themes**: every color, border and glyph comes from a `theme.toml` you can change, or the built-in hellfire one, and the splash screen dresses up in its own `splash.toml` (logo, words, and a fire that can cycle through any colors) and `pride.toml` (pride flags, one picked at random each time)
 - **Placeholders, not surprises**: a wad that moved is shown in the editor with what's wrong, and only that profile is held back from launching
 - **Fits any terminal** from 40×20 up: every window is sized from what it holds, and long lists scroll
+- **Controllers**: an Xbox, PlayStation, Nintendo, Steam Deck, Steam Controller or other gamepad gets around every screen, and the legends show its own buttons
 
 ## Screenshots
 
@@ -81,11 +82,11 @@ uzdoom/                    UZDoom's own folder: the Windows release unpacked, or
 wads/base_wads/            freedoom2.wad and Freedoom's license
 ```
 
-Nothing else on the machine is touched, and what is there already is left alone (`--no-uzdoom` and `--no-freedoom` leave either out). The downloads go through the system's temporary folder and are deleted afterwards. Next time tdl starts it offers `wads` and `wads/base_wads` as [wad pools](#the-wads-screen); `U` then picks `uzdoom/uzdoom.exe` (or `uzdoom/uzdoom.AppImage`) and `W` `freedoom2.wad`. There is no UZDoom release it can place on macOS or other systems, so there it installs Freedoom only and says so.
+What is there already is left alone (`--no-uzdoom` and `--no-freedoom` leave either out). The downloads go through the system's temporary folder and are deleted afterwards. The UZDoom and the base wad are kept as tdl's global ones, by running the `tdl` beside the installer with `tdl --setup --keep-uzdoom FILE --keep-base-wad FILE` (`--setup` keeps what the `--keep-` flags give, with no windows, and closes; if there is no `tdl` there the installer prints that command; `--no-link` skips it). Next time tdl starts it offers `wads` and `wads/base_wads` as [wad pools](#the-wads-screen). There is no UZDoom release it can place on macOS or other systems, so there it installs Freedoom only and says so.
 
 ## Usage
 
-On first run, press `U` to select your UZDoom executable and `W` to select a base wad, then `A` to create a profile.
+On first run (unless [the installer](#the-installer) has already done it), press `U` to select your UZDoom executable and `B` to select a base wad, then `A` to create a profile.
 
 ### Command line
 
@@ -149,7 +150,7 @@ tdl join 10.0.0.2 --code abc234 --port 9000           # the join form, filled in
 | `M` | Mark or unmark the profile, to select profiles that aren't next to each other |
 | `Y` / `Shift+Y` | Copy the selected profiles (or the one under the cursor) / every profile |
 | `X` | Cut the selected profiles (or the one under the cursor): nothing moves until `P` pastes them, which moves them in front of the cursor, saves and all |
-| `P` | Paste: copied profiles go in front of the cursor, and copied wads go at the end of the profile (asks first) or, on `+`, start a new profile |
+| `P` / `Shift+P` | Paste: copied profiles go in front of the cursor, and copied wads go at the end of the profile (asks first) or, on `+`, start a new profile. `Shift+P` pastes copied wads (or the wads of copied profiles) as a new profile instead, asking for its name |
 | `A` | Add a profile |
 | `F` | Add a profile that watches a dir (see below) |
 | `E` | Edit a profile |
@@ -157,13 +158,13 @@ tdl join 10.0.0.2 --code abc234 --port 9000           # the join form, filled in
 | `S` | Seal the profile (or the selected ones, or the whole loadout) into a `.scroll` to share |
 | `I` | Import a `.scroll`, adding its profiles |
 | `U` | Select the UZDoom executable |
-| `W` | Select the base wad |
-| `L` | The wads screen: every wad dir and its wads (see below) |
+| `B` / `Shift+B` | Pick the base wad from the wads screen / from a file dialog |
+| `W` / `L` | The wads screen: every wad dir and its wads (see below) |
 | `O` | Settings: the splash screen and its look, pride, the music, the song, the quips, the theme, the ini, and extra UZDoom arguments |
 | `Esc` | Save and quit |
 | `F1` / `?` | Show the keys for the current screen (`F1` works everywhere, even where `?` is typed as text) |
 
-Inside the profile editor, `Enter` saves and leaves; `Esc` leaves too, but if the profile changed it first asks whether to **[S]ave**, **[D]iscard**, or go **[B]ack**. Saving under a name another profile has asks whether to replace that profile (deleting it and its saves; an edited profile keeps its place and its own saves), or go back to the editor. `Tab` switches between the name and the wad list, where `A` adds a wad, `Shift+A` a [mod folder](#mod-folders), `F` imports a dir, `D` removes one, `}`/`{` reorder, `U`/`W`/`I` set the profile's own UZDoom, base wad and ini (for the ini, **Global** is the one from the settings, or UZDoom's usual one), and `G` its own UZDoom arguments (used instead of the global ones from the settings; left empty, the global ones count). `/` searches the wads by file name (never by dir) and `;`/`,` step through the matches. `Shift+V` and `M` select wads, `Y` copies the selected ones (or the one under the cursor), `Shift+Y` copies every wad, `X` cuts (copies, then takes them out), and `P` pastes in front of the cursor; copied profiles paste as all their wads. `N` renames a wad's file (see [the wads screen](#the-wads-screen)), `L` opens the wads screen, and `T` makes the profile watch a dir, or stop watching one.
+Inside the profile editor, `Enter` saves and leaves; `Esc` leaves too, but if the profile changed it first asks whether to **[S]ave**, **[D]iscard**, or go **[B]ack**. Saving under a name another profile has asks whether to replace that profile (deleting it and its saves; an edited profile keeps its place and its own saves), or go back to the editor. `Tab` switches between the name and the wad list, where `W` adds wads picked on the wads screen (`Enter` on the `+ add wads` row does the same), `Shift+W` adds them from a file dialog, `A` adds files from one too, `Shift+A` a [mod folder](#mod-folders), `F` imports a dir, `D` removes one, `}`/`{` reorder, `U`/`I` set the profile's own UZDoom and ini, `B` its base wad from the wads screen (`Shift+B` from a file dialog) (for the ini, **Global** is the one from the settings, or UZDoom's usual one), and `G` its own UZDoom arguments (used instead of the global ones from the settings; left empty, the global ones count). `/` searches the wads by file name (never by dir) and `;`/`,` step through the matches. `Shift+V` and `M` select wads, `Y` copies the selected ones (or the one under the cursor), `Shift+Y` copies every wad, `X` cuts (copies, then takes them out), and `P` pastes in front of the cursor; copied profiles paste as all their wads. `N` renames a wad's file (see [the wads screen](#the-wads-screen)), `L` opens the wads screen, and `T` makes the profile watch a dir, or stop watching one.
 
 ### Profiles that watch a dir
 
@@ -184,7 +185,7 @@ That keeps everyone in step with a mod that is still in progress: whoever hosts 
 
 ### Mod folders
 
-UZDoom loads a folder as if it were a pk3, so a mod you are working on can be played straight from its source, with nothing to pack. `Shift+A` in the editor's wad list adds a folder; it shows with a `/` after its name (`nacht/`) and goes to UZDoom as `-file <folder>`, in its place in the load order. A folder has no hash or size, so it is never marked `~`, `V` leaves it as it is, `R` picks a folder again, and `N` leaves renaming it to wherever it lives.
+UZDoom loads a folder as if it were a pk3, so a mod you are working on can be played straight from its source, with nothing to pack. `Shift+A` in the editor's wad list adds a folder; it shows with a `/` after its name (`nacht/`) and goes to UZDoom as `-file <folder>`, in its place in the load order. A folder has no hash or size, so it is never marked `~`, `V` leaves it as it is, `R` and `Shift+R` pick a folder again, and `N` leaves renaming it to wherever it lives.
 
 Joiners can only download files, so when you host, each folder is packed into `<folder>.pk3` first, with tdl's own copy of [`pack_pk3.py`](pack_pk3.py) (which needs Python 3.8 or later), and that pk3 is what is served; your game still plays the folder. The pk3 is kept, and packed again only when something in the folder is newer than it, or when a newer tdl brings a newer packer, so hosting the same unchanged folder twice is quick. The packing is reproducible (the same folder always packs to the same bytes) and leaves out dot files, Ultimate Doom Builder's `.dbs` and backup files, and other editor leftovers. A sealed scroll holds a folder by its name, and breaking the seal looks for a folder of that name in the wad dirs.
 
@@ -196,6 +197,8 @@ If UZDoom is the flatpak, its `--file-forwarding` hands files to the sandbox but
 
 `L`, in the launcher or the editor's wad list, shows every dir wads are looked for in (the ones from `--wads`, or kept from it, then `.downloads`), each with every wad under it at any depth. `Enter` opens or closes a dir, and `Tab` switches to every wad in one list by name, where wads with the same name are told apart by the fewest dirs that differ (`old`, `wads/new`, or `.downloads` and the start of its hash).
 
+Opened with `W`, `B` or `R` in the editor (or `B` in the launcher) to pick instead, `Enter` on a wad takes it (with `W`, the ones marked, and `Space` takes a dir's wads or the marked ones); `B` and `R` take one wad. `Shift+W`, `Shift+B` and `Shift+R` skip the screen and ask for a file with the system's dialog.
+
 `Y` copies the selected wads (or the one under the cursor, or on a dir's row every wad in it) and `X` cuts them; nothing moves until `P` pastes. Pasted into a dir (the one the wad under the cursor is in, or the dir itself on its row), copied files are copied there and cut ones moved, once; a name that is taken there asks whether to **[R]eplace** it, **[K]eep Both** (`brutal_2.pk3`), or **[S]kip** it. Into `.downloads`, each is hashed and goes under its hash. Every profile using a moved wad follows it, and so does the global base wad. Wads copied here paste into a profile like any other (they are hashed as they go in), and wads or profiles copied in the launcher or the editor paste into a dir here as copies of their files.
 
 `N` on a wad, here or in the editor's wad list, renames its file where it is. Only the name before the extension is typed, so UZDoom still knows what kind of file it is, and a name another file in the dir has (or, in the editor, another wad in the profile) is turned down. Every profile using the wad follows it, and so does the global base wad. A download keeps the host's name for it, so it can't be renamed.
@@ -206,7 +209,59 @@ When tdl starts, it looks beside its executable and in the dir it was started fr
 
 ### Arrow keys
 
-Every place text is typed (profile names, the search line, the host and join forms, the settings, naming a copy) has a cursor: `←`/`→` move it, `Home`/`End` jump to either end, `Backspace` deletes before it and `Delete` under it. In forms `↑`/`↓` move between fields as well as `Tab`/`Backtab`, and `←`/`→` change the field's choice instead (the host's mode, its player count, a setting). In the editor `↓` goes from the name into the wads and `↑` from the first wad back to the name. `Home`/`End` jump to the top and the bottom of a list. On the search line `↑`/`↓` bring back earlier searches from this session. A legend too tall for the terminal is split into columns, or, if those don't fit either, shown a page at a time (`J`/`K` turn the pages). Dialogs can be answered with `←`/`→` and `Enter` as well as with their letters; nothing is picked until an arrow is pressed, so `Enter` alone never answers a question.
+A profile's name may hold letters, digits, `_`, `-` and spaces (up to 64 characters, not starting with `-`, and spaces at either end are dropped), since it is also a file and a dir name; `tdl launch "my profile"` takes it in quotes. Copies are numbered `my profile_2`. Every place text is typed (profile names, the search line, the host and join forms, the settings, naming a copy) has a cursor: `←`/`→` move it, `Home`/`End` jump to either end, `Backspace` deletes before it and `Delete` under it. In forms `↑`/`↓` move between fields as well as `Tab`/`Backtab`, and `←`/`→` change the field's choice instead (the host's mode, its player count, a setting). In the editor `↓` goes from the name into the wads and `↑` from the first wad back to the name. `Home`/`End` jump to the top and the bottom of a list. On the search line `↑`/`↓` bring back earlier searches from this session. A legend too tall for the terminal is split into columns, or, if those don't fit either, shown a page at a time (`J`/`K` turn the pages). Dialogs can be answered with `←`/`→` and `Enter` as well as with their letters; nothing is picked until an arrow is pressed, so `Enter` alone never answers a question.
+
+### Controllers
+
+A game controller works everywhere a keyboard does, from the moment it is plugged in. Its buttons press the keys that do the same on every screen:
+
+| Button | Key |
+| --- | --- |
+| A (Cross on PlayStation; on Nintendo, A on the right) | `Enter` |
+| B (Circle) | `Esc` |
+| D-pad, left stick | the arrows, repeating while held |
+| X (Square; Y on Nintendo), the left face button | `/` (search) |
+| Y (Triangle; X on Nintendo), the top face button | `X` (cut) |
+| LB / RB (L1 / R1, L / R) | `Backtab` / `Tab`, when let go (they also start chords, see below) |
+| LT / RT (L2 / R2, ZL / ZR) | Join / Host a game, on the launcher |
+| Start (Menu, Options, +) | `F1` (the keys) |
+| Select (View, Share, −) | `W` (the wads screen on the launcher, add wads in the editor; hides or shows the keyboard while typing) |
+| Home (Xbox, PS, Steam) | `O` (settings, on the launcher; there is no chord for them) |
+| Left / right stick pressed in (L3 / R3) | `Y` / `P` (copy / paste) |
+
+The left face button is search on every controller, the one Xbox calls X; a pad that names its buttons differently (a Switch's is X) is told apart by its USB ids or its name, so each legend names its own. If tdl takes a controller for the wrong kind, `TDL_CONTROLLER_FAMILY` (`xbox`, `playstation`, `nintendo`, `steamdeck`, `steamcontroller` or `generic`) says which. On Linux, a pad that no SDL mapping describes reports its X and Y buttons the wrong way round (the kernel's `BTN_X` is `BTN_NORTH`); tdl puts them right for Xbox-style and generic pads, and `TDL_CONTROLLER_XY=swap` or `keep` overrides its guess.
+
+Keys that only mean something on one screen (`D`, `R`, ...) still need the keyboard. A controller that is plugged in is recognized at once (the splash says `Hit a Button to Start`), and from the first screen the legends and the `[F1/?]` hint under each window show its buttons in place of those keys, named for its kind: `(A)`/`(B)`/`(LB)` on Xbox and generic pads, `(✕)`/`(○)`/`(L1)` on PlayStation, `(A)`/`(B)`/`(ZL)`/`(+)` on Nintendo, and so on. A key on the keyboard switches them back, and a press on the controller (or plugging one in) switches again. Keys pressed on a controller while UZDoom runs are thrown away when it quits.
+
+**Chords.** The buttons are all taken, so the other actions are chords: hold a bumper (`LB` or `RB`, or both) and press another button. A bumper alone is still `Backtab`/`Tab`, but it waits until it is let go, so a chord never also does what its buttons do alone. The legends show every chord, as `(LB)+(A)`, and a chord only does anything on the screens where its key does.
+
+| Hold | Press | Key | Does |
+| --- | --- | --- | --- |
+| `LB` | `A` | `A` | Add (a profile, wads, a dir) |
+| `LB` | `X` | `E` | Edit a profile |
+| `LB` | `B` | `D` | Delete |
+| `LB` | d-pad up / down | `M` / `Shift+V` | Mark a row / start or end a range |
+| `LB` | d-pad left / right | `S` / `I` | Seal / import a scroll (launcher); `I` picks the ini in the editor |
+| `RB` | `A` | `U` | Select UZDoom |
+| `RB` | `B` / `X` | `B` / `Shift+B` | Pick the base wad from the wads / a file |
+| `RB` | `Y` | `Shift+W` | Add wads from files (editor) |
+| `RB` | d-pad up / down | `{` / `}` | Swap up / down |
+| `RB` | d-pad left / right | `,` / `;` | Previous / next search match |
+| `LB`+`RB` | `A` / `X` | `R` / `Shift+R` | Replace a wad from the wads / a file |
+| `LB`+`RB` | `B` | `N` | Rename a wad's file |
+| `LB`+`RB` | `Y` | `V` | Toggle volatility |
+| `LB`+`RB` | d-pad up / down | `Space` / `Shift+A` | Inspect a wad / add a mod folder |
+| `LB`+`RB` | d-pad left / right | `F` / `T` | Import a dir or watch one (a profile that watches a dir, from the launcher) / watch or stop watching (editor) |
+
+**Triggers.** `LT` and `RT` work however the pad reports them: as buttons, as buttons with a value, as the `Z` axes, or, on Bluetooth Xbox controllers, as axes the system has no name for. Past about half way down is pressed and back below a third (or, for an axis, past 0.6 and back below 0.4 of its travel) is let go, and every way of reporting them makes one press. A bumper chord with a trigger also held does nothing.
+
+**If a button does nothing.** `tdl --controller-test` prints, with no windows and until `Ctrl+C`, everything the controller sends: each button or axis as the system names it (with its value and device code), then where on the pad tdl takes it to be (`the left face button`, `the right trigger`...), what tdl calls it there, and the key it sends. A stick that has hardly moved is shown once. Send its output when something is taken for the wrong button.
+
+**Dialogues** show the button that answers each answer instead of its first letter: `(A) Yes  (B) No`, and for three answers `A`, `X` and `Y` (`B` backs out).
+
+**Typing.** In a text field, a keyboard appears at the bottom of the screen, or at the top if the field is down there, never over the text being typed. It shows only the keys and `(Menu) buttons`: `Start` opens the list of what the buttons do, which is this. The d-pad moves over the keys. On their own, `A` types the key, `X` erases, `Y` is a space, `B` types an underscore, `L3` goes to the symbols and back to whichever letters, lower or upper case, were up last, `R3` shifts between lower and upper case, `LB`/`RB` move the text cursor, and `Select` puts the keyboard away (then the face buttons, bumpers, d-pad and `Start` are their usual keys, so `A` and `B` can finish or leave the form, and nothing is typed by accident; `Select` brings it back). `OK`, on the last row of keys, finishes. Held with a trigger they combine: `LT` with `A` types the key as a capital (just that letter), with `LB`/`RB` goes to the start/end of the text, with `X` erases a word, with `B` clears the field; `RT` with `A` is `Enter`, with `B` `Esc`, with `LB`/`RB` goes to the start/end of the text too, with the d-pad up/down to the previous/next field. The last row of keys has `Aa`, `123`, space, delete and `OK`, and the keys go through the field's own rules (a port takes only digits, say).
+
+Buttons are always drawn as text in parentheses, `(A)` or `(LB)`, so a button can't be mistaken for the key of the same name.
 
 ### Searching, selecting, copying
 
@@ -321,6 +376,7 @@ It builds the release binary, records ten seconds of the splash screen into `dem
 ## Credits
 
 - Color schemes of the themes and splashes that come with tdl: **monokai** from Monokai by Wimer Hazenberg; **gruvbox** from Gruvbox (dark) by Pavel Pertsev, MIT; **noctis** from Noctis by Liviu Schera, MIT; **dracula** from Dracula by Zeno Rocha, MIT; **nord** from Nord by Arctic Ice Studio, MIT; **catppuccin** from Catppuccin (Mocha) by the Catppuccin org, MIT; **tokyo-night** from Tokyo Night by enkia, MIT; **solarized** from Solarized (dark) by Ethan Schoonover, MIT; **rose-pine** from Rosé Pine by the Rosé Pine org, MIT; **everforest** from Everforest (dark) by sainnhe, MIT
+
 
 - Music: "Inevitable Doom" by celestialghost8 (CC0), played on the splash screen (and in the launcher with `--keep-music` or the **music** setting)
 

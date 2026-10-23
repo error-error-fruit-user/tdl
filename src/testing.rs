@@ -21,6 +21,19 @@ pub fn draw(width: u16, height: u16, scene: impl FnOnce(&mut Frame)) -> String {
         .join("\n")
 }
 
+/// A terminal for calling a ritual's `prompt` in a test: it has a fixed size, so it asks the real
+/// terminal nothing, and it is never drawn on, so the keys must not lead to a window.
+pub fn silent_grimoire() -> crate::ritual::Grimoire {
+    use ratatui::{TerminalOptions, Viewport, backend::CrosstermBackend, layout::Rect};
+    Terminal::with_options(
+        CrosstermBackend::new(std::io::stdout()),
+        TerminalOptions {
+            viewport: Viewport::Fixed(Rect::new(0, 0, 80, 24)),
+        },
+    )
+    .unwrap()
+}
+
 /// A loadout in `altar` with three example profiles, the same ones as in the screenshots:
 /// `brutal_doom` is healthy; `sigil_run` has a missing, a changed and a volatile wad;
 /// `test_build` points at a UZDoom that doesn't exist. Returns the loadout's dir.

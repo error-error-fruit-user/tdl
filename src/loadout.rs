@@ -611,8 +611,7 @@ fn names_on_disk(dir: &std::path::Path) -> Vec<String> {
             let path = entry.path();
             let extension = path.extension()?.to_str()?;
             let stem = path.file_stem()?.to_str()?;
-            let valid =
-                !stem.is_empty() && stem.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
+            let valid = profile::is_valid_name(stem);
             (valid && extension == scribe::EXTENSION).then(|| stem.to_string())
         })
         .collect();
@@ -770,12 +769,15 @@ mod tests {
             "d.rite.tmp",
             "e.doom",
             "e.rite",
-            "bad name.rite",
+            "my profile.rite",
+            "-dashed.rite",
+            "bad.name.rite",
+            "trailing .rite",
             "notes.txt",
         ] {
             fs::write(dir.join(name), b"x").unwrap();
         }
-        assert_eq!(names_on_disk(&dir), ["a", "b", "e"]);
+        assert_eq!(names_on_disk(&dir), ["a", "b", "e", "my profile"]);
         assert!(names_on_disk(&altar.file("nowhere")).is_empty());
     }
 

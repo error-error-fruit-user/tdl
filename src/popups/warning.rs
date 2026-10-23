@@ -107,6 +107,13 @@ impl Warning {
         Self::summon(grimoire, "Profile name cannot be empty")
     }
 
+    pub fn bad_profile_name(grimoire: &mut Grimoire) -> Result<()> {
+        Self::summon(
+            grimoire,
+            "A profile's name is letters, digits, _, - and spaces, and cannot start with - or a space",
+        )
+    }
+
     pub fn profile_already_exists(grimoire: &mut Grimoire) -> Result<()> {
         Self::summon(grimoire, "Profile name already exists")
     }

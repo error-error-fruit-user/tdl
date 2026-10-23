@@ -1,0 +1,91 @@
+---
+source: src/screens/editor.rs
+expression: "crate::keyboard::over(|page| editor.render(page))"
+---
+── 40x20 ──
+
+
+
+       ┏━━━━[ new profile ]━━━━━┓
+       ┃ name  sigil_run        ┃
+       ┃                        ┃
+       ┃ wads ─────────────── 0 ┃
+       ┃          + add wads    ┃
+       ┃                        ┃
+       ┗━━━━━━━━━━━━━━━━━━━━━━━━┛
+      ┏━━━━━━[ overrides ]━━━━━━┓
+      ┃   uzdoom □ global       ┃
+   ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓
+   ┃  1  2  3  4  5  6  7  8  9  0  ┃
+   ┃  q  w  e  r  t  y  u  i  o  p  ┃
+   ┃  a  s  d  f  g  h  j  k  l  '  ┃
+   ┃  z  x  c  v  b  n  m  .  _  -  ┃
+   ┃  abc   123  space  del    OK   ┃
+   ┃         (Menu) buttons         ┃
+   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+── 80x24 ──
+
+
+
+             ┏━━━━━━━━━━━━━━━━━━[ new profile ]━━━━━━━━━━━━━━━━━━━┓
+             ┃ name  sigil_run                                    ┃
+             ┃                                                    ┃
+             ┃ wads ─────────────────────────────────────────── 0 ┃
+             ┃          + add wads                                ┃
+             ┃                                                    ┃
+             ┃                                                    ┃
+             ┃                                                    ┃
+             ┃                                                    ┃
+             ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                          ┏━━━━━━[ overrides ]━━━━━━┓
+                          ┃   uzdoom □ global       ┃
+                          ┃ base wad □ global       ┃
+                       ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓
+                       ┃  1  2  3  4  5  6  7  8  9  0  ┃
+                       ┃  q  w  e  r  t  y  u  i  o  p  ┃
+                       ┃  a  s  d  f  g  h  j  k  l  '  ┃
+                       ┃  z  x  c  v  b  n  m  .  _  -  ┃
+                       ┃  abc   123  space  del    OK   ┃
+                       ┃         (Menu) buttons         ┃
+                       ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+── 120x40 ──
+
+
+
+
+
+
+                   ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[ new profile ]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+                   ┃ name  sigil_run                                                                ┃
+                   ┃                                                                                ┃
+                   ┃ wads ─────────────────────────────────────────────────────────────────────── 0 ┃
+                   ┃          + add wads                                                            ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                                              ┏━━━━━━[ overrides ]━━━━━━┓
+                                              ┃   uzdoom □ global       ┃
+                                              ┃ base wad □ global       ┃
+                                              ┃      ini □ uzdoom's own ┃
+                                              ┃     args □ global       ┃
+                                           ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓
+                                           ┃  1  2  3  4  5  6  7  8  9  0  ┃
+                                           ┃  q  w  e  r  t  y  u  i  o  p  ┃
+                                           ┃  a  s  d  f  g  h  j  k  l  '  ┃
+                                           ┃  z  x  c  v  b  n  m  .  _  -  ┃
+                                           ┃  abc   123  space  del    OK   ┃
+                                           ┃         (Menu) buttons         ┃
+                                           ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛

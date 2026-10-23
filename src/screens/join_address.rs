@@ -148,6 +148,10 @@ pub struct Joining {
 impl Ritual for JoinAddressForm {
     type Return = Option<Joining>;
 
+    fn typing(&self) -> bool {
+        self.focus < 3
+    }
+
     fn render(&mut self, page: &mut Page) {
         let default_port = net::DEFAULT_PORT.to_string();
         let fields = [
@@ -279,6 +283,14 @@ mod tests {
     use insta::assert_snapshot;
 
     use super::*;
+
+    #[test]
+    fn snapshot_the_keyboard_over_the_join_form() {
+        let mut form = JoinAddressForm::new();
+        form.ip = "192.168.1.20".into();
+        form.caret = form.ip.len();
+        insta::assert_snapshot!(crate::keyboard::over(|page| form.render(page)));
+    }
     use crate::testing;
 
     #[test]

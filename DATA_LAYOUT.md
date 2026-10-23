@@ -39,7 +39,7 @@ What `--uzdoom`, `--base-wad` and `--ini` give is used for the run over every pr
 
 **`theme.toml`**, **`splash.toml`** and **`pride.toml`** are a theme, a splash and pride flags of your own, written to the standard config dir when you pick **New** for the **theme**, **splash look** or **pride flags** setting (an existing one is never written over), and referenced by `theme`, `splash` and `pride_flags` above. Unlike the `.rite` files they are plain text ([TOML](https://toml.io)), for you to change: every field is explained in [THEME.md](THEME.md) and [SPLASH.md](SPLASH.md). They may live anywhere; `uac.rite` holds their paths. Each starts with `edition = N`, the edition of its format (`theme.toml` is edition 2, the others 1; a file without one is edition 1): tdl reads older editions, and refuses a newer one rather than misread it.
 
-The macOS paths follow the `directories` crate's documentation and have not been tried on a Mac. On macOS the two dirs are the same, so the files below share one dir. That is why the profiles dir and the downloads dir start with a dot: profile names can't contain one, so those dirs can never be mistaken for a profile's data dir.
+The macOS paths follow the `directories` crate's documentation and have not been tried on a Mac. On macOS the two dirs are the same, so the files below share one dir. That is why the profiles dir and the downloads dir start with a dot: profile names can't contain a `.`, so those dirs can never be mistaken for a profile's data dir.
 
 ## Layout
 
@@ -104,7 +104,7 @@ Only what belongs to the loadout is here; the settings are in `uac.rite`, or in 
 
 | Field | Meaning |
 | --- | --- |
-| `name` | The profile's name. Letters, digits and `_` only, since it is also the file and dir name. |
+| `name` | The profile's name. Letters, digits, `_`, `-` and spaces only, up to 64 characters, not starting with `-` and with no space at either end, since it is also the file and dir name. |
 | `dirs` | Every dir the profile's wads are in, each listed once. |
 | `wads` | The wads in load order. Each names its `dir` (a position in `dirs`) and its file `name`, plus its `hash`, `size`, `modified` and `volatile`. The size (0 if unknown) lets tdl notice when a file has changed since it was added. `modified` (nanoseconds since 1970, 0 if unknown) is the file's modified time when it was hashed: when joining, a wad of unchanged size and modified time is trusted without being read again. `volatile` marks a wad you are still developing: see below. `folder` (missing means `false`) marks a mod folder rather than a file, whose `hash` is empty and `size` 0. A wad whose file name isn't valid UTF-8 is saved with its whole `path` instead. |
 | `base_wad` | Overrides the global base wad. Saved like an entry in `wads`. |
@@ -128,7 +128,7 @@ A `.scroll` is one or more profiles sealed up to share (`S` in the launcher: the
 
 Scrolls of edition 0 (from tdl 0.6.0) held one profile, with its `name`, `wads`, `base_wad` and `host_defaults` at the top level beside `settings`. tdl 1.0.0 doesn't import them; `python3 upgrade_legacy.py --scroll <file>` makes one a scroll of that one profile (see [Legacy files](#legacy-files)). tdl 0.6.0 can't read the newer edition.
 
-Importing (`I`) trusts nothing in it: there are at most 512 profiles and 4096 wads in all, every profile name must be one tdl could have made (letters, digits and `_`, so it can't name a path), every wad name a plain file name (so `../x` can't reach outside a dir) and every hash a real BLAKE3 hash, or the scroll is refused.
+Importing (`I`) trusts nothing in it: there are at most 512 profiles and 4096 wads in all, every profile name must be one tdl could have made (letters, digits, `_`, `-` and inner spaces, so it can't name a path), every wad name a plain file name (so `../x` can't reach outside a dir) and every hash a real BLAKE3 hash, or the scroll is refused.
 
 ## How the files are written
 

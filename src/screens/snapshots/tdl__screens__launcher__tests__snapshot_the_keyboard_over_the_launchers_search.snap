@@ -1,0 +1,85 @@
+---
+source: src/screens/launcher.rs
+expression: "crate::keyboard::over(|page| launcher.render(page))"
+---
+── 40x20 ──
+   ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓
+   ┃  1  2  3  4  5  6  7  8  9  0  ┃
+   ┃  q  w  e  r  t  y  u  i  o  p  ┃
+   ┃  a  s  d  f  g  h  j  k  l  '  ┃
+   ┃  z  x  c  v  b  n  m  .  _  -  ┃
+   ┃  abc   123  space  del    OK   ┃
+   ┃         (Menu) buttons         ┃
+   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+       ┗━━━━━━━━━━━━━━━━━━━━━━━━┛
+    ┏━━━━━━━━━━[ ready ]━━━━━━━━━━━┓
+    ┃   uzdoom ■ uzdoom.sh  global ┃
+    ┃ base wad ■ DOOM2.WAD  global ┃
+    ┃      ini □ uzdoom's own      ┃
+    ┃     args □ none              ┃
+    ┃     wads ■ 3 wads            ┃
+    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+       /  a profile, or *a wad
+
+
+
+── 80x24 ──
+                       ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓
+                       ┃  1  2  3  4  5  6  7  8  9  0  ┃
+                       ┃  q  w  e  r  t  y  u  i  o  p  ┃
+             ┏━━━━━━━━━┃  a  s  d  f  g  h  j  k  l  '  ┃━━━━━━━━━┓
+             ┃     prof┃  z  x  c  v  b  n  m  .  _  -  ┃    wads ┃
+             ┃     brut┃  abc   123  space  del    OK   ┃       3 ┃
+             ┃  !  sigi┃         (Menu) buttons         ┃       4 ┃
+             ┃  !  test┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛       1 ┃
+             ┃     + new profile                                  ┃
+             ┃                                                    ┃
+             ┃                                                    ┃
+             ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+          ┏━━━━━━━━━━[ ready ]━━━━━━━━━━━┓ ┏━━━━━━━[ global ]━━━━━━━━┓
+          ┃   uzdoom ■ uzdoom.sh  global ┃ ┃   uzdoom ■ uzdoom.sh    ┃
+          ┃ base wad ■ DOOM2.WAD  global ┃ ┃ base wad ■ DOOM2.WAD    ┃
+          ┃      ini □ uzdoom's own      ┃ ┃      ini □ uzdoom's own ┃
+          ┃     args □ none              ┃ ┃     args □ none         ┃
+          ┃     wads ■ 3 wads            ┃ ┃                         ┃
+          ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
+             /  a profile, or *a wad
+
+
+
+
+── 120x40 ──
+                                           ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓
+                                           ┃  1  2  3  4  5  6  7  8  9  0  ┃
+                                           ┃  q  w  e  r  t  y  u  i  o  p  ┃
+                                           ┃  a  s  d  f  g  h  j  k  l  '  ┃
+                                           ┃  z  x  c  v  b  n  m  .  _  -  ┃
+                   ┏━━━━━━━━━━━━━━━━━━━━━━━┃  abc   123  space  del    OK   ┃━━━━━━━━━━━━━━━━━━━━━━━┓
+                   ┃     profile           ┃         (Menu) buttons         ┃                  wads ┃
+                   ┃     brutal_doom       ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛                     3 ┃
+                   ┃  !  sigil_run                                                                4 ┃
+                   ┃  !  test_build                                                               1 ┃
+                   ┃     + new profile                                                              ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                              ┏━━━━━━━━━━[ ready ]━━━━━━━━━━━┓ ┏━━━━━━━[ global ]━━━━━━━━┓
+                              ┃   uzdoom ■ uzdoom.sh  global ┃ ┃   uzdoom ■ uzdoom.sh    ┃
+                              ┃ base wad ■ DOOM2.WAD  global ┃ ┃ base wad ■ DOOM2.WAD    ┃
+                              ┃      ini □ uzdoom's own      ┃ ┃      ini □ uzdoom's own ┃
+                              ┃     args □ none              ┃ ┃     args □ none         ┃
+                              ┃     wads ■ 3 wads            ┃ ┃                         ┃
+                              ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                   /  a profile, or *a wad

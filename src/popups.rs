@@ -20,6 +20,7 @@ use ratatui::{
 };
 
 use crate::{
+    gamepad::{self, Family, Prompt},
     layout,
     ritual::{self, Page, Phase},
     theme,
@@ -39,6 +40,53 @@ pub fn wrap(text: &str, area: Rect) -> Vec<String> {
 /// The answers as `[Y]es  [N]o`: the first letter of each is the key that picks it. The one
 /// `selected` with the arrows, if any, is drawn as the cursor.
 pub fn answers(options: &[&str], selected: Option<usize>) -> Line<'static> {
+    answers_for(options, selected, gamepad::shown())
+}
+
+/// The prompts that answer `count` questions' answers on a controller: A and B for a yes or no,
+/// and for three answers A, X and Y (B backs out without answering). None for other counts.
+pub fn buttons(count: usize) -> Option<&'static [Prompt]> {
+    match count {
+        2 => Some(&[Prompt::Confirm, Prompt::Back]),
+        3 => Some(&[Prompt::Confirm, Prompt::Search, Prompt::Cut]),
+        _ => None,
+    }
+}
+
+/// Which of `count` answers a controller's `key_code` gives, if it is one of the buttons that
+/// answer ([`buttons`]): `Enter` is A, `Esc` is B, `/` is X and `x` is Y.
+pub fn pad_answer(count: usize, key_code: KeyCode) -> Option<usize> {
+    let prompt = [Prompt::Confirm, Prompt::Back, Prompt::Cut, Prompt::Search]
+        .into_iter()
+        .find(|prompt| prompt.chant() == key_code)?;
+    buttons(count)?.iter().position(|answer| *answer == prompt)
+}
+
+/// [`answers`], drawn for a controller (`pad`: its family) or
+/// the keyboard (`None`): each answer is led by the button that picks it instead of by its first
+/// letter, when it has one.
+pub fn answers_for(
+    options: &[&str],
+    selected: Option<usize>,
+    pad: Option<Family>,
+) -> Line<'static> {
+    if let (Some(family), Some(buttons)) = (pad, buttons(options.len())) {
+        let mut spans = Vec::new();
+        for (option, button) in options.iter().zip(buttons) {
+            if !spans.is_empty() {
+                spans.push(Span::raw("  "));
+            }
+            spans.push(Span::styled(
+                button.label(family),
+                Style::new().fg(theme::worn().colors.key),
+            ));
+            spans.push(Span::styled(
+                format!(" {option}"),
+                Style::new().fg(theme::worn().colors.text),
+            ));
+        }
+        return Line::from(spans);
+    }
     let mut spans = Vec::new();
     for (i, option) in options.iter().enumerate() {
         if i > 0 {
@@ -130,6 +178,77 @@ mod tests {
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(text, "[Y]es  [N]o");
         assert_eq!(line.spans[1].style.fg, Some(theme::worn().colors.key));
+    }
+
+    #[test]
+    fn on_a_controller_the_answers_are_led_by_their_buttons() {
+        let text = |line: Line| {
+            line.spans
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect::<String>()
+        };
+        let yes_no = answers_for(&["Yes", "No"], None, Some(Family::Xbox));
+        assert_eq!(text(yes_no), "(A) Yes  (B) No");
+        let three = ["Save", "Discard", "Back"];
+        let line = answers_for(&three, None, Some(Family::PlayStation));
+        assert_eq!(text(line), "(✕) Save  (□) Discard  (△) Back");
+        // 🔤 four answers have no buttons to go round, so they keep their letters
+        let four = answers_for(&["a", "b", "c", "d"], None, Some(Family::Xbox));
+        assert_eq!(text(four), "[a]  [b]  [c]  [d]");
+    }
+
+    #[test]
+    fn dialog_answers_are_on_the_physical_buttons_the_screen_shows() {
+        use gilrs::Button::{East, North, South, West};
+        for family in [
+            Family::Xbox,
+            Family::PlayStation,
+            Family::SteamDeck,
+            Family::Generic,
+        ] {
+            let answer = |count, button| {
+                Prompt::of(button, family).and_then(|prompt| pad_answer(count, prompt.chant()))
+            };
+            // yes or no: A (south) and B (east)
+            assert_eq!((answer(2, South), answer(2, East)), (Some(0), Some(1)));
+            assert_eq!((answer(2, West), answer(2, North)), (None, None));
+            // three: A (south), X (west) and Y (north), B backs out
+            assert_eq!(answer(3, South), Some(0), "{family:?}");
+            assert_eq!(answer(3, West), Some(1), "{family:?}");
+            assert_eq!(answer(3, North), Some(2), "{family:?}");
+            assert_eq!(answer(3, East), None, "{family:?}");
+            // 🏷️ and the answers are labeled with the buttons that do those
+            let labeled = answers_for(&["Tag", "Name", "Skip"], None, Some(family))
+                .spans
+                .iter()
+                .map(|span| span.content.to_string())
+                .collect::<String>();
+            let name = |prompt: Prompt| prompt.label(family);
+            let wanted = format!(
+                "{} Tag  {} Name  {} Skip",
+                name(Prompt::Confirm),
+                name(Prompt::Search),
+                name(Prompt::Cut)
+            );
+            assert_eq!(labeled, wanted);
+        }
+        // the Nintendo layout has A on the right, and still answers with it
+        let nintendo = |button| {
+            Prompt::of(button, Family::Nintendo).and_then(|prompt| pad_answer(2, prompt.chant()))
+        };
+        assert_eq!((nintendo(East), nintendo(South)), (Some(0), Some(1)));
+    }
+
+    #[test]
+    fn a_controllers_buttons_answer_by_their_place() {
+        assert_eq!(pad_answer(2, KeyCode::Enter), Some(0));
+        assert_eq!(pad_answer(2, KeyCode::Esc), Some(1));
+        assert_eq!(pad_answer(2, KeyCode::Char('x')), None);
+        assert_eq!(pad_answer(3, KeyCode::Enter), Some(0));
+        assert_eq!(pad_answer(3, KeyCode::Char('/')), Some(1));
+        assert_eq!(pad_answer(3, KeyCode::Char('x')), Some(2));
+        assert_eq!(pad_answer(3, KeyCode::Esc), None, "B backs out of three");
     }
 
     #[test]

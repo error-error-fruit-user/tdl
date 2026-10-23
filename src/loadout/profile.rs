@@ -205,6 +205,32 @@ impl TryFrom<SavedProfile> for Profile {
     }
 }
 
+/// The longest a profile's name may be, in characters.
+pub const MAX_NAME: usize = 64;
+
+/// Whether a profile's name may hold `c`: letters, digits, `_`, `-` and spaces. The name is also a
+/// file and a dir name, so nothing a file system or a command line would treat differently.
+pub fn is_name_character(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | ' ')
+}
+
+/// `name` as a profile's name: with the spaces around it taken off, if that leaves one that is
+/// not empty, not too long, only of the characters a name may hold and not starting with a `-`
+/// (which a command line would take for an option). `None` otherwise.
+pub fn clean_name(name: &str) -> Option<String> {
+    let name = name.trim_matches(' ');
+    (!name.is_empty()
+        && name.chars().count() <= MAX_NAME
+        && !name.starts_with('-')
+        && name.chars().all(is_name_character))
+    .then(|| name.to_string())
+}
+
+/// Whether `name` is a profile's name as it is (see [`clean_name`]): nothing to trim.
+pub fn is_valid_name(name: &str) -> bool {
+    clean_name(name).as_deref() == Some(name)
+}
+
 /// `name` with a number on the end that no profile in `profiles` has yet: `brutal_2`, then
 /// `brutal_3` (see [`crate::tag::tagged`]).
 pub fn tagged_name(name: &str, profiles: &[Profile]) -> String {
@@ -628,6 +654,47 @@ mod tests {
         let profiles = [named("brutal"), named("brutal_2"), named("brutal_4")];
         assert_eq!(tagged_name("brutal", &profiles), "brutal_3");
         assert_eq!(tagged_name("brutal_4", &profiles), "brutal_5");
+    }
+
+    #[test]
+    fn a_name_may_hold_spaces_and_dashes_but_not_start_with_one_or_end_in_a_space() {
+        assert_eq!(clean_name("my profile").as_deref(), Some("my profile"));
+        assert_eq!(clean_name("sigil-run_2").as_deref(), Some("sigil-run_2"));
+        assert_eq!(clean_name("  padded  ").as_deref(), Some("padded"));
+        assert_eq!(clean_name("a - b").as_deref(), Some("a - b"));
+        for bad in [
+            "", "   ", "-dash", "  -dash", "../up", "dot.name", "tab\t", "ü",
+        ] {
+            assert_eq!(clean_name(bad), None, "{bad:?}");
+        }
+        assert_eq!(
+            clean_name(&"a".repeat(MAX_NAME)).map(|n| n.len()),
+            Some(MAX_NAME)
+        );
+        assert_eq!(clean_name(&"a".repeat(MAX_NAME + 1)), None);
+        assert!(is_valid_name("my profile"));
+        assert!(!is_valid_name("my profile "));
+        assert!(!is_valid_name(" my profile"));
+    }
+
+    #[test]
+    fn a_tag_goes_on_a_name_with_spaces_and_dashes_too() {
+        let profiles = [Profile::new("my profile".into(), vec![])];
+        assert_eq!(tagged_name("my profile", &profiles), "my profile_2");
+        assert_eq!(tagged_name("a-b", &profiles), "a-b_2");
+        assert_eq!(tagged_name("my profile_2", &profiles), "my profile_3");
+    }
+
+    #[test]
+    fn a_profile_with_spaces_in_its_name_is_kept_under_that_name() {
+        let altar = Altar::new("profile-spaces");
+        std::fs::create_dir_all(altar.file("config").join(SUBDIRECTORY)).unwrap();
+        let profile = Profile::new("my profile-2".into(), vec![]);
+        profile
+            .write(&altar.file("config"), &altar.file("data"))
+            .unwrap();
+        assert!(Profile::path(&altar.file("config"), "my profile-2").exists());
+        assert!(altar.file("data/my profile-2/saves").is_dir());
     }
 
     #[test]

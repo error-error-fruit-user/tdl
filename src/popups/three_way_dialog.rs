@@ -2,7 +2,7 @@ use ratatui::{crossterm::event::KeyCode, style::Style, text::Line};
 
 use crate::{
     error::Result,
-    popups,
+    gamepad, popups,
     ritual::{Grimoire, Page, Phase, Ritual},
     theme,
 };
@@ -70,6 +70,14 @@ impl Ritual for ThreeWayDialog<'_> {
     }
 
     fn prompt(&mut self, _: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Return>> {
+        // 🎮 on a controller the buttons shown answer: A, X and Y, and B backs out
+        if gamepad::shown().is_some() {
+            return Ok(match (popups::pad_answer(3, key_code), key_code) {
+                (Some(answer), _) => Phase::Return(Some(answer)),
+                (None, KeyCode::Esc) => Phase::Return(None),
+                _ => Phase::Prompt,
+            });
+        }
         if let Some(phase) = popups::pick(&mut self.selected, self.options.len(), key_code) {
             return Ok(match phase {
                 Phase::Return(answer) => Phase::Return(Some(answer)),

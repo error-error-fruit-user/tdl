@@ -100,7 +100,7 @@ top = 45
 
 | Field | Built in | What it is |
 | --- | --- | --- |
-| `text` | `"press any key"` | The words under the tagline. Empty for none. At most 120 characters. |
+| `text` | `"press any key"` | The words under the tagline. Empty for none. At most 120 characters. While a controller is recognized they are replaced by `Hit a Button to Start` (any of its buttons ends the splash). |
 | `colors` | ash, bone | Two colors it breathes between: from the first to the second and back. |
 | `period` | `1.6` | Seconds for one breath, 0.05 to 60. |
 

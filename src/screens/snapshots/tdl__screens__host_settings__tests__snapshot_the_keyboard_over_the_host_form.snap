@@ -1,0 +1,91 @@
+---
+source: src/screens/host_settings.rs
+expression: "crate::keyboard::over(|page| form.render(page))"
+---
+── 40x20 ──
+
+ ┏━━━━━━━━━━━━━━[ host ]━━━━━━━━━━━━━━┓
+ ┃                                    ┃
+ ┃     players  2                     ┃
+ ┃                                    ┃
+ ┃        mode  deathmatch            ┃
+ ┃                                    ┃
+ ┃         map  any                   ┃
+ ┃                                    ┃
+ ┃        port  8080                  ┃
+ ┃                                    ┃
+ ┃        code  random                ┃
+ ┃ ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓ ┃
+ ┃ ┃  1  2  3  4  5  6  7  8  9  0  ┃ ┃
+ ┃ ┃  q  w  e  r  t  y  u  i  o  p  ┃ ┃
+ ┃ ┃  a  s  d  f  g  h  j  k  l  '  ┃ ┃
+ ┃ ┃  z  x  c  v  b  n  m  .  _  -  ┃ ┃
+ ┗━┃  abc   123  space  del    OK   ┃━┛
+   ┃         (Menu) buttons         ┃
+   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+── 80x24 ──
+
+
+
+                   ┏━━━━━━━━━━━━━━━━[ host ]━━━━━━━━━━━━━━━━┓
+                   ┃                                        ┃
+                   ┃       players  2                       ┃
+                   ┃                                        ┃
+                   ┃          mode  deathmatch              ┃
+                   ┃                                        ┃
+                   ┃           map  any                     ┃
+                   ┃                                        ┃
+                   ┃          port  8080                    ┃
+                   ┃                                        ┃
+                   ┃          code  random                  ┃
+                   ┃                                        ┃
+                   ┃           ini  not shared              ┃
+                   ┃   ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓   ┃
+                   ┃ [ ┃  1  2  3  4  5  6  7  8  9  0  ┃ ] ┃
+                   ┃   ┃  q  w  e  r  t  y  u  i  o  p  ┃   ┃
+                   ┗━━━┃  a  s  d  f  g  h  j  k  l  '  ┃━━━┛
+                       ┃  z  x  c  v  b  n  m  .  _  -  ┃
+                       ┃  abc   123  space  del    OK   ┃
+                       ┃         (Menu) buttons         ┃
+                       ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+── 120x40 ──
+
+
+
+
+
+
+
+
+
+
+
+                                       ┏━━━━━━━━━━━━━━━━[ host ]━━━━━━━━━━━━━━━━┓
+                                       ┃                                        ┃
+                                       ┃       players  2                       ┃
+                                       ┃                                        ┃
+                                       ┃          mode  deathmatch              ┃
+                                       ┃                                        ┃
+                                       ┃           map  any                     ┃
+                                       ┃                                        ┃
+                                       ┃          port  8080                    ┃
+                                       ┃                                        ┃
+                                       ┃          code  random                  ┃
+                                       ┃                                        ┃
+                                       ┃           ini  not shared              ┃
+                                       ┃                                        ┃
+                                       ┃ [ save as default ]  [ clear default ] ┃
+                                       ┃                                        ┃
+                                       ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                                                         [F1/?]
+
+
+
+                                           ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓
+                                           ┃  1  2  3  4  5  6  7  8  9  0  ┃
+                                           ┃  q  w  e  r  t  y  u  i  o  p  ┃
+                                           ┃  a  s  d  f  g  h  j  k  l  '  ┃
+                                           ┃  z  x  c  v  b  n  m  .  _  -  ┃
+                                           ┃  abc   123  space  del    OK   ┃
+                                           ┃         (Menu) buttons         ┃
+                                           ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛

@@ -39,8 +39,11 @@ use ratatui::{
 use crate::{
     // 🔮 every Result is an omen: Ok is a good sign, Err is a bad one, and both are fate
     error::{Error as Curse, Result as Omen},
+    // 🎮 a controller is a familiar: it can't speak, but it knows every chant by button
+    gamepad::{self as familiar, Prompt as Gesture},
+    keyboard::{self, Output as Typed, PadKeyboard},
     layout,
-    popups::resize,
+    popups::{legend::Legend, resize},
     theme,
 };
 
@@ -158,20 +161,39 @@ pub trait Ritual {
         chant: Chant,
     ) -> Omen<Vibe<SpillTea<Spirit<Self>>>>;
 
+    /// ⌨️ whether a text field is being typed in, which a controller can't do without a keyboard on
+    /// screen: while it is, and a controller spoke last, the loop draws one over the ritual and
+    /// hands the ritual the keys it makes, so a ritual only has to say so
+    fn typing(&self) -> bool {
+        false
+    }
+
     /// 🕯️ a séance: attach once, hold the circle, and don't break it until the spirit has some tea to spill to yourSelf 👻    
     fn invoke(&mut self, grimoire: &mut Grimoire) -> Omen<SpillTea<Spirit<Self>>> {
         // 🔓 first rule of Grimoires: read the warnings before you break the seal. the compiler already did, and it has notes 🧙
+        familiar::start();
         self.unseal(grimoire)?;
         // 🐝 bi-curious about loops? two of them, nested, and both are valid 💜
+        let mut keyboard = PadKeyboard::default();
         'til_we_drop: loop {
+            // 🎹 a familiar can't type, so while a field is being typed in, it gets a keyboard
+            let typing = self.typing() && familiar::shown().is_some();
+            crate::keyboard::forget_caret();
             // 🧟 it's okay to be mutable. the borrow checker doesn't get a vote
-            grimoire.bewitch(|costume| self.dazzle(costume))?;
+            grimoire.bewitch(|costume| {
+                self.dazzle(costume);
+                if typing && let Some(family) = familiar::shown() {
+                    keyboard.draw(costume, family);
+                }
+            })?;
             // 🍵 the ? operator is just emotional support for errors 🫂
             loop {
                 // 🔮 the reading: three cards, three fates
-                let card = beckon(grimoire, &mut |grimoire, chant| {
-                    self.intone(grimoire, chant)
-                })?;
+                let card = beckon(
+                    grimoire,
+                    typing.then_some(&mut keyboard),
+                    &mut |grimoire, chant| self.intone(grimoire, chant),
+                )?;
                 // 🎃 match is exhaustive: the compiler won't let any variant miss out. inclusion, but type-checked 🏳️‍🌈
                 match card {
                     // 🛼 Strut responsibly
@@ -294,13 +316,51 @@ impl<T> Vibe<T> {
 }
 
 // 🔑 beckon: ask nicely. consent is key_code 💜
-/// Waits for one Portent. Ctrl+C becomes [`Curse::Interrupted`], a curse that unwinds out of every
-/// ritual.
+/// Waits for one Portent, or a press of a controller, which is heard as the key it stands for.
+/// Ctrl+C becomes [`Curse::Interrupted`], a curse that unwinds out of every ritual.
 fn beckon<T>(
     grimoire: &mut Grimoire,
+    mut keyboard: Option<&mut PadKeyboard>,
     question: &mut impl FnMut(&mut Grimoire, Chant) -> Omen<Vibe<T>>,
 ) -> Omen<Vibe<T>> {
-    let portent = portent::read()?;
+    // 🎭 who spoke last, keyboard or familiar: the legends dress for whoever it was
+    let voice = familiar::shown();
+    // 🐈‍⬛ between glances at the door, check whether the familiar has anything to say
+    let portent = loop {
+        if let Some(keyboard) = keyboard.as_deref_mut() {
+            // 🎹 with a keyboard up, the familiar's buttons are its keys and combinations
+            if let Some((button, family)) = familiar::press() {
+                match keyboard.press(button, family, familiar::is_held) {
+                    Typed::Help => {
+                        Legend::summon(grimoire, keyboard::LEGEND)?;
+                        return Yass(Strut);
+                    }
+                    Typed::Nothing => continue,
+                    Typed::Redraw => return Yass(Strut),
+                    Typed::Keys(chants) => {
+                        for chant in chants {
+                            match question(grimoire, chant)? {
+                                Lurk => {}
+                                vibe => return Yass(change_costume(voice, vibe)),
+                            }
+                        }
+                        continue;
+                    }
+                }
+            }
+        } else if let Some(chant) = familiar::chant() {
+            let vibe = question(grimoire, chant)?;
+            return Yass(change_costume(voice, vibe));
+        }
+        // 🧪 a test with a pretend controller has nothing to wait for once it has said its piece
+        #[cfg(test)]
+        if familiar::drained() {
+            return Err(Curse::Interrupted);
+        }
+        if portent::poll(familiar::patience())? {
+            break portent::read()?;
+        }
+    };
     // 📏 a grimoire that's too small is a cramped coven: let the user fix that first
     if let Portent::Resize(width, height) = portent {
         if layout::is_too_small(width, height) {
@@ -310,14 +370,25 @@ fn beckon<T>(
     } else if let Portent::Key(key) = portent
         && key.is_press()
     {
+        familiar::keyboard_used();
         // 🛑 Ctrl+C is the safe word: everything stops, no questions asked
         if key.code == Chant::Char('c') && key.modifiers.contains(Charm::CONTROL) {
             Err(Curse::Interrupted)
         } else {
-            question(grimoire, key.code)
+            let vibe = question(grimoire, key.code)?;
+            Yass(change_costume(voice, vibe))
         }
     } else {
         Yass(Lurk)
+    }
+}
+
+// 👗 a quick change between acts: whoever spoke last, the legends should be dressed for them,
+// so a ritual that was only going to keep brooding struts once more in the new outfit
+fn change_costume<T>(voice: Option<familiar::Family>, vibe: Vibe<T>) -> Vibe<T> {
+    match vibe {
+        Lurk if familiar::shown() != voice => Strut,
+        vibe => vibe,
     }
 }
 
@@ -376,20 +447,28 @@ pub fn conjure_banner(title: &str, border_color: Hex, title_color: Hex) -> Veil<
 }
 
 /// 🔣 the `[F1/?]` sigil, on the row just under `window_area`, promising a legend to whoever asks
-/// with either key (F1 too, for the fields where `?` is something to type)
+/// with either key (F1 too, for the fields where `?` is something to type), or the controller's
+/// own button for it when a controller was the last to speak
 pub fn conjure_sigil(window_area: Plot) -> (Verse<'static>, Plot) {
     let bracket = Rouge::new().fg(theme::worn().colors.muted);
     let key = Rouge::new().fg(theme::worn().colors.key);
-    let sigil = [
-        Syllable::styled("[", bracket),
-        Syllable::styled("F1", key),
-        Syllable::styled("/", bracket),
-        Syllable::styled("?", key),
-        Syllable::styled("]", bracket),
-    ]
-    .into_iter()
-    .collect::<Verse>()
-    .centered();
+    let words = match familiar::shown() {
+        // 🐈‍⬛ the familiar only knows one way to ask
+        Some(family) => vec![Syllable::styled(Gesture::Keys.label(family), key)],
+        None => vec![
+            Syllable::styled("F1", key),
+            Syllable::styled("/", bracket),
+            Syllable::styled("?", key),
+        ],
+    };
+    // 🔘 a button is named in parentheses, which say as much as brackets would
+    let named = familiar::shown().is_some();
+    let (open, close) = if named { ("", "") } else { ("[", "]") };
+    let sigil = std::iter::once(Syllable::styled(open, bracket))
+        .chain(words)
+        .chain([Syllable::styled(close, bracket)])
+        .collect::<Verse>()
+        .centered();
     let sigil_area = Plot::new(window_area.x, window_area.bottom(), window_area.width, 1);
     (sigil, sigil_area)
 }
@@ -399,6 +478,58 @@ mod tests {
     use std::cell::Cell;
 
     use super::*;
+
+    /// The keys the keyboard makes for `events` (buttons pressed and let go), through `beckon`
+    /// itself, as the ritual loop runs it while a text field is being typed in.
+    fn typed_with(events: &[(gilrs::Button, bool)]) -> Result<Vec<Chant>, String> {
+        familiar::pretend_buttons(events);
+        let mut keyboard = PadKeyboard::default();
+        let mut grimoire = crate::testing::silent_grimoire();
+        let mut heard = Vec::new();
+        loop {
+            let answer = beckon(&mut grimoire, Some(&mut keyboard), &mut |_, chant| {
+                heard.push(chant);
+                Ok(Lurk)
+            });
+            match answer {
+                Ok(Lurk | Strut) => {}
+                Ok(Spill(())) => unreachable!("nothing returns"),
+                // 🧪 the pretend controller has nothing more to say
+                Err(Curse::Interrupted) => return Ok(heard),
+                Err(other) => return Err(other.to_string()),
+            }
+        }
+    }
+
+    #[test]
+    fn the_keyboards_trigger_chords_work_through_beckon_as_the_ritual_loop_runs_it() {
+        use gilrs::Button::*;
+        let chords: &[(gilrs::Button, gilrs::Button, Chant)] = &[
+            (RightTrigger2, South, Chant::Enter),
+            (RightTrigger2, East, Chant::Esc),
+            (RightTrigger2, LeftTrigger, Chant::Home),
+            (RightTrigger2, RightTrigger, Chant::End),
+            (LeftTrigger2, LeftTrigger, Chant::Home),
+            (LeftTrigger2, RightTrigger, Chant::End),
+            (RightTrigger2, DPadUp, Chant::BackTab),
+            (RightTrigger2, DPadDown, Chant::Tab),
+            (LeftTrigger2, South, Chant::Char('1')),
+            (LeftTrigger2, West, crate::widgets::text::DELETE_WORD),
+            (LeftTrigger2, East, crate::widgets::text::CLEAR),
+        ];
+        for &(trigger, button, key) in chords {
+            let typed = typed_with(&[
+                (trigger, true),
+                (button, true),
+                (button, false),
+                (trigger, false),
+            ]);
+            assert_eq!(typed, Ok(vec![key]), "{trigger:?} + {button:?}");
+        }
+        // and a button on its own, with no trigger held, is its plain key
+        let typed = typed_with(&[(South, true), (South, false)]);
+        assert_eq!(typed, Ok(vec![Chant::Char('1')]));
+    }
 
     #[test]
     fn render_if_renders_or_keeps_waiting() {

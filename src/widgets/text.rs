@@ -1,8 +1,15 @@
 //! Editing a line of text with a cursor in it, the same in every field: typing goes in at the
 //! cursor, `←`/`→` move it, `Home`/`End` jump to either end, `Backspace` deletes the character
-//! before it and `Delete` the one under it. The cursor counts characters, not bytes.
+//! before it and `Delete` the one under it. The cursor counts characters, not bytes. The
+//! controller's on-screen keyboard has two more: [`DELETE_WORD`] and [`CLEAR`], which are keys
+//! no keyboard sends.
 
 use ratatui::crossterm::event::KeyCode;
+
+/// Takes the word before the cursor (and the spaces and marks between it and the cursor).
+pub const DELETE_WORD: KeyCode = KeyCode::F(20);
+/// Empties the field.
+pub const CLEAR: KeyCode = KeyCode::F(21);
 
 /// Takes one key for `text`, whose cursor is at character `caret`. A typed character goes through
 /// `accept`, which turns it down (`None`) or says what to put in (to lowercase it, say), and only
@@ -39,6 +46,26 @@ pub fn edit(
             Some(true)
         }
         KeyCode::Backspace | KeyCode::Delete => Some(false),
+        key if key == DELETE_WORD => {
+            let chars: Vec<char> = text.chars().collect();
+            let mut from = *caret;
+            while from > 0 && !chars[from - 1].is_alphanumeric() {
+                from -= 1;
+            }
+            while from > 0 && chars[from - 1].is_alphanumeric() {
+                from -= 1;
+            }
+            let removed = *caret - from;
+            text.replace_range(byte_at(text, from)..byte_at(text, *caret), "");
+            *caret = from;
+            Some(removed > 0)
+        }
+        key if key == CLEAR => {
+            let changed = !text.is_empty();
+            text.clear();
+            *caret = 0;
+            Some(changed)
+        }
         KeyCode::Left => Some(move_to(caret, caret.saturating_sub(1))),
         KeyCode::Right => Some(move_to(caret, (*caret + 1).min(length))),
         KeyCode::Home => Some(move_to(caret, 0)),
@@ -96,6 +123,24 @@ mod tests {
         assert_eq!(
             typed("doom", &[KeyCode::Home, KeyCode::Char('>')]),
             (">doom".into(), 1)
+        );
+    }
+
+    #[test]
+    fn the_keyboards_word_and_clear_keys_edit_whole_pieces() {
+        assert_eq!(typed("sigil run", &[DELETE_WORD]), ("sigil ".into(), 6));
+        assert_eq!(typed("sigil run ", &[DELETE_WORD]), ("sigil ".into(), 6));
+        assert_eq!(
+            typed("sigil run", &[KeyCode::Left, DELETE_WORD]),
+            ("sigil n".into(), 6)
+        );
+        assert_eq!(typed("sigil", &[DELETE_WORD]), (String::new(), 0));
+        assert_eq!(typed("sigil run", &[CLEAR]), (String::new(), 0));
+        let (mut text, mut caret) = (String::new(), 0);
+        assert_eq!(edit(&mut text, &mut caret, CLEAR, 10, any), Some(false));
+        assert_eq!(
+            edit(&mut text, &mut caret, DELETE_WORD, 10, any),
+            Some(false)
         );
     }
 

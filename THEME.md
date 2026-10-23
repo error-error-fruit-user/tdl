@@ -124,6 +124,7 @@ The built-in palette the defaults are picked from: void `#0E0808`, blood `#BA1A1
 | `broken_mark` | `!` | The badge on a broken row. |
 | `changed_mark` | `~` | The badge on a changed row. |
 | `volatile_mark` | `*` | The badge on a volatile row. |
+| `controller_font` | `false` | No longer does anything; buttons are always drawn as text, in parentheses (`(A)`, `(✕)`, `(LB)`). It is still read, so a theme that sets it keeps loading. |
 
 ### `[help]`
 

@@ -2,12 +2,13 @@ use ratatui::{crossterm::event::KeyCode, style::Style, text::Line};
 
 use crate::{
     error::Result,
-    popups,
+    gamepad, popups,
     ritual::{Grimoire, Page, Phase, Ritual},
     theme,
 };
 
-/// A yes/no popup, answered with `y` or `n`, or by picking an answer with `←`/`→` and `Enter`.
+/// A yes/no popup, answered with `y` or `n`, or by picking an answer with `←`/`→` and `Enter`; on a
+/// controller, with the buttons drawn by the answers, A for yes and B for no.
 pub struct Dialog<'a> {
     message: &'a str,
     /// The answer picked with the arrows, if any: 0 for yes, 1 for no.
@@ -44,6 +45,13 @@ impl Ritual for Dialog<'_> {
     }
 
     fn prompt(&mut self, _: &mut Grimoire, key_code: KeyCode) -> Result<Phase<Self::Return>> {
+        // 🎮 on a controller the buttons shown answer: A is yes and B is no
+        if gamepad::shown().is_some() {
+            return Ok(match popups::pad_answer(2, key_code) {
+                Some(answer) => Phase::Return(answer == 0),
+                None => Phase::Prompt,
+            });
+        }
         if let Some(phase) = popups::pick(&mut self.selected, 2, key_code) {
             return Ok(match phase {
                 Phase::Return(answer) => Phase::Return(answer == 0),

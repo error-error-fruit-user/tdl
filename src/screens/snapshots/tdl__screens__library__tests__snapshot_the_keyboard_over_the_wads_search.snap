@@ -1,0 +1,84 @@
+---
+source: src/screens/library.rs
+expression: "crate::keyboard::over(|page| library.render(page))"
+---
+── 40x20 ──
+   ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓
+   ┃  1  2  3  4  5  6  7  8  9  0  ┃
+   ┃  q  w  e  r  t  y  u  i  o  p  ┃
+   ┃  a  s  d  f  g  h  j  k  l  '  ┃
+ ┏━┃  z  x  c  v  b  n  m  .  _  -  ┃━┓
+ ┃ ┃  abc   123  space  del    OK   ┃ ┃
+ ┃ ┃         (Menu) buttons         ┃ ┃
+ ┃ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┃
+ ┃ ▾ <altar>/mods               1 wad ┃
+ ┃   brutal.pk3                  15 B ┃
+ ┃ ▾ <altar>/data/.downloads    1 wad ┃
+ ┃   brutal.pk3                  43 B ┃
+ ┃   + add a wad dir                  ┃
+ ┃                                    ┃
+ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ /  a wad's file name
+
+
+
+
+── 80x24 ──
+                       ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓
+                       ┃  1  2  3  4  5  6  7  8  9  0  ┃
+                       ┃  q  w  e  r  t  y  u  i  o  p  ┃
+                       ┃  a  s  d  f  g  h  j  k  l  '  ┃
+             ┏━━━━━━━━━┃  z  x  c  v  b  n  m  .  _  -  ┃━━━━━━━━━┓
+             ┃ ▾ <altar┃  abc   123  space  del    OK   ┃  2 wads ┃
+             ┃   brutal┃         (Menu) buttons         ┃    15 B ┃
+             ┃   maps/s┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛    19 B ┃
+             ┃ ▾ <altar>/mods                               1 wad ┃
+             ┃   brutal.pk3                                  15 B ┃
+             ┃ ▾ <altar>/data/.downloads                    1 wad ┃
+             ┃   brutal.pk3                                  43 B ┃
+             ┃   + add a wad dir                                  ┃
+             ┃                                                    ┃
+             ┃                                                    ┃
+             ┃                                                    ┃
+             ┃                                                    ┃
+             ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+             /  a wad's file name
+
+
+
+
+
+── 120x40 ──
+                                           ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓
+                                           ┃  1  2  3  4  5  6  7  8  9  0  ┃
+                                           ┃  q  w  e  r  t  y  u  i  o  p  ┃
+                                           ┃  a  s  d  f  g  h  j  k  l  '  ┃
+                                           ┃  z  x  c  v  b  n  m  .  _  -  ┃
+                                           ┃  abc   123  space  del    OK   ┃
+                                           ┃         (Menu) buttons         ┃
+                   ┏━━━━━━━━━━━━━━━━━━━━━━━┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛━━━━━━━━━━━━━━━━━━━━━━━┓
+                   ┃ ▾ <altar>/wads                                                          2 wads ┃
+                   ┃   brutal.pk3                                                              15 B ┃
+                   ┃   maps/sigil.wad                                                          19 B ┃
+                   ┃ ▾ <altar>/mods                                                           1 wad ┃
+                   ┃   brutal.pk3                                                              15 B ┃
+                   ┃ ▾ <altar>/data/.downloads                                                1 wad ┃
+                   ┃   brutal.pk3                                                              43 B ┃
+                   ┃   + add a wad dir                                                              ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                   /  a wad's file name

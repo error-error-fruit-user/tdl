@@ -1,0 +1,85 @@
+---
+source: src/screens/editor.rs
+expression: "crate::keyboard::over(|page| editor.render(page))"
+---
+── 40x20 ──
+   ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓
+   ┃  1  2  3  4  5  6  7  8  9  0  ┃
+   ┃  q  w  e  r  t  y  u  i  o  p  ┃
+   ┃  a  s  d  f  g  h  j  k  l  '  ┃
+   ┃  z  x  c  v  b  n  m  .  _  -  ┃
+   ┃  abc   123  space  del    OK   ┃
+   ┃         (Menu) buttons         ┃
+   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+       ┃  !    3. hud.pk3       ┃
+       ┃          + add wads    ┃
+       ┗━━━━━━━━━━━━━━━━━━━━━━━━┛
+      ┏━━━━━━[ overrides ]━━━━━━┓
+      ┃   uzdoom □ global       ┃
+      ┃ base wad □ global       ┃
+      ┃      ini □ uzdoom's own ┃
+      ┃     args □ global       ┃
+      ┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
+       /  type a wad's file name
+
+
+── 80x24 ──
+                       ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓
+                       ┃  1  2  3  4  5  6  7  8  9  0  ┃
+                       ┃  q  w  e  r  t  y  u  i  o  p  ┃
+             ┏━━━━━━━━━┃  a  s  d  f  g  h  j  k  l  '  ┃━━━━━━━━━┓
+             ┃ name  ty┃  z  x  c  v  b  n  m  .  _  -  ┃         ┃
+             ┃         ┃  abc   123  space  del    OK   ┃         ┃
+             ┃ wads ───┃         (Menu) buttons         ┃────── 3 ┃
+             ┃  !    1.┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛         ┃
+             ┃  !    2. brutal.pk3                                ┃
+             ┃  !    3. hud.pk3                                   ┃
+             ┃          + add wads                                ┃
+             ┃                                                    ┃
+             ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                          ┏━━━━━━[ overrides ]━━━━━━┓
+                          ┃   uzdoom □ global       ┃
+                          ┃ base wad □ global       ┃
+                          ┃      ini □ uzdoom's own ┃
+                          ┃     args □ global       ┃
+                          ┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
+             /  type a wad's file name
+
+
+
+
+── 120x40 ──
+                                           ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓
+                                           ┃  1  2  3  4  5  6  7  8  9  0  ┃
+                                           ┃  q  w  e  r  t  y  u  i  o  p  ┃
+                                           ┃  a  s  d  f  g  h  j  k  l  '  ┃
+                                           ┃  z  x  c  v  b  n  m  .  _  -  ┃
+                                           ┃  abc   123  space  del    OK   ┃
+                   ┏━━━━━━━━━━━━━━━━━━━━━━━┃         (Menu) buttons         ┃━━━━━━━━━━━━━━━━━━━━━━━┓
+                   ┃ name  type a name     ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛                       ┃
+                   ┃                                                                                ┃
+                   ┃ wads ─────────────────────────────────────────────────────────────────────── 3 ┃
+                   ┃  !    1. DOOM2.WAD                                                             ┃
+                   ┃  !    2. brutal.pk3                                                            ┃
+                   ┃  !    3. hud.pk3                                                               ┃
+                   ┃          + add wads                                                            ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┃                                                                                ┃
+                   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                                              ┏━━━━━━[ overrides ]━━━━━━┓
+                                              ┃   uzdoom □ global       ┃
+                                              ┃ base wad □ global       ┃
+                                              ┃      ini □ uzdoom's own ┃
+                                              ┃     args □ global       ┃
+                                              ┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                   /  type a wad's file name

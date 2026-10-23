@@ -13,7 +13,7 @@ use crate::{
     error::Result,
     layout,
     loadout::Loadout,
-    loadout::profile::Profile,
+    loadout::profile::{self, Profile},
     loadout::shelf::{self, Shelf},
     loadout::wad::{Fault, Wad},
     picker,
@@ -95,30 +95,38 @@ impl<'a> Editor<'a> {
         ["Enter", "Save and Quit"],
         ["Esc", "Quit (Asks to Save Changes)"],
         ["Tab/↓", "Edit Wads"],
-        ["A-Z/0-9/_", "Input"],
+        ["A-Z/0-9/_-", "Input (Spaces Too)"],
         ["←/→/Home/End", "Move the Cursor"],
         ["/", "Search Wads"],
     ];
     const EDITING_LEGEND: &'static [[&'static str; 2]] = &[
-        ["Enter", "Save and Quit"],
+        ["Enter", "Save and Quit (Adds Wads on the Add Row)"],
         ["Esc", "Unselect, or Quit (Asks to Save)"],
         ["Tab", "Edit Name (or ↑ from the top)"],
-        ["J↓/K↑/Home/End", "Traverse"],
+        ["J↓/K↑", "Traverse (Home/End: First/Last)"],
         Search::LEGEND,
-        ["}/{", "Swap (Selected, If Any)"],
-        ["Space", "Inspect Wad"],
-        ["R", "Replace Wad"],
-        ["N", "Rename Wad's File"],
-        ["V", "Toggle Volatility"],
+        ["}⟨rb+down⟩/{⟨rb+up⟩", "Swap (Selected, If Any)"],
+        ["Space⟨lb+rb+up⟩", "Inspect Wad"],
+        [
+            "R⟨lb+rb+a⟩/Shift+R⟨lb+rb+x⟩",
+            "Replace Wad From the Wads/a File",
+        ],
+        ["N⟨lb+rb+b⟩", "Rename Wad's File"],
+        ["V⟨lb+rb+y⟩", "Toggle Volatility"],
         Selection::LEGEND,
         ["Y/Shift+Y", "Copy Selected/All Wads"],
         ["X/P", "Cut/Paste Wads"],
-        ["A/Shift+A", "Add Files/a Mod Folder"],
-        ["F", "Import from Dir"],
+        ["W/Shift+W⟨rb+y⟩", "Add Wads From the Wads/Files"],
+        ["A⟨lb+a⟩/Shift+A⟨lb+rb+down⟩", "Add Files/a Mod Folder"],
+        ["F⟨lb+rb+left⟩", "Import from Dir"],
         ["L", "Wads (Every Dir)"],
-        ["T", "Watch a Dir/Stop Watching"],
-        ["D", "Delete (Selected, If Any)"],
-        ["U/W/I/G", "Select UZDoom/Base Wad/Ini/Args"],
+        [
+            "B⟨rb+b⟩/Shift+B⟨rb+x⟩",
+            "Pick the Base Wad From the Wads/a File",
+        ],
+        ["T⟨lb+rb+right⟩", "Watch a Dir/Stop Watching"],
+        ["D⟨lb+b⟩", "Delete (Selected, If Any)"],
+        ["U⟨rb+a⟩/I⟨lb+right⟩/G", "Select UZDoom/Ini/Args"],
     ];
 
     /// Creates a profile and puts it in at `index` (see [`Loadout::insert`]), or in place of the
@@ -362,8 +370,45 @@ impl<'a> Editor<'a> {
     /// Opens the wads screen. The profile (and how it was opened, so moving its files isn't a
     /// change to ask about) follows any file moved there.
     fn open_library(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+        self.through_library(grimoire, |grimoire, shelf, clipboard| {
+            Library::summon(grimoire, shelf, clipboard)
+        })
+    }
+
+    /// Opens the wads screen to pick wads from, and hashes and adds them (see
+    /// [`Editor::insert_wads`]). Always redrawn after, since the screen covered the editor.
+    fn add_from_library(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+        let paths = self.through_library(grimoire, |grimoire, shelf, clipboard| {
+            Library::pick_wads(grimoire, shelf, clipboard)
+        })?;
+        if !paths.is_empty()
+            && let Some(wads) = hashing::wads(grimoire, &paths)?
+        {
+            self.insert_wads(wads);
+        }
+        Ok(())
+    }
+
+    /// Opens the wads screen to pick one wad, which `what` names there.
+    fn pick_from_library(
+        &mut self,
+        grimoire: &mut Grimoire,
+        what: &'static str,
+    ) -> Result<Option<PathBuf>> {
+        self.through_library(grimoire, |grimoire, shelf, clipboard| {
+            Library::pick_wad(grimoire, shelf, clipboard, what)
+        })
+    }
+
+    /// Runs `open` on the wads screen's shelf and the clipboard. The profile (and how it was opened,
+    /// so moving its files isn't a change to ask about) follows any file moved there.
+    fn through_library<T>(
+        &mut self,
+        grimoire: &mut Grimoire,
+        open: impl FnOnce(&mut Grimoire, &mut Shelf, &mut Clipboard) -> Result<T>,
+    ) -> Result<T> {
         let before = self.shelf.moves.len();
-        Library::summon(grimoire, &mut self.shelf, &mut self.clipboard)?;
+        let outcome = open(grimoire, &mut self.shelf, &mut self.clipboard)?;
         for (from, to) in &self.shelf.moves[before..] {
             self.profile.follow(from, to);
             self.original.follow(from, to);
@@ -371,7 +416,7 @@ impl<'a> Editor<'a> {
         self.faults = check_wads(&self.profile.wads);
         self.selection.clear();
         self.found = Found::default();
-        Ok(())
+        Ok(outcome)
     }
 
     /// Renames the file of the wad at `index`, where it is, to a name the user types. Every
@@ -502,6 +547,12 @@ impl<'a> Editor<'a> {
     /// another profile has asks whether to replace that one, or go back to the editor. A new
     /// profile left completely empty is simply dropped.
     fn save(&mut self, grimoire: &mut Grimoire) -> Result<Phase<Option<Profile>>> {
+        // ✂️ spaces around the name are no part of it
+        let trimmed = self.profile.name.trim_matches(' ').to_string();
+        if trimmed != self.profile.name {
+            self.name_caret = text::end(&trimmed);
+            self.profile.name = trimmed;
+        }
         if self.profile.name.is_empty() {
             if self.profile.wads.is_empty()
                 && self.profile.uzdoom.is_none()
@@ -511,6 +562,10 @@ impl<'a> Editor<'a> {
                 return Ok(Phase::Return(None));
             }
             Warning::empty_profile_name(grimoire)?;
+            return Ok(Phase::Render);
+        }
+        if profile::clean_name(&self.profile.name).is_none() {
+            Warning::bad_profile_name(grimoire)?;
             return Ok(Phase::Render);
         }
         if let Some(taken) = self.taken_by() {
@@ -622,6 +677,10 @@ impl<'a> Editor<'a> {
 impl Ritual for Editor<'_> {
     type Return = Option<Profile>;
 
+    fn typing(&self) -> bool {
+        self.search.is_some() || !self.editing_wads
+    }
+
     /// The name and the wad list in one window, and under it what the profile overrides.
     fn render(&mut self, page: &mut Page) {
         let name = [Field {
@@ -671,7 +730,7 @@ impl Ritual for Editor<'_> {
             ..inner
         };
         if let Some(cursor) = form::render(&name, focus, name_row, page.buffer_mut()) {
-            page.set_cursor_position(cursor);
+            crate::keyboard::place_caret(page, cursor);
         }
 
         let selected_fault = self
@@ -849,6 +908,11 @@ impl Ritual for Editor<'_> {
         let changed = self.is_changed();
         let index = self.table_state.selected_mut().as_mut().unwrap();
         match key_code {
+            // ➕ on the add row, Enter adds wads instead, as A does on a controller
+            KeyCode::Enter if self.editing_wads && *index == count => {
+                self.add_from_library(grimoire)?;
+                Ok(Phase::Render)
+            }
             KeyCode::Enter => self.save(grimoire),
             // 💾 leaving with changes asks what to do with them; with none it just leaves
             KeyCode::Esc if changed => {
@@ -936,7 +1000,10 @@ impl Ritual for Editor<'_> {
                     index != self.profile.wads.len() && self.toggle_volatility(index),
                 ))
             }
-            KeyCode::Char('r') if self.editing_wads && *index != self.profile.wads.len() => {
+            KeyCode::Char(key @ ('r' | 'R'))
+                if self.editing_wads && *index != self.profile.wads.len() =>
+            {
+                let from_menu = key == 'r';
                 let index = *index;
                 let wad = &self.profile.wads[index];
                 // 🔎 a missing wad with a file of its name in a wad dir is offered that file
@@ -958,6 +1025,8 @@ impl Ritual for Editor<'_> {
                         let start = Path::new(&self.profile.wads[index].path).parent();
                         let picked = if folder {
                             picker::dir(grimoire, start)?
+                        } else if from_menu {
+                            self.pick_from_library(grimoire, "replacement")?
                         } else {
                             picker::file(grimoire, Some(("wads", Wad::EXTENSIONS)), start)?
                         };
@@ -986,6 +1055,21 @@ impl Ritual for Editor<'_> {
                 Ok(Phase::Render)
             }
             KeyCode::Char('a') => {
+                let Some(mod_paths) =
+                    picker::files(grimoire, Some(("wads", Wad::EXTENSIONS)), None)?
+                else {
+                    return Ok(Phase::Prompt);
+                };
+                if mod_paths.is_empty() {
+                    return Ok(Phase::Prompt);
+                }
+                let Some(wads) = hashing::wads(grimoire, &mod_paths)? else {
+                    return Ok(Phase::Render);
+                };
+                self.insert_wads(wads);
+                Ok(Phase::Render)
+            }
+            KeyCode::Char('W') => {
                 let Some(mod_paths) =
                     picker::files(grimoire, Some(("wads", Wad::EXTENSIONS)), None)?
                 else {
@@ -1069,17 +1153,30 @@ impl Ritual for Editor<'_> {
                 }
                 Ok(Phase::Prompt)
             }
-            KeyCode::Char('w') => {
+            // 🖼️ the base wad is redrawn either way, since the wads screen or the hashing window
+            // may have covered the editor
+            KeyCode::Char('b') => {
+                if let Some(path) = self.pick_from_library(grimoire, "base wad")?
+                    && let Some(wad) = hashing::wad(grimoire, &path)?
+                {
+                    self.profile.base_wad = Some(wad);
+                }
+                Ok(Phase::Render)
+            }
+            KeyCode::Char('B') => {
                 if let Some(path) =
                     picker::file(grimoire, Some(("base wad", Wad::EXTENSIONS)), None)?
                 {
-                    // 🖼️ redrawn either way, since the hashing window may have covered the editor
                     if let Some(wad) = hashing::wad(grimoire, &path)? {
                         self.profile.base_wad = Some(wad);
                     }
                     return Ok(Phase::Render);
                 }
                 Ok(Phase::Prompt)
+            }
+            KeyCode::Char('w') => {
+                self.add_from_library(grimoire)?;
+                Ok(Phase::Render)
             }
             KeyCode::Char('g') => {
                 let current = self.profile.uzdoom_args.clone().unwrap_or_default();
@@ -1319,6 +1416,32 @@ mod tests {
     use std::{cell::Cell, fs};
 
     use super::*;
+
+    #[test]
+    fn snapshot_the_keyboard_over_the_editors_name_and_search() {
+        let mut editor = Editor::new(&[], Path::new(""));
+        editor.profile.name = "sigil_run".into();
+        editor.name_caret = 9;
+        insta::assert_snapshot!(crate::keyboard::over(|page| editor.render(page)));
+        let mut editor = editor_with(&["DOOM2.WAD", "brutal.pk3", "hud.pk3"]);
+        editor.start_search();
+        insta::assert_snapshot!(crate::keyboard::over(|page| editor.render(page)));
+    }
+
+    #[test]
+    fn select_is_shown_as_the_button_that_adds_wads_in_the_editor() {
+        use crate::gamepad::{Family, relabel};
+        let row = Editor::EDITING_LEGEND
+            .iter()
+            .find(|[_, said]| said.starts_with("Add Wads"))
+            .map(|[key, _]| relabel(key, Family::Xbox));
+        assert_eq!(row.as_deref(), Some("(View)/(RB)+(Y)"));
+    }
+
+    #[test]
+    fn the_legends_name_the_chords_that_make_their_keys() {
+        crate::gamepad::assert_chords_match(Editor::EDITING_LEGEND);
+    }
     use crate::loadout::scribe::tests::Altar;
 
     fn wad_with(altar: &Altar, name: &str, contents: &[u8]) -> Wad {

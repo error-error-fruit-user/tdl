@@ -172,7 +172,7 @@ pub fn draw_with_buttons(
     };
     let field_focus = (focus < fields.len()).then_some(focus);
     if let Some(cursor) = render(fields, field_focus, fields_area, page.buffer_mut()) {
-        page.set_cursor_position(cursor);
+        crate::keyboard::place_caret(page, cursor);
     }
     if !buttons.is_empty() {
         let row = Rect::new(inner.x, fields_area.bottom() + 1, inner.width, 1).intersection(inner);

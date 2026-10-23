@@ -4,7 +4,10 @@
 //! How it looks comes from the splash being worn (`splash.toml`, see [`theme::splash`]), and with
 //! pride from a flag picked out of `pride.toml` (see [`theme::pride`]).
 
-use std::time::{Duration, Instant};
+use std::{
+    borrow::Cow,
+    time::{Duration, Instant},
+};
 
 use ratatui::{
     buffer::Buffer,
@@ -15,7 +18,7 @@ use ratatui::{
 
 use crate::{
     error::{Error, Result},
-    music, quips,
+    gamepad, music, quips,
     ritual::{Grimoire, Haunted},
     theme::{
         self,
@@ -72,6 +75,7 @@ impl<'a> Look<'a> {
 /// Ctrl+C still quits.
 pub fn summon(grimoire: &mut Grimoire, quip: Option<&str>) -> Result<()> {
     music::start(false);
+    gamepad::start();
     let seed = quips::seed();
     let pride = theme::pride().then(theme::pride::worn);
     let look = Look::of(theme::splash::worn(), pride, seed);
@@ -114,6 +118,12 @@ pub fn summon(grimoire: &mut Grimoire, quip: Option<&str>) -> Result<()> {
             );
             dim(page.buffer_mut(), brightness);
         })?;
+        // 🎮 any button of a controller's ends it as a key's does, even a bumper that waits to be
+        // a chord's
+        if gamepad::press().is_some() && leaving.is_none() {
+            music::splash_over();
+            leaving = Some(Instant::now());
+        }
         if event::poll(FRAME)? {
             match event::read()? {
                 Event::Key(key)
@@ -123,6 +133,7 @@ pub fn summon(grimoire: &mut Grimoire, quip: Option<&str>) -> Result<()> {
                     return Err(Error::Interrupted);
                 }
                 Event::Key(key) if key.is_press() && leaving.is_none() => {
+                    gamepad::keyboard_used();
                     music::splash_over();
                     leaving = Some(Instant::now());
                 }
@@ -224,11 +235,24 @@ fn paint(
     }
     write(buffer, area, tagline_x, tagline_y, words, style);
 
-    let hint = &splash.hint.text;
+    let hint = hint_words(splash, gamepad::shown());
+    let hint = hint.as_ref();
     let hint_x = area.x + area.width.saturating_sub(hint.chars().count() as u16) / 2;
     let style = Style::new().fg(pulse(splash, elapsed));
     write(buffer, area, hint_x, tagline_y + 2, hint, style);
 }
+
+/// The words under the tagline: the hint from the splash file, or when a controller is recognized
+/// (`family`) `Hit a Button to Start`, since any of its buttons ends the splash.
+fn hint_words(splash: &Splash, family: Option<gamepad::Family>) -> Cow<'_, str> {
+    match family {
+        Some(_) => Cow::Borrowed(PAD_HINT),
+        None => Cow::Borrowed(&splash.hint.text),
+    }
+}
+
+/// What the hint says while a controller is recognized.
+const PAD_HINT: &str = "Hit a Button to Start";
 
 /// Which stripe each half row of the logo is: the stripes spread evenly over the rows from the
 /// first with a block in it to the last, two half rows to a row.
@@ -451,6 +475,26 @@ mod tests {
         paint(&look, &fire, Duration::ZERO, area, None, &mut buffer);
         let row = |y: u16| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>();
         assert!((0..24).any(|y| row(y).trim() == look.splash.tagline.text));
+    }
+
+    #[test]
+    fn a_recognized_controller_is_told_to_hit_a_button() {
+        let look = built_in();
+        use gamepad::Family::*;
+        assert_eq!(hint_words(look.splash, None), look.splash.hint.text);
+        for family in [
+            Xbox,
+            PlayStation,
+            Nintendo,
+            SteamDeck,
+            SteamController,
+            Generic,
+        ] {
+            assert_eq!(
+                hint_words(look.splash, Some(family)),
+                "Hit a Button to Start"
+            );
+        }
     }
 
     #[test]

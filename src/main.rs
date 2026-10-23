@@ -23,6 +23,8 @@ use crate::{
 mod cli;
 mod clipboard;
 mod error;
+mod gamepad;
+mod keyboard;
 mod layout;
 mod loadout;
 mod music;
@@ -48,6 +50,13 @@ fn main() {
     }
     // 📖 clap answers --help and --version itself, and says what is wrong with anything else
     let cli = Cli::parse(std::env::args().skip(1)).unwrap_or_else(|error| error.exit());
+    if cli.controller_test {
+        if let Err(error) = gamepad::controller_test(&mut std::io::stdout()) {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if cli.list_quips {
         print!("{}", quips::listing());
         return;
@@ -106,6 +115,7 @@ fn main() {
     }
     let headless = cli.headless;
     let seal = cli.seal;
+    let setup = cli.setup;
     let start = Start {
         loadout: cli.loadout,
         keep_loadout: cli.keep_loadout,
@@ -136,6 +146,14 @@ fn main() {
     // 📜 --seal draws no windows either: the loadout goes into the scroll, and tdl closes
     if let Some(seal) = seal {
         if let Err(message) = Launcher::seal_plain(start, &seal) {
+            eprintln!("{message}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    // 🧰 --setup keeps what the --keep- flags give, with no windows, and closes
+    if setup {
+        if let Err(message) = Launcher::setup_plain(start) {
             eprintln!("{message}");
             std::process::exit(1);
         }

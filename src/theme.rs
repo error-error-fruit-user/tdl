@@ -213,6 +213,9 @@ pub struct Glyphs {
     pub broken_mark: String,
     pub changed_mark: String,
     pub volatile_mark: String,
+    /// No longer does anything: a controller's buttons are always drawn as text. Kept so a theme
+    /// that sets it still loads.
+    pub controller_font: bool,
 }
 
 impl Default for Glyphs {
@@ -223,6 +226,7 @@ impl Default for Glyphs {
             broken_mark: "!".into(),
             changed_mark: "~".into(),
             volatile_mark: "*".into(),
+            controller_font: false,
         }
     }
 }

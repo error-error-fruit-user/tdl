@@ -124,7 +124,7 @@ pub enum Typed {
 }
 
 impl Search {
-    pub const LEGEND: [&str; 2] = ["/ ; ,", "Search, Next, Previous"];
+    pub const LEGEND: [&str; 2] = ["/ ;⟨rb+right⟩ ,⟨rb+left⟩", "Search, Next, Previous"];
 
     /// The longest a query may be typed.
     const MAX_LENGTH: usize = 64;
@@ -209,10 +209,10 @@ impl Search {
         page.render_widget(line, area);
         let column = area.x + 1 + layout::width(text::before(&self.query, self.caret));
         if area.height > 0 {
-            page.set_cursor_position(Position::new(
-                column.min(area.right().saturating_sub(1)),
-                area.y,
-            ));
+            crate::keyboard::place_caret(
+                page,
+                Position::new(column.min(area.right().saturating_sub(1)), area.y),
+            );
         }
     }
 }

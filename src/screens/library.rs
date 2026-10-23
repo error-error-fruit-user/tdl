@@ -57,6 +57,18 @@ pub struct Library<'a> {
     found: Found,
     /// The wads picked to be copied or cut together.
     selection: Selection,
+    purpose: Purpose,
+}
+
+/// What the screen is for: looking around and moving wads, or picking some to use elsewhere.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+enum Purpose {
+    #[default]
+    Browse,
+    /// Any number of wads, for a profile's list.
+    Wads,
+    /// One wad, such as a base wad or the replacement for one.
+    Wad(&'static str),
 }
 
 /// One wad found in a dir.
@@ -90,15 +102,16 @@ impl<'a> Library<'a> {
     const LEGEND: &'static [[&'static str; 2]] = &[
         ["Esc", "Back (unselects first)"],
         ["Tab", "Every Wad/Each Dir"],
-        ["J↓/K↑/Home/End", "Traverse"],
+        ["J↓/K↑", "Traverse (Home/End: First/Last)"],
         Search::LEGEND,
-        ["Enter", "Open/Close Dir"],
+        ["Enter", "Open/Close Dir (Takes the Wad When Picking)"],
+        ["Space", "Take the Picked Wads or a Dir's (Picking Wads)"],
         Selection::LEGEND,
         ["Y/X", "Copy/Cut (Selected, or Whole Dir)"],
         ["P", "Paste Into Dir (Copies or Moves Files)"],
-        ["N", "Rename Wad"],
-        ["A", "Add Dir"],
-        ["D", "Erase Wads or Dismiss Their Dir"],
+        ["N⟨lb+rb+b⟩", "Rename Wad"],
+        ["A⟨lb+a⟩", "Add Dir"],
+        ["D⟨lb+b⟩", "Erase Wads or Dismiss Their Dir"],
     ];
 
     /// Opens the screen on `shelf`, which it changes as dirs are added and taken out and files
@@ -108,7 +121,33 @@ impl<'a> Library<'a> {
         shelf: &'a mut Shelf,
         clipboard: &'a mut Clipboard,
     ) -> Result<()> {
-        Self::new(shelf, clipboard).invoke(grimoire)
+        Self::new(shelf, clipboard).invoke(grimoire)?;
+        Ok(())
+    }
+
+    /// Opens the screen to pick wads: `Enter` on a wad takes it (or every wad picked with `Shift+V`
+    /// and `M`), `Space` takes a whole dir. Empty if the user backs out.
+    pub fn pick_wads(
+        grimoire: &mut Grimoire,
+        shelf: &'a mut Shelf,
+        clipboard: &'a mut Clipboard,
+    ) -> Result<Vec<PathBuf>> {
+        let mut library = Self::new(shelf, clipboard);
+        library.purpose = Purpose::Wads;
+        library.invoke(grimoire)
+    }
+
+    /// Opens the screen to pick one wad, which `what` names in the title ("base wad"). `None` if
+    /// the user backs out.
+    pub fn pick_wad(
+        grimoire: &mut Grimoire,
+        shelf: &'a mut Shelf,
+        clipboard: &'a mut Clipboard,
+        what: &'static str,
+    ) -> Result<Option<PathBuf>> {
+        let mut library = Self::new(shelf, clipboard);
+        library.purpose = Purpose::Wad(what);
+        Ok(library.invoke(grimoire)?.into_iter().next())
     }
 
     fn new(shelf: &'a mut Shelf, clipboard: &'a mut Clipboard) -> Self {
@@ -125,6 +164,7 @@ impl<'a> Library<'a> {
             search: None,
             found: Found::default(),
             selection: Selection::default(),
+            purpose: Purpose::default(),
         };
         library.restack();
         library
@@ -280,6 +320,18 @@ impl<'a> Library<'a> {
                 _ => None,
             })
             .collect()
+    }
+
+    /// Ends the screen with the wads picked (the one under the cursor, a dir's, or those marked), if
+    /// it was opened to pick: one wad, or any number.
+    fn pick(&self) -> Phase<Vec<PathBuf>> {
+        let picked = self.picked();
+        match self.purpose {
+            Purpose::Browse => Phase::Prompt,
+            _ if picked.is_empty() => Phase::Prompt,
+            Purpose::Wads => Phase::Return(picked),
+            Purpose::Wad(_) => Phase::Return(picked.into_iter().take(1).collect()),
+        }
     }
 
     /// Puts the picked wads on the clipboard, to be copied or (if `cut`) moved where they are
@@ -566,7 +618,7 @@ impl<'a> Library<'a> {
     }
 
     /// Takes a key while a search is being typed. Only Enter moves the cursor: to the best match.
-    fn search_key(&mut self, key_code: KeyCode) -> Phase<()> {
+    fn search_key(&mut self, key_code: KeyCode) -> Phase<Vec<PathBuf>> {
         let Some(search) = &mut self.search else {
             return Phase::Prompt;
         };
@@ -613,14 +665,21 @@ fn file_name(path: &Path) -> String {
 }
 
 impl Ritual for Library<'_> {
-    type Return = ();
+    /// The wads picked, if the screen was for picking; always empty when it wasn't.
+    type Return = Vec<PathBuf>;
+
+    fn typing(&self) -> bool {
+        self.search.is_some()
+    }
 
     fn render(&mut self, page: &mut Page) {
-        let title = if self.every {
-            Self::EVERY_TITLE
-        } else {
-            Self::TITLE
+        let title = match (self.purpose, self.every) {
+            (Purpose::Wad(what), _) => format!("pick the {what}"),
+            (Purpose::Wads, _) => "pick wads".to_string(),
+            (Purpose::Browse, true) => Self::EVERY_TITLE.to_string(),
+            (Purpose::Browse, false) => Self::TITLE.to_string(),
         };
+        let title = title.as_str();
         let indent = if self.every { 0 } else { 2 };
         let label_width = self
             .rows
@@ -770,7 +829,7 @@ impl Ritual for Library<'_> {
                 self.selection.clear();
                 Ok(Phase::Render)
             }
-            KeyCode::Esc => Ok(Phase::Return(())),
+            KeyCode::Esc => Ok(Phase::Return(Vec::new())),
             KeyCode::Tab => {
                 self.every = !self.every;
                 self.arrange();
@@ -785,8 +844,11 @@ impl Ritual for Library<'_> {
                     self.add_source(grimoire)?;
                     Ok(Phase::Render)
                 }
+                Some(Item::Wad(..)) => Ok(self.pick()),
                 _ => Ok(Phase::Prompt),
             },
+            // ⌨️ a whole dir's wads at once, or the picked ones
+            KeyCode::Char(' ') if self.purpose == Purpose::Wads => Ok(self.pick()),
             KeyCode::Char('j') | KeyCode::Down => Ok(Phase::render_if(wrap_around::select_next(
                 self.table_state.selected_mut(),
                 count,
@@ -850,6 +912,34 @@ mod tests {
     use std::fs;
 
     use super::*;
+
+    #[test]
+    fn snapshot_the_keyboard_over_the_wads_search() {
+        let altar = Altar::new("snap-library-keyboard");
+        let mut shelf = stocked(&altar);
+        let mut clipboard = Clipboard::Empty;
+        let mut library = Library::new(&mut shelf, &mut clipboard);
+        library.search = Some(Search::default());
+        // 🧹 the altar's dir changes every run, so the dirs are shown from inside it
+        let root = altar.file("");
+        for (item, (label, _)) in library.rows.iter().zip(&mut library.labels) {
+            if let Item::Source(source) = item {
+                *label = format!(
+                    "<altar>/{}",
+                    library.sources[*source]
+                        .strip_prefix(&root)
+                        .unwrap()
+                        .display()
+                );
+            }
+        }
+        insta::assert_snapshot!(crate::keyboard::over(|page| library.render(page)));
+    }
+
+    #[test]
+    fn the_legends_name_the_chords_that_make_their_keys() {
+        crate::gamepad::assert_chords_match(Library::LEGEND);
+    }
     use crate::loadout::scribe::tests::Altar;
 
     /// Two wad dirs and the downloads in `altar`, with `brutal.pk3` in all three.
@@ -1003,6 +1093,43 @@ mod tests {
         library.every = true;
         library.arrange();
         assert_eq!(library.paste_target(), None, "not in the every-wad view");
+    }
+
+    #[test]
+    fn picking_takes_what_is_under_the_cursor_or_marked_and_browsing_takes_nothing() {
+        let altar = Altar::new("library-pick");
+        let mut shelf = stocked(&altar);
+        let mut clipboard = Clipboard::Empty;
+        let mut library = Library::new(&mut shelf, &mut clipboard);
+        library.table_state.select(Some(1));
+        assert!(matches!(library.pick(), Phase::Prompt));
+
+        library.purpose = Purpose::Wads;
+        let Phase::Return(picked) = library.pick() else {
+            panic!("a wad is under the cursor");
+        };
+        assert_eq!(picked, vec![altar.file("wads/brutal.pk3")]);
+        library.selection.toggle_mark(1, library.rows.len());
+        library.selection.toggle_mark(2, library.rows.len());
+        let Phase::Return(picked) = library.pick() else {
+            panic!("two wads are marked");
+        };
+        assert_eq!(picked.len(), 2);
+
+        // 📂 on a dir with nothing marked, its wads are all taken
+        library.selection.clear();
+        library.table_state.select(Some(0));
+        let Phase::Return(picked) = library.pick() else {
+            panic!("a dir has wads");
+        };
+        assert_eq!(picked.len(), 2);
+
+        // 1️⃣ one wad is only ever one
+        library.purpose = Purpose::Wad("base wad");
+        let Phase::Return(picked) = library.pick() else {
+            panic!("a dir has wads");
+        };
+        assert_eq!(picked.len(), 1);
     }
 
     #[test]

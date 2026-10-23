@@ -45,6 +45,11 @@ pub struct Cli {
     pub seal: Option<Seal>,
     /// Lists the built-in quips and does nothing else.
     pub list_quips: bool,
+    /// Says what a controller sends, with no windows, until Ctrl+C.
+    pub controller_test: bool,
+    /// Keeps what the `--keep-` flags give (UZDoom, base wad, ini, theme, splash, wad dirs,
+    /// loadout) without any windows, and closes.
+    pub setup: bool,
     /// Plays the pride splash for this run.
     pub pride: bool,
     /// Skips the splash screen.
@@ -498,6 +503,16 @@ struct Args {
     #[arg(long, exclusive = true, help_heading = SPLASH)]
     list_quips: bool,
 
+    /// With no windows, print what each controller button, trigger and stick sends, as the
+    /// system names it, where tdl takes it to be and the key it makes, until Ctrl+C
+    #[arg(long, exclusive = true)]
+    controller_test: bool,
+
+    /// Keep what the --keep- flags give, with no windows, and close: how the installer points tdl at
+    /// the UZDoom and base wad it put next to it
+    #[arg(long, conflicts_with = "seal")]
+    setup: bool,
+
     /// Play SONG (a wav, mp3, flac or ogg file) instead of the built-in track
     #[arg(
         long,
@@ -699,6 +714,12 @@ impl Cli {
                 "--seal does its one thing, so it can't go with launch, host or join",
             ));
         }
+        if args.setup && args.command.is_some() {
+            return Err(Args::command().error(
+                ErrorKind::ArgumentConflict,
+                "--setup does its one thing, so it can't go with launch, host or join",
+            ));
+        }
         let mut headless = false;
         let command = args.command.map(|command| match command {
             Commands::Launch {
@@ -798,6 +819,8 @@ impl Cli {
                 with_settings: args.with_settings,
             }),
             list_quips: args.list_quips,
+            controller_test: args.controller_test,
+            setup: args.setup,
             pride: args.with_pride,
             no_splash: args.no_splash,
             keep_music: args.keep_music,
@@ -1529,9 +1552,25 @@ mod tests {
     }
 
     #[test]
+    fn the_controller_test_goes_alone() {
+        assert!(parse(&["--controller-test"]).unwrap().controller_test);
+        assert!(parse(&["--controller-test", "--no-splash"]).is_err());
+        assert!(!parse(&[]).unwrap().controller_test);
+    }
+
+    #[test]
     fn listing_the_quips_goes_alone() {
         assert!(parse(&["--list-quips"]).unwrap().list_quips);
         assert!(parse(&["--list-quips", "--no-splash"]).is_err());
+    }
+
+    #[test]
+    fn setup_keeps_files_alone_and_goes_with_no_command() {
+        let cli = parse(&["--setup", "--keep-uzdoom", "Cargo.toml"]).unwrap();
+        assert!(cli.setup);
+        assert!(!parse(&[]).unwrap().setup);
+        assert!(parse(&["--setup", "launch", "p"]).is_err());
+        assert!(parse(&["--setup", "--seal", "s.scroll"]).is_err());
     }
 
     #[test]

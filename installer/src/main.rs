@@ -1,6 +1,5 @@
 //! `tdl-install`: puts UZDoom and Freedoom 2 next to tdl, so a new player has something to play
-//! with. It makes two folders beside it (or beside `--dir`) and touches nothing else on the
-//! machine:
+//! with, and sets tdl up to use them. It makes two folders beside it (or beside `--dir`):
 //!
 //! ```text
 //! uzdoom/                   UZDoom's own folder: the Windows release unpacked, or the AppImage
@@ -10,6 +9,9 @@
 //! tdl then offers `wads` and `wads/base_wads` as wad pools when it starts. Each download is a
 //! pinned release, checked against its size and BLAKE3 hash before anything is unpacked. What is
 //! already there is left alone.
+//!
+//! One thing happens outside those folders, and `--no-link` leaves it out: the UZDoom and the base
+//! wad are kept as tdl's global ones by running the `tdl` beside this program with `--setup`.
 
 use std::{
     fs,
@@ -73,6 +75,9 @@ struct Cli {
     /// Leaves Freedoom 2 out.
     #[arg(long)]
     no_freedoom: bool,
+    /// Doesn't point tdl at the UZDoom and the base wad.
+    #[arg(long)]
+    no_link: bool,
 }
 
 /// What went wrong, for the user.
@@ -111,14 +116,80 @@ fn main() -> ExitCode {
     if !cli.no_freedoom {
         report("Freedoom 2", install_freedoom(&dir, &scratch));
     }
+    if !cli.no_link {
+        link(&dir);
+    }
     if failed {
         return ExitCode::FAILURE;
     }
-    println!(
-        "Done. In tdl, U picks UZDoom and W the base wad; tdl offers the wads folders as wad pools \
-         when it starts."
-    );
+    println!("Done. tdl offers the wads folders as wad pools when it starts.");
     ExitCode::SUCCESS
+}
+
+/// Where UZDoom is inside `<dir>/uzdoom/` on this system, if it is there.
+fn uzdoom_in(dir: &Path) -> Option<PathBuf> {
+    let name = if cfg!(windows) {
+        "uzdoom.exe"
+    } else {
+        APPIMAGE
+    };
+    Some(dir.join("uzdoom").join(name)).filter(|path| path.is_file())
+}
+
+/// The arguments that make tdl keep `uzdoom` and `base_wad` as its global ones, without windows.
+fn setup_args(uzdoom: Option<&Path>, base_wad: Option<&Path>) -> Vec<std::ffi::OsString> {
+    let mut args = vec!["--setup".into()];
+    if let Some(uzdoom) = uzdoom {
+        args.extend(["--keep-uzdoom".into(), uzdoom.into()]);
+    }
+    if let Some(base_wad) = base_wad {
+        args.extend(["--keep-base-wad".into(), base_wad.into()]);
+    }
+    args
+}
+
+/// Points tdl at the UZDoom and the base wad in `dir`, by running the `tdl` there with `--setup`.
+/// Without a `tdl` there, or if it fails, says what to run instead. Nothing is an error: the files
+/// are in place, and tdl can pick them (`U` and `B`).
+fn link(dir: &Path) {
+    let uzdoom = uzdoom_in(dir);
+    let base_wad = Some(dir.join("wads").join("base_wads").join(FREEDOOM_FILES[0].1))
+        .filter(|path| path.is_file());
+    if uzdoom.is_none() && base_wad.is_none() {
+        return;
+    }
+    let args = setup_args(uzdoom.as_deref(), base_wad.as_deref());
+    let tdl = dir.join(if cfg!(windows) { "tdl.exe" } else { "tdl" });
+    let manually = || {
+        let shown: Vec<_> = args.iter().map(|arg| arg.to_string_lossy()).collect();
+        println!("To point tdl at them, run: tdl {}", shown.join(" "));
+    };
+    if !tdl.is_file() {
+        println!(
+            "tdl isn't in {}, so it isn't linked to them yet.",
+            dir.display()
+        );
+        manually();
+        return;
+    }
+    match std::process::Command::new(&tdl).args(&args).status() {
+        Ok(status) if status.success() => {
+            if uzdoom.is_some() {
+                println!("tdl now uses that UZDoom");
+            }
+            if base_wad.is_some() {
+                println!("tdl now uses that base wad");
+            }
+        }
+        Ok(status) => {
+            eprintln!("tdl --setup failed ({status}), so it isn't linked to them yet.");
+            manually();
+        }
+        Err(error) => {
+            eprintln!("Couldn't run {}: {error}", tdl.display());
+            manually();
+        }
+    }
 }
 
 /// Unpacks or places UZDoom in `<dir>/uzdoom/`, unless that is there already. Returns the
@@ -377,6 +448,20 @@ mod tests {
             assert_eq!(download.blake3.len(), 64, "{}", download.name);
             assert!(download.url.ends_with(download.name));
         }
+    }
+
+    #[test]
+    fn the_setup_arguments_name_only_what_is_there() {
+        let args = |uzdoom, wad| setup_args(uzdoom, wad);
+        assert_eq!(args(None, None), ["--setup"]);
+        assert_eq!(
+            args(Some(Path::new("u")), Some(Path::new("w"))),
+            ["--setup", "--keep-uzdoom", "u", "--keep-base-wad", "w"]
+        );
+        assert_eq!(
+            args(None, Some(Path::new("w"))),
+            ["--setup", "--keep-base-wad", "w"]
+        );
     }
 
     #[test]

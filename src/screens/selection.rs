@@ -13,7 +13,7 @@ pub struct Selection {
 }
 
 impl Selection {
-    pub const LEGEND: [&str; 2] = ["Shift+V/M", "Select Range/Mark Row"];
+    pub const LEGEND: [&str; 2] = ["Shift+V⟨lb+down⟩/M⟨lb+up⟩", "Select Range/Mark Row"];
 
     /// Starts a range at `cursor`, or ends the one being stretched, keeping its rows marked.
     pub fn toggle_range(&mut self, cursor: usize, count: usize) {

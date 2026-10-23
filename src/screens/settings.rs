@@ -236,6 +236,10 @@ impl SettingsForm {
 impl Ritual for SettingsForm {
     type Return = Option<Places>;
 
+    fn typing(&self) -> bool {
+        matches!(self.focus, Self::ARGS | Self::QUIP)
+    }
+
     fn render(&mut self, page: &mut Page) {
         let place = if self.own { "this loadout" } else { "global" };
         let splash = if self.settings.splash {
@@ -644,6 +648,13 @@ mod tests {
     use insta::assert_snapshot;
 
     use super::*;
+
+    #[test]
+    fn snapshot_the_keyboard_over_the_settings() {
+        let mut form = form(Settings::of(&Uac::default()), PathBuf::new());
+        form.focus = SettingsForm::ARGS;
+        insta::assert_snapshot!(crate::keyboard::over(|page| form.render(page)));
+    }
     use crate::testing;
 
     /// A form with `settings` as the global ones, in use, and the same as the loadout's own.

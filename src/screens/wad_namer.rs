@@ -150,6 +150,10 @@ fn extension_label(extension: &str) -> &str {
 impl<F: Fn(&str) -> bool> Ritual for WadNamer<F> {
     type Return = Option<String>;
 
+    fn typing(&self) -> bool {
+        true
+    }
+
     fn render(&mut self, page: &mut Page) {
         let fields = [Field {
             label: "name",
@@ -203,6 +207,12 @@ impl<F: Fn(&str) -> bool> Ritual for WadNamer<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshot_the_keyboard_over_the_wad_namer() {
+        let mut namer = WadNamer::new("brutal_2.pk3", |_: &str| true);
+        insta::assert_snapshot!(crate::keyboard::over(|page| namer.render(page)));
+    }
 
     #[test]
     fn the_extension_is_kept_and_only_the_stem_is_typed() {

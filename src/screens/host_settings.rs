@@ -164,6 +164,10 @@ fn save_defaults(
 impl Ritual for HostSettingsForm {
     type Return = Choice;
 
+    fn typing(&self) -> bool {
+        matches!(self.index, Index::Map | Index::Port | Index::Code)
+    }
+
     fn render(&mut self, page: &mut Page) {
         let mode = if self.settings.is_deathmatch {
             "deathmatch"
@@ -412,6 +416,13 @@ mod tests {
     use insta::assert_snapshot;
 
     use super::*;
+
+    #[test]
+    fn snapshot_the_keyboard_over_the_host_form() {
+        let mut form = HostSettingsForm::new(None, None);
+        form.index = Index::Map;
+        insta::assert_snapshot!(crate::keyboard::over(|page| form.render(page)));
+    }
     use crate::testing;
 
     #[test]

@@ -1,0 +1,91 @@
+---
+source: src/screens/settings.rs
+expression: "crate::keyboard::over(|page| form.render(page))"
+---
+── 40x20 ──
+   ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓
+ ┏━┃  1  2  3  4  5  6  7  8  9  0  ┃━┓
+ ┃ ┃  q  w  e  r  t  y  u  i  o  p  ┃ ┃
+ ┃ ┃  a  s  d  f  g  h  j  k  l  '  ┃ ┃
+ ┃ ┃  z  x  c  v  b  n  m  .  _  -  ┃ ┃
+ ┃ ┃  abc   123  space  del    OK   ┃ ┃
+ ┃ ┃         (Menu) buttons         ┃ ┃
+ ┃ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┃
+ ┃                                    ┃
+ ┃ splash look  built-in, ←/→ or Ente ┃
+ ┃                                    ┃
+ ┃ pride flags  built-in, ←/→ or Ente ┃
+ ┃                                    ┃
+ ┃         ini  uzdoom's own, Enter t ┃
+ ┃                                    ┃
+ ┃ uzdoom args  none                  ┃
+ ┃                                    ┃
+ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                 [F1/?]
+
+── 80x24 ──
+                       ┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓
+                 ┏━━━━━┃  1  2  3  4  5  6  7  8  9  0  ┃━━━━┓
+                 ┃     ┃  q  w  e  r  t  y  u  i  o  p  ┃    ┃
+                 ┃     ┃  a  s  d  f  g  h  j  k  l  '  ┃    ┃
+                 ┃     ┃  z  x  c  v  b  n  m  .  _  -  ┃    ┃
+                 ┃     ┃  abc   123  space  del    OK   ┃    ┃
+                 ┃     ┃         (Menu) buttons         ┃    ┃
+                 ┃     ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛    ┃
+                 ┃                                           ┃
+                 ┃        song  built-in, Enter to pick      ┃
+                 ┃                                           ┃
+                 ┃       theme  built-in, ←/→ or Enter       ┃
+                 ┃                                           ┃
+                 ┃ splash look  built-in, ←/→ or Enter       ┃
+                 ┃                                           ┃
+                 ┃ pride flags  built-in, ←/→ or Enter       ┃
+                 ┃                                           ┃
+                 ┃         ini  uzdoom's own, Enter to pick  ┃
+                 ┃                                           ┃
+                 ┃ uzdoom args  none                         ┃
+                 ┃                                           ┃
+                 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                                    [F1/?]
+
+── 120x40 ──
+
+
+
+
+
+
+                                     ┏━━━━━━━━━━━━━━━[ settings ]━━━━━━━━━━━━━━━━┓
+                                     ┃                                           ┃
+                                     ┃     kept in  global                       ┃
+                                     ┃                                           ┃
+                                     ┃      splash  shown                        ┃
+                                     ┃                                           ┃
+                                     ┃       pride  off                          ┃
+                                     ┃                                           ┃
+                                     ┃       music  splash only                  ┃
+                                     ┃                                           ┃
+                                     ┃       quips  shown                        ┃
+                                     ┃                                           ┃
+                                     ┃        song  built-in, Enter to pick      ┃
+                                     ┃                                           ┃
+                                     ┃       theme  built-in, ←/→ or Enter       ┃
+                                     ┃                                           ┃
+                                     ┃ splash look  built-in, ←/→ or Enter       ┃
+                                     ┃                                           ┃
+                                     ┃ pride flags  built-in, ←/→ or Enter       ┃
+                                     ┃                                           ┃
+                                     ┃         ini  uzdoom's own, Enter to pick  ┃
+                                     ┃                                           ┃
+                                     ┃ uzdoom args  none                         ┃
+                                     ┃                                           ┃
+                                     ┃ splash quip  random, #12, or your own     ┃
+                                     ┃                                           ┃
+                                     ┗━━━━━┏━━━━━━━━━━[ keyboard ]━━━━━━━━━━┓━━━━┛
+                                           ┃  1  2  3  4  5  6  7  8  9  0  ┃
+                                           ┃  q  w  e  r  t  y  u  i  o  p  ┃
+                                           ┃  a  s  d  f  g  h  j  k  l  '  ┃
+                                           ┃  z  x  c  v  b  n  m  .  _  -  ┃
+                                           ┃  abc   123  space  del    OK   ┃
+                                           ┃         (Menu) buttons         ┃
+                                           ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛

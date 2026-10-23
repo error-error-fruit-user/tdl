@@ -73,6 +73,10 @@ impl<'a> TextPrompt<'a> {
 impl Ritual for TextPrompt<'_> {
     type Return = Option<String>;
 
+    fn typing(&self) -> bool {
+        true
+    }
+
     fn render(&mut self, page: &mut Page) {
         let fields = [Field {
             label: self.label,
@@ -100,6 +104,12 @@ impl Ritual for TextPrompt<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshot_the_keyboard_over_a_text_prompt() {
+        let mut prompt = TextPrompt::new("uzdoom args", "args", "global", "-nomusic", 40);
+        insta::assert_snapshot!(crate::keyboard::over(|page| prompt.render(page)));
+    }
 
     #[test]
     fn enter_keeps_what_was_typed_and_esc_what_was_there() {
