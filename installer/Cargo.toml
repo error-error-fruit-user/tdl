@@ -1,0 +1,13 @@
+[package]
+name = "tdl-install"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.99.1"
+license = "0BSD"
+description = "Puts UZDoom and Freedoom 2 next to tdl"
+
+[dependencies]
+blake3 = "1.8.7"
+clap = { version = "4.5.41", features = ["derive", "wrap_help"] }
+ureq = "3.4.2"
+zip = { version = "2.6.1", default-features = false, features = ["deflate"] }

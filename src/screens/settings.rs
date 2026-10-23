@@ -15,8 +15,8 @@ use crate::{
     },
 };
 
-/// The settings: whether the splash screen shows and extra arguments for UZDoom, for this loadout;
-/// and the music, the song, and the quips, for every loadout.
+/// The settings in the form: whether the splash screen shows, extra arguments for UZDoom, the
+/// music, the song, the quips and the rest, as one place keeps them (see [`Places`]).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub splash: bool,
@@ -38,6 +38,19 @@ pub struct Settings {
     pub pride_flags: Option<PathBuf>,
     /// The ini every profile without its own plays with, instead of UZDoom's usual one.
     pub ini: Option<PathBuf>,
+}
+
+/// The settings of both places they can be kept in, the global settings and the loadout's own, and
+/// which of them the loadout uses.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Places {
+    /// Whether the loadout uses its own settings: `settings` are the loadout's own, and `other`
+    /// the global ones. Otherwise the other way round.
+    pub own: bool,
+    /// The settings in use.
+    pub settings: Settings,
+    /// The settings of the place not in use.
+    pub other: Settings,
 }
 
 impl Settings {
@@ -77,12 +90,17 @@ impl Settings {
     }
 }
 
-/// A form for the [`Settings`], opened with `O` in the launcher. Enter keeps the changes, Esc
-/// throws them away.
+/// A form for the [`Settings`], opened with `O` in the launcher. Its first field switches between
+/// the global settings and the loadout's own, showing the ones switched to, and the form changes
+/// whichever it shows. Enter keeps the changes, Esc throws them away.
 pub struct SettingsForm {
+    /// The settings shown, of the loadout's own if `own`, else the global ones.
     settings: Settings,
+    own: bool,
+    /// The settings of the place not shown, as they were left when it was switched away from.
+    other: Settings,
     /// The settings as the form was opened with, to tell whether Esc has anything to ask about.
-    original: Settings,
+    original: Places,
     focus: usize,
     /// Where the cursor is in the focused field, when it is one that is typed into.
     caret: usize,
@@ -95,29 +113,38 @@ impl SettingsForm {
     fn border_color() -> Color {
         theme::worn().colors.screen
     }
-    const FIELDS: usize = 11;
+    const FIELDS: usize = 12;
     /// The longest the UZDoom arguments may get, so the field stays something that fits a window.
     const MAX_ARGS: usize = 120;
     /// The longest a quip may be typed; the splash cuts it shorter on a narrow terminal anyway.
     const MAX_QUIP: usize = 60;
     /// The fields before this are switched with J/K; the ones from here are typed into.
-    const TOGGLES: usize = 4;
-    const PRIDE: usize = 1;
+    const TOGGLES: usize = 5;
+    /// Which settings are kept in: the global ones or the loadout's own.
+    const PLACE: usize = 0;
+    const SPLASH: usize = 1;
+    const PRIDE: usize = 2;
     /// The one toggle with three choices instead of two.
-    const MUSIC: usize = 2;
+    const MUSIC: usize = 3;
     /// Picked with a file dialog rather than typed, as are the theme, the splash's look, the
     /// pride flags and the ini.
-    const SONG: usize = 4;
-    const THEME: usize = 5;
-    const SPLASH_LOOK: usize = 6;
-    const PRIDE_FLAGS: usize = 7;
-    const INI: usize = 8;
-    const ARGS: usize = 9;
-    const QUIP: usize = 10;
+    const SONG: usize = 5;
+    const THEME: usize = 6;
+    const SPLASH_LOOK: usize = 7;
+    const PRIDE_FLAGS: usize = 8;
+    const INI: usize = 9;
+    const ARGS: usize = 10;
+    const QUIP: usize = 11;
     const TOGGLE_LEGEND: &[[&'static str; 2]] = &[
         ["Enter", "Save"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["J/K, ←/→", "Switch"],
+        ["Esc", "Quit (Asks to Save Changes)"],
+    ];
+    const PLACE_LEGEND: &[[&'static str; 2]] = &[
+        ["Enter", "Save (the Loadout Uses the Settings Shown)"],
+        ["Tab/↓, Backtab/↑", "Traverse"],
+        ["J/K, ←/→", "Global Settings or This Loadout's Own"],
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
     const ARGS_LEGEND: &[[&'static str; 2]] = &[
@@ -172,32 +199,45 @@ impl SettingsForm {
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
 
-    /// The form, starting from `settings`; a new theme, splash or pride would be written to
-    /// `config_dir`.
-    pub fn new(settings: Settings, config_dir: PathBuf) -> Self {
+    /// The form, starting from `places`, showing the settings in use; a new theme, splash or
+    /// pride would be written to `config_dir`.
+    pub fn new(places: Places, config_dir: PathBuf) -> Self {
         Self {
-            original: settings.clone(),
-            settings,
+            original: places.clone(),
+            settings: places.settings,
+            own: places.own,
+            other: places.other,
             focus: 0,
             caret: 0,
             config_dir,
         }
     }
 
-    /// The settings as they were left, or `None` if nothing is to be saved.
+    /// The settings as they were left, the ones shown last being the ones to use, or `None` if
+    /// nothing is to be saved.
     pub fn summon(
         grimoire: &mut Grimoire,
-        settings: Settings,
+        places: Places,
         config_dir: PathBuf,
-    ) -> Result<Option<Settings>> {
-        Self::new(settings, config_dir).invoke(grimoire)
+    ) -> Result<Option<Places>> {
+        Self::new(places, config_dir).invoke(grimoire)
+    }
+
+    /// The settings of both places as the form has them.
+    fn places(&self) -> Places {
+        Places {
+            own: self.own,
+            settings: self.settings.clone(),
+            other: self.other.clone(),
+        }
     }
 }
 
 impl Ritual for SettingsForm {
-    type Return = Option<Settings>;
+    type Return = Option<Places>;
 
     fn render(&mut self, page: &mut Page) {
+        let place = if self.own { "this loadout" } else { "global" };
         let splash = if self.settings.splash {
             "shown"
         } else {
@@ -222,6 +262,13 @@ impl Ritual for SettingsForm {
         let pride_flags = file_name(&self.settings.pride_flags);
         let ini = file_name(&self.settings.ini);
         let fields = [
+            Field {
+                label: "kept in",
+                value: place,
+                placeholder: "",
+                room: 13,
+                caret: None,
+            },
             Field {
                 label: "splash",
                 value: splash,
@@ -318,6 +365,7 @@ impl Ritual for SettingsForm {
             (Self::SPLASH_LOOK, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::SPLASH_LEGEND),
             (Self::PRIDE_FLAGS, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::PRIDE_LEGEND),
             (Self::INI, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::INI_LEGEND),
+            (Self::PLACE, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::PLACE_LEGEND),
             (_, KeyCode::Char('?') | KeyCode::F(1)) => Some(Self::TOGGLE_LEGEND),
             _ => None,
         };
@@ -370,17 +418,19 @@ impl Ritual for SettingsForm {
 impl SettingsForm {
     /// Whether anything is different from what the form was opened with.
     fn is_changed(&self) -> bool {
-        self.settings != self.original
+        self.places() != self.original
     }
 
     /// Closes the form with the settings, unless the quip has a number that isn't a quip, which is
     /// said first so it can be fixed.
-    fn save(&mut self, grimoire: &mut Grimoire) -> Result<Phase<Option<Settings>>> {
-        if let Err(problem) = SplashQuip::from_typed(&self.settings.quip) {
-            Warning::summon(grimoire, &problem)?;
-            return Ok(Phase::Render);
+    fn save(&mut self, grimoire: &mut Grimoire) -> Result<Phase<Option<Places>>> {
+        for settings in [&self.settings, &self.other] {
+            if let Err(problem) = SplashQuip::from_typed(&settings.quip) {
+                Warning::summon(grimoire, &problem)?;
+                return Ok(Phase::Render);
+            }
         }
-        Ok(Phase::Return(Some(self.settings.clone())))
+        Ok(Phase::Return(Some(self.places())))
     }
 
     /// Asks for a song, starting where the current one is, and takes it if it is one that can be
@@ -449,9 +499,9 @@ impl SettingsForm {
 
     /// Every key but the legend's and picking a song, a theme or an ini, none of which needs the
     /// terminal.
-    fn edit(&mut self, key_code: KeyCode) -> Phase<Option<Settings>> {
+    fn edit(&mut self, key_code: KeyCode) -> Phase<Option<Places>> {
         match key_code {
-            KeyCode::Enter => Phase::Return(Some(self.settings.clone())),
+            KeyCode::Enter => Phase::Return(Some(self.places())),
             KeyCode::Esc => Phase::Return(None),
             KeyCode::Tab | KeyCode::Down => self.move_focus(1),
             KeyCode::BackTab | KeyCode::Up => self.move_focus(Self::FIELDS - 1),
@@ -468,11 +518,19 @@ impl SettingsForm {
             KeyCode::Char(key @ ('j' | 'k')) if self.is_dressing() => self.cycle(key == 'j'),
             KeyCode::Right if self.is_dressing() => self.cycle(true),
             KeyCode::Left if self.is_dressing() => self.cycle(false),
+            // 🏠 the other place's settings are shown, and the loadout is to use them
+            KeyCode::Char('j' | 'k') | KeyCode::Left | KeyCode::Right
+                if self.focus == Self::PLACE =>
+            {
+                self.own = !self.own;
+                std::mem::swap(&mut self.settings, &mut self.other);
+                Phase::Render
+            }
             KeyCode::Char('j' | 'k') | KeyCode::Left | KeyCode::Right
                 if self.focus < Self::TOGGLES =>
             {
                 let toggle = match self.focus {
-                    0 => &mut self.settings.splash,
+                    Self::SPLASH => &mut self.settings.splash,
                     Self::PRIDE => &mut self.settings.pride,
                     _ => &mut self.settings.quips,
                 };
@@ -517,7 +575,7 @@ impl SettingsForm {
     }
 
     /// Goes on to the next (or `forward` false, the previous) theme, splash or pride by name.
-    fn cycle(&mut self, forward: bool) -> Phase<Option<Settings>> {
+    fn cycle(&mut self, forward: bool) -> Phase<Option<Places>> {
         let dir = &self.config_dir;
         let (field, names) = match self.focus {
             Self::THEME => (&mut self.settings.theme, names::<Theme>(dir)),
@@ -529,7 +587,7 @@ impl SettingsForm {
     }
 
     /// Moves to the field `by` away, wrapping around, with the cursor at the end of its text.
-    fn move_focus(&mut self, by: usize) -> Phase<Option<Settings>> {
+    fn move_focus(&mut self, by: usize) -> Phase<Option<Places>> {
         self.focus = (self.focus + by) % Self::FIELDS;
         self.caret = match self.focus {
             Self::ARGS => text::end(&self.settings.uzdoom_args),
@@ -588,8 +646,20 @@ mod tests {
     use super::*;
     use crate::testing;
 
+    /// A form with `settings` as the global ones, in use, and the same as the loadout's own.
+    fn form(settings: Settings, config_dir: PathBuf) -> SettingsForm {
+        SettingsForm::new(
+            Places {
+                own: false,
+                other: settings.clone(),
+                settings,
+            },
+            config_dir,
+        )
+    }
+
     /// Sends `keys` until one of them closes the form, and returns what it was left with.
-    fn press(form: &mut SettingsForm, keys: &[KeyCode]) -> Option<Option<Settings>> {
+    fn press(form: &mut SettingsForm, keys: &[KeyCode]) -> Option<Option<Places>> {
         keys.iter().find_map(|&key| match form.edit(key) {
             Phase::Return(settings) => Some(settings),
             _ => None,
@@ -653,7 +723,7 @@ mod tests {
         assert_eq!(Music::Off.previous(), Music::Kept);
         assert_eq!(Music::Splash.previous(), Music::Off);
 
-        let mut form = SettingsForm::new(Settings::of(&Uac::default()), PathBuf::new());
+        let mut form = form(Settings::of(&Uac::default()), PathBuf::new());
         form.focus = SettingsForm::MUSIC;
         assert!(form.edit(KeyCode::Char('k')) == Phase::Render);
         assert_eq!(form.settings.music, Music::Off);
@@ -677,7 +747,7 @@ mod tests {
 
     #[test]
     fn backspace_on_the_song_goes_back_to_the_built_in_track() {
-        let mut form = SettingsForm::new(
+        let mut form = form(
             Settings {
                 song: Some("/songs/e1m1.ogg".into()),
                 ..Settings::of(&Uac::default())
@@ -696,7 +766,7 @@ mod tests {
 
     #[test]
     fn backspace_on_a_picked_file_goes_back_to_the_built_in_one() {
-        let mut form = SettingsForm::new(
+        let mut form = form(
             Settings {
                 theme: Some("/themes/blue.toml".into()),
                 splash_look: Some("/themes/splash.toml".into()),
@@ -739,7 +809,7 @@ mod tests {
         assert_eq!(themes.len(), crate::theme::bundled::THEMES.len() + 1);
         assert!(names::<Pride>(&altar.0).is_empty());
 
-        let mut form = SettingsForm::new(Settings::of(&Uac::default()), altar.0.clone());
+        let mut form = form(Settings::of(&Uac::default()), altar.0.clone());
         form.focus = SettingsForm::THEME;
         let mut seen = Vec::new();
         for _ in 0..=themes.len() {
@@ -766,7 +836,7 @@ mod tests {
 
     #[test]
     fn the_quip_takes_question_marks_as_words() {
-        let mut form = SettingsForm::new(Settings::of(&Uac::default()), PathBuf::new());
+        let mut form = form(Settings::of(&Uac::default()), PathBuf::new());
         form.focus = SettingsForm::QUIP;
         for c in "Minecraft?".chars() {
             assert!(form.edit(KeyCode::Char(c)) == Phase::Render);
@@ -776,8 +846,9 @@ mod tests {
 
     #[test]
     fn toggles_switch_and_the_args_take_any_character_including_spaces() {
-        let mut form = SettingsForm::new(Settings::of(&Uac::default()), PathBuf::new());
+        let mut form = form(Settings::of(&Uac::default()), PathBuf::new());
         let keys: Vec<_> = [
+            KeyCode::Tab,
             KeyCode::Char('j'),
             KeyCode::Tab,
             KeyCode::Char('j'),
@@ -796,9 +867,11 @@ mod tests {
         .chain("-skill 4 x".chars().map(KeyCode::Char))
         .chain([KeyCode::Backspace, KeyCode::Enter])
         .collect();
-        let settings = press(&mut form, &keys).unwrap().unwrap();
+        let places = press(&mut form, &keys).unwrap().unwrap();
+        assert!(!places.own);
+        assert_eq!(places.other, Settings::of(&Uac::default()));
         assert_eq!(
-            settings,
+            places.settings,
             Settings {
                 splash: false,
                 pride: true,
@@ -817,7 +890,7 @@ mod tests {
 
     #[test]
     fn a_change_is_noticed_and_changing_it_back_is_no_change() {
-        let mut form = SettingsForm::new(Settings::of(&Uac::default()), PathBuf::new());
+        let mut form = form(Settings::of(&Uac::default()), PathBuf::new());
         assert!(!form.is_changed());
         let _ = form.edit(KeyCode::Char('j'));
         assert!(form.is_changed());
@@ -826,8 +899,40 @@ mod tests {
     }
 
     #[test]
+    fn the_first_field_switches_to_the_loadouts_own_settings_and_back() {
+        let global = Settings::of(&Uac::default());
+        let own = Settings {
+            music: Music::Off,
+            ..global.clone()
+        };
+        let mut form = SettingsForm::new(
+            Places {
+                own: false,
+                settings: global.clone(),
+                other: own.clone(),
+            },
+            PathBuf::new(),
+        );
+        assert!(form.edit(KeyCode::Right) == Phase::Render);
+        assert!(form.own);
+        assert_eq!(form.settings, own, "the loadout's own are shown");
+        assert!(form.is_changed());
+        // 🎵 a change to them stays with them when switched away and back
+        form.focus = SettingsForm::MUSIC;
+        let _ = form.edit(KeyCode::Right);
+        form.focus = SettingsForm::PLACE;
+        let _ = form.edit(KeyCode::Char('k'));
+        assert_eq!(form.settings, global);
+        let _ = form.edit(KeyCode::Char('j'));
+        let places = press(&mut form, &[KeyCode::Enter]).unwrap().unwrap();
+        assert!(places.own);
+        assert_eq!(places.settings.music, Music::Splash);
+        assert_eq!(places.other, global);
+    }
+
+    #[test]
     fn escape_throws_the_changes_away() {
-        let mut form = SettingsForm::new(Settings::of(&Uac::default()), PathBuf::new());
+        let mut form = form(Settings::of(&Uac::default()), PathBuf::new());
         assert_eq!(
             press(&mut form, &[KeyCode::Char('j'), KeyCode::Esc]),
             Some(None)
@@ -836,7 +941,7 @@ mod tests {
 
     #[test]
     fn snapshot_the_settings_with_the_args_in_focus() {
-        let mut form = SettingsForm::new(
+        let mut form = form(
             Settings {
                 splash: true,
                 pride: true,
@@ -854,5 +959,19 @@ mod tests {
         );
         form.focus = SettingsForm::ARGS;
         assert_snapshot!(testing::draw(60, 20, |page| form.render(page)));
+    }
+
+    #[test]
+    fn snapshot_the_settings_kept_in_this_loadout() {
+        let settings = Settings::of(&Uac::default());
+        let mut form = SettingsForm::new(
+            Places {
+                own: true,
+                other: settings.clone(),
+                settings,
+            },
+            PathBuf::new(),
+        );
+        assert_snapshot!(testing::draw(60, 30, |page| form.render(page)));
     }
 }

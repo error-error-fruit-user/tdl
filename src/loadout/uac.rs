@@ -1,8 +1,13 @@
-//! Settings that belong to no loadout: which loadout to open when none is passed, wad dirs every
-//! loadout uses, UZDoom, the base wad, the ini and UZDoom's arguments, the theme, the splash, the
-//! music, and the quips. Kept in `uac.rite` in the platform's standard config dir, the one place
+//! The settings: which loadout to open when none is passed, wad dirs every loadout uses, UZDoom,
+//! the base wad, the ini and UZDoom's arguments, the theme, the splash, the music, and the quips.
+//! The global ones are kept in `uac.rite` in the platform's standard config dir, the one place
 //! every loadout can find. Before tdl 1.0.0 it was `global.rite`, which `upgrade_legacy.py`
 //! upgrades.
+//!
+//! A loadout can have settings of its own instead, kept in its config dir as `settings.rite`
+//! ([`Uac::loadout_path`]) and used while its `config.rite` says so. Which loadout to open and the
+//! wad dirs for every loadout ([`Uac::carry_over`]) are always the global ones: a loadout's own file
+//! leaves them out.
 
 use std::{
     ffi::OsString,
@@ -22,6 +27,9 @@ use crate::{
 };
 
 const FILE: &str = "uac.rite";
+/// A loadout's own settings, in its config dir. Not `uac.rite`, which the standard loadout's
+/// config dir already has.
+const LOADOUT_FILE: &str = "settings.rite";
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct Uac {
@@ -259,6 +267,31 @@ impl Uac {
         standard_config_dir.join(FILE)
     }
 
+    /// Where a loadout's own settings are kept, given its config dir.
+    pub fn loadout_path(config_dir: &Path) -> PathBuf {
+        config_dir.join(LOADOUT_FILE)
+    }
+
+    /// Takes from `from` what is the same whichever settings are used: the loadout to open and the
+    /// wad dirs for every loadout, which only the global settings keep, and this session's UZDoom,
+    /// base wad and ini, which none do.
+    pub fn carry_over(&mut self, from: &Uac) {
+        self.loadout.clone_from(&from.loadout);
+        self.wad_dirs.clone_from(&from.wad_dirs);
+        self.session_uzdoom.clone_from(&from.session_uzdoom);
+        self.session_base_wad.clone_from(&from.session_base_wad);
+        self.session_ini.clone_from(&from.session_ini);
+    }
+
+    /// These settings as a loadout keeps them, without what only the global settings keep.
+    pub fn for_loadout(&self) -> Uac {
+        Uac {
+            loadout: None,
+            wad_dirs: Vec::new(),
+            ..self.clone()
+        }
+    }
+
     /// Saves to `path`, making its dir first: someone who only ever opens other loadouts may
     /// never have had the standard config dir made.
     pub fn keep(&self, path: &Path) -> io::Result<()> {
@@ -308,6 +341,35 @@ mod tests {
         };
         session.keep(&path).unwrap();
         assert_eq!(Uac::open(&path), Some(global));
+    }
+
+    #[test]
+    fn a_loadouts_own_settings_leave_out_what_only_the_global_ones_keep() {
+        let global = Uac {
+            loadout: Some("/home/me/doom".into()),
+            wad_dirs: vec!["/wads".into()],
+            uzdoom: Some("/usr/bin/uzdoom".into()),
+            session_ini: Some("/test/session.ini".into()),
+            ..Uac::default()
+        };
+        let own = global.for_loadout();
+        assert_eq!((own.loadout.clone(), own.wad_dirs.len()), (None, 0));
+        assert_eq!(own.uzdoom, global.uzdoom);
+        // and the loadout's own, once in use, carry the global ones and this session's over
+        let mut own = Uac {
+            music: Music::Off,
+            ..own
+        };
+        own.session_ini = None;
+        own.carry_over(&global);
+        assert_eq!(own.loadout, global.loadout);
+        assert_eq!(own.wad_dirs, global.wad_dirs);
+        assert_eq!(own.session_ini, global.session_ini);
+        assert_eq!(own.music, Music::Off);
+        assert_ne!(
+            Uac::loadout_path(Path::new("/c")),
+            Uac::path(Path::new("/c"))
+        );
     }
 
     #[test]

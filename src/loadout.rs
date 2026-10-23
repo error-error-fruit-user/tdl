@@ -52,10 +52,14 @@ pub struct Loadout {
     /// Wads or profiles copied with `Y` in the launcher or the editor, for `P` to paste. Kept for
     /// the session only, never saved.
     pub clipboard: Clipboard,
-    /// The settings that belong to no loadout, loaded by the launcher from `global_path`.
+    /// The settings in use, loaded by the launcher: the global ones from `uac_path`, or the
+    /// loadout's own if `config.own_settings` says so (with the global loadout and wad dirs, see
+    /// [`Uac::carry_over`]).
     pub uac: Uac,
+    /// Where the global settings are kept, whichever settings are in use.
     pub uac_path: PathBuf,
-    /// False if `uac.rite` is from a newer tdl (or was never loaded), so it is never written.
+    /// False if `uac.rite` (or, in use, the loadout's own settings) is from a newer tdl (or was
+    /// never loaded), so it is never written.
     pub uac_writable: bool,
 }
 
@@ -195,13 +199,107 @@ impl Loadout {
         }
     }
 
-    /// Saves the global settings, which every loadout shares. Refused if `uac.rite` is from a
-    /// newer tdl, so it is never written over.
+    /// Saves the settings in use: the global ones, which every loadout shares, or the loadout's
+    /// own, with the loadout to open and the wad dirs for every loadout still saved in the global
+    /// ones. Refused if either file is from a newer tdl, so it is never written over.
     pub fn keep_uac(&self) -> Result<()> {
         if !self.uac_writable {
             return Err(crate::error::Error::UacTooNew);
         }
-        Ok(self.uac.keep(&self.uac_path)?)
+        self.keep_settings(self.config.own_settings, &self.uac)
+    }
+
+    /// Saves `settings` as the loadout's own (`own`) or as the global ones. Either way the global
+    /// loadout and wad dirs are this session's, and saved in `uac.rite`.
+    fn keep_settings(&self, own: bool, settings: &Uac) -> Result<()> {
+        if !own {
+            let mut global = settings.clone();
+            global.carry_over(&self.uac);
+            return Ok(global.keep(&self.uac_path)?);
+        }
+        settings
+            .for_loadout()
+            .keep(&Uac::loadout_path(&self.config_dir))?;
+        let mut global = Uac::open(&self.uac_path).unwrap_or_default();
+        if global.loadout != self.uac.loadout || global.wad_dirs != self.uac.wad_dirs {
+            global.loadout.clone_from(&self.uac.loadout);
+            global.wad_dirs.clone_from(&self.uac.wad_dirs);
+            global.keep(&self.uac_path)?;
+        }
+        Ok(())
+    }
+
+    /// Puts the settings to use: the global ones (`global`, from `uac_path`), or the loadout's own
+    /// if its config says so, with the global loadout and wad dirs. Own settings that are missing
+    /// start as a copy of the global ones; unreadable ones are said, the same way, and ones from a
+    /// newer tdl are never written.
+    pub fn open_settings(&mut self, global: Uac, uac_path: PathBuf, global_writable: bool) {
+        self.uac_path = uac_path;
+        self.uac_writable = global_writable;
+        if !self.config.own_settings {
+            self.uac = global;
+            return;
+        }
+        let mut own = match Uac::load(&Uac::loadout_path(&self.config_dir)) {
+            Loaded::Fine(own) => own,
+            Loaded::Missing => global.clone(),
+            Loaded::Restored(own) => {
+                self.notices
+                    .push("Restored this loadout's settings from their backup".to_string());
+                own
+            }
+            Loaded::Lost => {
+                self.notices
+                    .push("This loadout's settings were unreadable, saved as .corrupt".to_string());
+                global.clone()
+            }
+            Loaded::TooNew | Loaded::Legacy => {
+                self.uac_writable = false;
+                Uac::default()
+            }
+        };
+        own.carry_over(&global);
+        self.uac = own;
+    }
+
+    /// The settings that aren't in use: the global ones while the loadout's own are, or else the
+    /// loadout's own, which start as a copy of the global ones until it has some. Either carries
+    /// over the global loadout and wad dirs and this session's files.
+    pub fn other_settings(&self) -> Uac {
+        let (path, fallback) = if self.config.own_settings {
+            (self.uac_path.clone(), Uac::default())
+        } else {
+            (Uac::loadout_path(&self.config_dir), self.uac.clone())
+        };
+        let mut other = Uac::open(&path).unwrap_or(fallback);
+        other.carry_over(&self.uac);
+        other
+    }
+
+    /// Puts `in_use` to use as the loadout's own settings (`own`) or the global ones, and keeps
+    /// `other` as the settings that aren't, saving both and the loadout's choice. Refused, changing
+    /// nothing, if any of them is from a newer tdl.
+    pub fn use_settings(&mut self, own: bool, in_use: Uac, other: &Uac) -> Result<()> {
+        let own_path = Uac::loadout_path(&self.config_dir);
+        let unreadable = Uac::stored_version(&own_path)
+            .is_some_and(|version| version > Uac::current() || version < Uac::FIRST);
+        if !self.uac_writable || unreadable {
+            return Err(crate::error::Error::UacTooNew);
+        }
+        let mut in_use = in_use;
+        in_use.carry_over(&self.uac);
+        self.forget_lookup();
+        self.uac = in_use;
+        let switched = self.config.own_settings != own;
+        self.config.own_settings = own;
+        let mut outcome = self.keep_settings(!own, other);
+        if let Err(error) = self.keep_uac() {
+            outcome = outcome.and(Err(error));
+        }
+        if switched && let Err(error) = self.config.write(&self.config_dir, &self.profiles) {
+            outcome = outcome.and(Err(error.into()));
+        }
+        outcome
     }
 
     /// Takes on what was done on the wads screen: its wad dirs become this session's, the kept
@@ -841,6 +939,59 @@ mod tests {
             Uac::open(&root.join("uac.rite")).unwrap().wad_dirs,
             loadout.uac.wad_dirs
         );
+    }
+
+    #[test]
+    fn a_loadout_switches_between_its_own_settings_and_the_global_ones() {
+        let altar = Altar::new("loadout-own-settings");
+        let uac_path = altar.file("standard/uac.rite");
+        let global = Uac {
+            loadout: Some("/home/me/doom".into()),
+            wad_dirs: vec!["/wads".into()],
+            uzdoom: Some("/usr/bin/uzdoom".into()),
+            ..Uac::default()
+        };
+        global.keep(&uac_path).unwrap();
+        let mut loadout = loadout(&altar);
+        loadout.open_settings(global.clone(), uac_path.clone(), true);
+        assert_eq!(loadout.uac, global);
+        // 🏠 the loadout's own start as a copy of the global ones
+        let mut own = loadout.other_settings();
+        assert_eq!(own, global);
+        own.uzdoom = Some("/opt/uzdoom-dev".into());
+        let other = loadout.uac.clone();
+        loadout.use_settings(true, own, &other).unwrap();
+        assert!(loadout.config.own_settings);
+        assert_eq!(loadout.uac.uzdoom, Some("/opt/uzdoom-dev".into()));
+        let saved = Uac::open(&Uac::loadout_path(&loadout.config_dir)).unwrap();
+        assert_eq!(saved.uzdoom, Some("/opt/uzdoom-dev".into()));
+        assert_eq!((saved.loadout, saved.wad_dirs.len()), (None, 0));
+        assert_eq!(Uac::open(&uac_path), Some(global.clone()), "untouched");
+        // a global wad dir kept while the loadout's own are in use goes into the global ones
+        loadout.uac.wad_dirs.push("/mods".into());
+        loadout.keep_uac().unwrap();
+        let kept = Uac::open(&uac_path).unwrap();
+        assert_eq!(kept.wad_dirs.len(), 2);
+        assert_eq!(kept.uzdoom, global.uzdoom);
+        // 🔁 opened again, it uses its own, with the global loadout and wad dirs
+        let mut reopened = self::loadout(&altar);
+        reopened.open_settings(kept.clone(), uac_path.clone(), true);
+        assert!(reopened.config.own_settings);
+        assert_eq!(reopened.uac.uzdoom, Some("/opt/uzdoom-dev".into()));
+        assert_eq!(reopened.uac.wad_dirs, kept.wad_dirs);
+        assert_eq!(reopened.uac.loadout, global.loadout);
+        // 🌐 and back to the global ones, its own kept for next time
+        let back = reopened.other_settings();
+        assert_eq!(back.uzdoom, global.uzdoom);
+        let other = reopened.uac.clone();
+        reopened.use_settings(false, back, &other).unwrap();
+        assert!(!reopened.config.own_settings);
+        assert_eq!(reopened.uac.uzdoom, global.uzdoom);
+        assert_eq!(
+            reopened.other_settings().uzdoom,
+            Some("/opt/uzdoom-dev".into())
+        );
+        assert!(!self::loadout(&altar).config.own_settings);
     }
 
     #[cfg(unix)]

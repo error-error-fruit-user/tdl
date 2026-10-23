@@ -3,7 +3,8 @@
 
 usage: python3 publish.py
 
-Needs cargo-license (cargo install cargo-license). published/ gets tdl.exe, LICENSE,
+Needs cargo-license (cargo install cargo-license). published/ gets tdl.exe, tdl-install.exe
+(the installer for UZDoom and Freedoom 2, from installer/), LICENSE,
 upgrade_legacy.py and the license text of every crate linked into the binary. A crate that ships
 no license file gets its text from licenses/ instead (see licenses/README.md); the
 script fails, naming them, if any has none.
@@ -18,6 +19,8 @@ import subprocess
 import sys
 
 TARGET = "x86_64-pc-windows-gnu"
+# The workspace's own programs, shipped side by side
+PROGRAMS = ["tdl", "tdl-install"]
 OUT = "published"
 # A crate that ships no license file gets its text from here
 KEPT = "licenses"
@@ -49,7 +52,7 @@ def third_party_licenses(target):
                      "--filter-platform", TARGET, stdout=subprocess.PIPE).stdout
     metadata = cargo("metadata", "--format-version", "1", "--filter-platform", TARGET,
                      stdout=subprocess.PIPE).stdout
-    crates = [c for c in json.loads(licensed) if c["name"] != "tdl"]
+    crates = [c for c in json.loads(licensed) if c["name"] not in PROGRAMS]
     manifests = {(p["name"], p["version"]): p["manifest_path"]
                  for p in json.loads(metadata)["packages"]}
     missing = []
@@ -83,11 +86,13 @@ def main():
         sys.exit("cargo-license is missing: cargo install cargo-license")
 
     try:
-        cargo("+stable", "build", "--release", "--target", TARGET)
+        packages = [arg for program in PROGRAMS for arg in ("-p", program)]
+        cargo("+stable", "build", "--release", "--target", TARGET, *packages)
 
         shutil.rmtree(OUT, ignore_errors=True)
         os.makedirs(OUT)
-        shutil.copy(os.path.join("target", TARGET, "release", "tdl.exe"), OUT)
+        for program in PROGRAMS:
+            shutil.copy(os.path.join("target", TARGET, "release", program + ".exe"), OUT)
         shutil.copy("LICENSE", os.path.join(OUT, "LICENSE"))
         for script in SCRIPTS:
             shutil.copy(script, OUT)

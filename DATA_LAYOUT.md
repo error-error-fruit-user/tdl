@@ -12,7 +12,7 @@ tdl stores two kinds of files: **config** (what you set up) and **data** (what t
 
 A **loadout** is one pair of these dirs: the standard ones, or any others. Pass `--loadout /some/dir` to use `/some/dir/config` and `/some/dir/data` instead (the dir on its own, `tdl /some/dir`, is the same). tdl then asks whether to open that loadout every time; if you say yes, it is remembered in `uac.rite` (below) and opened whenever tdl starts without `--loadout`. If it has gone missing, tdl says so and opens the standard dirs. With `--session` it opens the loadout without asking, and `--keep-loadout /some/dir` remembers it without asking. `tdl --forget-loadout` opens the standard dirs and asks whether to forget the remembered loadout; with `--session` it opens them without asking, and `--keep-forget-loadout` forgets it without asking.
 
-`uac.rite` always lives in the standard config dir, whichever loadout is open, since it is the one place every loadout can find. (Before tdl 1.0.0 it was `global.rite`; see [Legacy files](#legacy-files).) It holds every setting:
+`uac.rite` always lives in the standard config dir, whichever loadout is open, since it is the one place every loadout can find. (Before tdl 1.0.0 it was `global.rite`; see [Legacy files](#legacy-files).) It holds every setting. A loadout can use settings of its own instead (**kept in** in the settings, which sets `own_settings` in its `config.rite`): they are the same fields, kept in `settings.rite` in the loadout's config dir, except `loadout` and `wad_dirs`, which only `uac.rite` keeps. They start as a copy of the global ones, and whichever aren't in use are kept as they were.
 
 | Field | Meaning |
 | --- | --- |
@@ -47,6 +47,8 @@ The macOS paths follow the `directories` crate's documentation and have not been
 <config dir>/
 ├── config.rite                 the order of profiles and the loadout's own wad dirs
 ├── config.rite.bak             the config as it was before the last save
+├── settings.rite               the loadout's own settings, once it has used them (the same fields as uac.rite,
+│                               but loadout and wad_dirs)
 ├── uac.rite                    (standard config dir only) every setting, the default loadout and global wad dirs
 ├── theme.toml                  (standard config dir only) a theme of your own, once the settings write one
 ├── splash.toml                 (standard config dir only) the splash's look, the same way
@@ -93,8 +95,10 @@ Every `.rite` file is MessagePack, a compact binary format, in a wrapper that re
 | --- | --- |
 | `profile_names` | The profiles in the order the launcher shows them. |
 | `wad_dirs` | Wad dirs kept for this loadout from `--wads` (or `--keep-loadout-wads`), used whenever tdl starts without it (before the global ones). Missing means none. |
+| `own_settings` | `true` if the loadout uses its own settings (`settings.rite`) instead of the global ones (`uac.rite`). Missing means `false`. |
+| `ignored_wad_dirs` | Dirs with `wad` in their name, found beside tdl or where it was started, that you said **Never** to keeping as wad pools, so tdl stops asking. Missing means none. |
 
-Only what belongs to the loadout is here; every setting is in `uac.rite`, so it is the same whichever loadout is open.
+Only what belongs to the loadout is here; the settings are in `uac.rite`, or in `settings.rite` while `own_settings` is on.
 
 **`.profiles/<name>.rite`** (`data`)
 

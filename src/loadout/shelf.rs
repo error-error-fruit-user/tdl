@@ -112,6 +112,48 @@ pub fn scan(dir: &Path) -> Vec<PathBuf> {
     found
 }
 
+/// How deep [`named_for_wads`] looks into dirs named for wads, for ones inside them.
+const NAMED_DEPTH: usize = 3;
+
+/// The dirs in each of `roots` with `wad` in their name, whatever its case (`wads`, `WADs`,
+/// `my_wads`), and the ones with it in theirs inside those (`wads/base_wads`), a few deep, each
+/// once, in order. Links to dirs count, since the depth is limited.
+pub fn named_for_wads(roots: &[PathBuf]) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for root in roots {
+        look_for_wad_dirs(root, 0, &mut found);
+    }
+    found
+}
+
+/// [`named_for_wads`] in `dir`, which is `depth` below a root: each dir right before the ones
+/// inside it.
+fn look_for_wad_dirs(dir: &Path, depth: usize, found: &mut Vec<PathBuf>) {
+    if depth == NAMED_DEPTH {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let mut named: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_dir()
+                && path
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().to_lowercase().contains("wad"))
+        })
+        .collect();
+    named.sort();
+    for path in named {
+        if !found.contains(&path) {
+            found.push(path.clone());
+        }
+        look_for_wad_dirs(&path, depth + 1, found);
+    }
+}
+
 /// Whether `path` is a wad kept in `downloads`, which stores each in a dir named after its hash.
 pub fn is_download(path: &Path, downloads: &Path) -> bool {
     path.parent()
@@ -356,6 +398,32 @@ mod tests {
     fn touch(path: &Path) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, path.to_string_lossy().as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn dirs_named_for_wads_are_found_with_the_ones_inside_them() {
+        let altar = Altar::new("shelf-named");
+        for dir in [
+            "wads/base_wads",
+            "wads/maps",
+            "My_WADs",
+            "mods/wads",
+            "wadless_file",
+        ] {
+            fs::create_dir_all(altar.file(dir)).unwrap();
+        }
+        fs::remove_dir(altar.file("wadless_file")).unwrap();
+        touch(&altar.file("wadless_file"));
+        let roots = [altar.0.clone(), altar.0.clone()];
+        assert_eq!(
+            named_for_wads(&roots),
+            [
+                altar.file("My_WADs"),
+                altar.file("wads"),
+                altar.file("wads/base_wads"),
+            ]
+        );
+        assert!(named_for_wads(&[altar.file("missing")]).is_empty());
     }
 
     #[test]

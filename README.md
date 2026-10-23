@@ -51,13 +51,15 @@ The profiles here are examples made for the screenshots.
 | ![The wads screen: two wad dirs and the downloads, each with its wads and their sizes](docs/screenshots/wads.png) | ![Every wad in one list, the two brutalv22.pk3 told apart by their dirs](docs/screenshots/every-wad.png) |
 | **Wads screen.** `L`: every wad dir and the downloads, each with every wad in it, to copy or move between dirs or paste into a profile. | **Every wad.** `Tab` on the wads screen: one list by name, where wads with the same name are told apart by their dirs. |
 | ![The settings: splash, pride, music, quips, song, theme, splash look, pride flags, ini, UZDoom arguments and splash quip](docs/screenshots/settings.png) | |
-| **Settings.** `O` in the launcher: the splash and the pride splash, the music, quips and song, the theme, the splash's look and the pride flags, the ini, the UZDoom arguments and the splash quip, the same in every loadout. | |
+| **Settings.** `O` in the launcher: the splash and the pride splash, the music, quips and song, the theme, the splash's look and the pride flags, the ini, the UZDoom arguments and the splash quip, kept globally or in the loadout. | |
 
 ## Requirements
 
 - Rust **1.99.1** or later, stable or nightly (on nightly, `--features spooky` turns on the unstable features the code was written for; the build is the same either way)
 - [UZDoom](https://github.com/UZDoom/UZDoom) installed
 - A Doom base wad (e.g. `DOOM2.WAD`, or the free [Freedoom](https://freedoom.github.io/))
+
+[`tdl-install`](#the-installer) puts both UZDoom and Freedoom 2 next to tdl.
 - Python 3.8 or later, only to [upgrade the files of a tdl before 1.0.0](#upgrading-from-before-100) and to [host a mod folder](#mod-folders)
 
 ## Install
@@ -69,6 +71,17 @@ cargo build --release                              # stable
 cargo +nightly build --release --features spooky  # or nightly, with its unstable features
 ./target/release/tdl
 ```
+
+### The installer
+
+`tdl-install` (`installer/`, built with `cargo build --release -p tdl-install`, and shipped beside `tdl.exe` in the Windows release) downloads UZDoom 5.0.3 and Freedoom 0.13.0, checks each against its size and hash, and puts them beside itself, so keep it next to tdl (or pass `--dir` with tdl's dir):
+
+```
+uzdoom/                    UZDoom's own folder: the Windows release unpacked, or uzdoom.AppImage on Linux
+wads/base_wads/            freedoom2.wad and Freedoom's license
+```
+
+Nothing else on the machine is touched, and what is there already is left alone (`--no-uzdoom` and `--no-freedoom` leave either out). The downloads go through the system's temporary folder and are deleted afterwards. Next time tdl starts it offers `wads` and `wads/base_wads` as [wad pools](#the-wads-screen); `U` then picks `uzdoom/uzdoom.exe` (or `uzdoom/uzdoom.AppImage`) and `W` `freedoom2.wad`. There is no UZDoom release it can place on macOS or other systems, so there it installs Freedoom only and says so.
 
 ## Usage
 
@@ -187,6 +200,8 @@ If UZDoom is the flatpak, its `--file-forwarding` hands files to the sandbox but
 
 `N` on a wad, here or in the editor's wad list, renames its file where it is. Only the name before the extension is typed, so UZDoom still knows what kind of file it is, and a name another file in the dir has (or, in the editor, another wad in the profile) is turned down. Every profile using the wad follows it, and so does the global base wad. A download keeps the host's name for it, so it can't be renamed.
 
+When tdl starts, it looks beside its executable and in the dir it was started from for dirs with `wad` in their name (`wads`, `My_WADs`, and ones inside those, like `wads/base_wads`). For each that wads aren't looked for in yet, it asks whether to keep it as a wad pool for every loadout (**[G]lobal**), for this **[L]oadout**, or **[N]ever** to ask about it again; `Esc` asks again next time. It doesn't ask when `--wads` or `--forget-wads` is given.
+
 `A` (or `Enter` on the last row) adds a dir to look in, asking whether to keep it for this **[S]ession**, **[G]lobal**ly or for this **[V]ault**, as `--wads` does. `D` on a dir's row dismisses it: tdl stops looking in it, everywhere it was kept, and its files stay. On a wad, `D` asks whether to **[E]rase** it from the disk (with wads selected, all of them; a profile using an erased wad shows it missing, and one watching its dir lets it go) or **[D]ismiss** the dir it is in. `.downloads` is always there. `/` searches the wads shown by file name.
 
 ### Arrow keys
@@ -205,7 +220,9 @@ Pasting a wad whose file name the profile already has asks the same three things
 
 ### Settings
 
-`O` in the launcher opens the settings. Everything here, like UZDoom and the base wad (`U` and `W`), is kept in `uac.rite` (in the standard config dir; see [DATA_LAYOUT.md](DATA_LAYOUT.md)), so it is the same whichever loadout is open; a loadout only keeps its profiles and its own wad dirs. `↑`/`↓` (or `Tab`) move between the rows, `J`/`K` or `←`/`→` switch a choice, `Enter` saves. `Esc` leaves, and if anything changed it first asks whether to **[S]ave** it, **[D]iscard** it, or go **[B]ack** to the form.
+`O` in the launcher opens the settings. Everything here, like UZDoom and the base wad (`U` and `W`) and the last host port, is kept either globally, in `uac.rite` (in the standard config dir; see [DATA_LAYOUT.md](DATA_LAYOUT.md)), the same whichever loadout is open, or in the loadout itself, in its `settings.rite`. `↑`/`↓` (or `Tab`) move between the rows, `J`/`K` or `←`/`→` switch a choice, `Enter` saves. `Esc` leaves, and if anything changed it first asks whether to **[S]ave** it, **[D]iscard** it, or go **[B]ack** to the form.
+
+- **kept in**: **global** or **this loadout**: which settings the loadout uses. Switching shows the other ones in the form, to change there too; the ones shown when you save are the ones used from then on. Both are kept, so switching back finds them as they were. A loadout's own settings start as a copy of the global ones. Which loadout opens by default and the wad dirs kept for every loadout are always global.
 
 - **splash**: whether the fire splash plays when tdl starts.
 - **pride**: **on** plays the pride splash every time, as `--with-pride` does for one run, from the next start on.

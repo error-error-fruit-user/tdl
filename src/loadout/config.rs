@@ -10,9 +10,10 @@ use crate::{loadout::edition::Edition, loadout::profile::Profile, loadout::saved
 
 const FILE: &str = "config.rite";
 
-/// What belongs to one loadout: the order of its profiles and the wad dirs kept for it. Every
-/// setting lives in the global settings instead (see [`Uac`](crate::loadout::uac::Uac)), so it is
-/// the same whichever loadout is open.
+/// What belongs to one loadout: the order of its profiles, the wad dirs kept for it, and whether it
+/// uses settings of its own. The settings themselves are a [`Uac`](crate::loadout::uac::Uac): the
+/// global ones, the same whichever loadout is open, unless `own_settings` is on, when they are the
+/// loadout's own (`settings.rite`, see [`Uac::loadout_path`](crate::loadout::uac::Uac::loadout_path)).
 ///
 /// Stored as `<config>/config.rite`.
 #[derive(Debug, Default, PartialEq, Deserialize, Serialize)]
@@ -23,6 +24,14 @@ pub struct Config {
     /// Wad dirs kept for this loadout from `--wads`, used whenever tdl starts without it.
     #[serde(default, with = "paths")]
     pub wad_dirs: Vec<OsString>,
+    /// Uses the loadout's own settings instead of the global ones. Switched in the settings;
+    /// missing in older files, which count as using the global ones.
+    #[serde(default)]
+    pub own_settings: bool,
+    /// Dirs with `wad` in their name, found next to tdl, that the user said never to keep as wad
+    /// dirs, so tdl stops asking about them. Missing in older files, which count as none.
+    #[serde(default, with = "paths")]
+    pub ignored_wad_dirs: Vec<OsString>,
 }
 
 impl Edition for Config {
@@ -57,6 +66,8 @@ mod tests {
         let altar = Altar::new("config-round-trip");
         let mut config = Config {
             wad_dirs: vec!["/wads".into(), "/mods".into()],
+            own_settings: true,
+            ignored_wad_dirs: vec!["/tdl/old_wads".into()],
             ..Config::default()
         };
         config
@@ -66,6 +77,36 @@ mod tests {
         assert_eq!(loaded.profile_names, ["brutal"]);
         assert_eq!(loaded, config);
         assert_eq!(Config::stored_version(&Config::path(&altar.0)), Some(5));
+    }
+
+    #[test]
+    fn a_config_saved_before_its_own_settings_uses_the_global_ones() {
+        /// How edition 5 was saved before a loadout could have settings of its own.
+        #[derive(Serialize)]
+        struct Before {
+            profile_names: Vec<String>,
+            wad_dirs: Vec<String>,
+        }
+        #[derive(Serialize)]
+        struct Sealed {
+            version: u32,
+            data: Before,
+        }
+        let altar = Altar::new("config-before-own-settings");
+        let path = Config::path(&altar.0);
+        let bytes = rmp_serde::to_vec_named(&Sealed {
+            version: 5,
+            data: Before {
+                profile_names: vec!["brutal".into()],
+                wad_dirs: vec!["/wads".into()],
+            },
+        })
+        .unwrap();
+        fs::write(&path, bytes).unwrap();
+        let loaded = Config::open(&path).unwrap();
+        assert_eq!(loaded.wad_dirs, [OsString::from("/wads")]);
+        assert!(!loaded.own_settings);
+        assert!(loaded.ignored_wad_dirs.is_empty());
     }
 
     #[test]

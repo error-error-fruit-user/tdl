@@ -25,6 +25,7 @@ use crate::{
     loadout::legacy,
     loadout::profile::Profile,
     loadout::scribe,
+    loadout::shelf,
     loadout::uac::{Music, Shared, Uac},
     loadout::wad::Wad,
     music, picker,
@@ -45,7 +46,7 @@ use crate::{
     screens::profile_namer::ask_copy_name,
     screens::search::{self, Found, Search, Typed},
     screens::selection::{self, Selection},
-    screens::settings::{Settings, SettingsForm},
+    screens::settings::{Places, Settings, SettingsForm},
     screens::splash,
     screens::wrap_around,
     slayer::host_game,
@@ -313,10 +314,8 @@ impl Launcher {
         } else {
             remembered_dirs(&loadout.config.wad_dirs, &global.wad_dirs)
         };
-        loadout.uac = global;
-        loadout.uac_path = uac_path;
         // 🏚️ nothing is written while legacy files wait for the script
-        loadout.uac_writable = uac_writable && legacy.is_empty();
+        loadout.open_settings(global, uac_path, uac_writable && legacy.is_empty());
         Self {
             loadout,
             table_state: TableState::new().with_selected(0),
@@ -387,6 +386,11 @@ impl Launcher {
         let kept_pride = uac.pride_flags.clone();
         let config_dir = self.standard_dir();
         if self.session_theme.is_none() {
+            // 🏠 main wore the global one before the loadout was known, which a loadout with its own
+            // settings may not wear
+            if kept_theme.is_none() {
+                theme::wear(Theme::default());
+            }
             wear_kept(grimoire, kept_theme.as_deref(), &config_dir, theme::wear)?;
         }
         if self.session_splash.is_none() {
@@ -479,6 +483,7 @@ impl Launcher {
             }
         }
         self.offer_to_keep(grimoire)?;
+        self.offer_wad_pools(grimoire)?;
         picker::set_wad_dirs(&self.loadout.wad_dirs);
         if let Some(scroll) = self.passed_scroll.take() {
             // 📜 the new profile goes last, and the cursor lands on it
@@ -760,6 +765,87 @@ impl Launcher {
             self.offer_to_keep_wads(grimoire)?;
         }
         self.offer_to_keep_files(grimoire)
+    }
+
+    /// Asks about each dir named for wads next to tdl (see [`Launcher::wad_pool_roots`] and
+    /// [`shelf::named_for_wads`]) that wads aren't looked for in yet: whether to keep it as a wad
+    /// dir, a pool of wads to pick from, for every loadout or this one, or never to ask again. Esc
+    /// asks again next time. Not asked when the command line says which wad dirs to use.
+    fn offer_wad_pools(&mut self, grimoire: &mut Grimoire) -> Result<()> {
+        if !self.passed_wads.is_empty() || self.forget_wads.is_on() {
+            return Ok(());
+        }
+        let loadout = &self.loadout;
+        let known: Vec<PathBuf> = loadout
+            .config
+            .wad_dirs
+            .iter()
+            .chain(&loadout.uac.wad_dirs)
+            .chain(&loadout.config.ignored_wad_dirs)
+            .map(PathBuf::from)
+            .chain(loadout.wad_dirs.iter().cloned())
+            .chain([loadout.downloads_dir()])
+            .collect();
+        let found: Vec<PathBuf> = shelf::named_for_wads(&Self::wad_pool_roots())
+            .into_iter()
+            .filter(|dir| !known.contains(dir))
+            .collect();
+        for dir in found {
+            let question = format!(
+                "{} looks like it holds wads. Keep it as a wad pool, a dir to pick wads from, for \
+                 every loadout or this one? (Esc asks again next time)",
+                dir.display()
+            );
+            let keep = match ThreeWayDialog::summon(
+                grimoire,
+                &question,
+                ["Global", "Loadout", "Never"],
+            )? {
+                Some(0) if !self.loadout.uac_writable => {
+                    Warning::summon(grimoire, "The global settings are from a newer tdl")?;
+                    continue;
+                }
+                Some(0) => shelf::Keep::Global,
+                Some(1) => shelf::Keep::Loadout,
+                Some(_) => {
+                    self.loadout
+                        .config
+                        .ignored_wad_dirs
+                        .push(dir.into_os_string());
+                    if self
+                        .loadout
+                        .config
+                        .write(&self.loadout.config_dir, &self.loadout.profiles)
+                        .is_err()
+                    {
+                        Warning::save_failed(grimoire)?;
+                    }
+                    continue;
+                }
+                None => continue,
+            };
+            let mut shelf = self.loadout.shelf();
+            shelf.add(dir, keep);
+            if self.loadout.restock(shelf).is_err() {
+                Warning::save_failed(grimoire)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Where dirs named for wads are looked for: beside tdl's executable, and where tdl was
+    /// started from, each once.
+    fn wad_pool_roots() -> Vec<PathBuf> {
+        let beside = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(Path::to_path_buf));
+        let mut roots: Vec<PathBuf> = Vec::new();
+        for root in beside.into_iter().chain(std::env::current_dir().ok()) {
+            if !roots.contains(&root) {
+                roots.push(root);
+            }
+        }
+        roots
     }
 
     /// Drops the passed wad dirs that aren't dirs, falling back on the kept ones if none are left.
@@ -1058,7 +1144,7 @@ impl Launcher {
             Warning::summon(grimoire, "The global settings are from a newer tdl")?;
         } else if global {
             self.loadout.uac.wad_dirs.clear();
-            if self.loadout.uac.keep(&self.loadout.uac_path).is_err() {
+            if self.loadout.keep_uac().is_err() {
                 Warning::save_failed(grimoire)?;
             }
         }
@@ -1080,19 +1166,37 @@ impl Launcher {
     /// the splash is the first thing the next start shows. Settings from a newer tdl can't be
     /// changed at all.
     fn change_settings(&mut self, grimoire: &mut Grimoire) -> Result<()> {
-        let before = Settings::of(&self.loadout.uac);
+        let own = self.loadout.config.own_settings;
+        let other = self.loadout.other_settings();
+        let before = Places {
+            own,
+            settings: Settings::of(&self.loadout.uac),
+            other: Settings::of(&other),
+        };
         let config_dir = self.standard_dir();
-        let Some(settings) = SettingsForm::summon(grimoire, before.clone(), config_dir)? else {
+        let Some(places) = SettingsForm::summon(grimoire, before.clone(), config_dir)? else {
             return Ok(());
         };
-        if settings == before {
+        if places == before {
             return Ok(());
         }
         if !self.loadout.uac_writable {
             return Warning::summon(
                 grimoire,
-                "The global settings are from a newer tdl, so they can't be changed",
+                "The settings are from a newer tdl, so they can't be changed",
             );
+        }
+        // 🏠 each place's settings take what the form left them with, whichever is to be used
+        let (mut in_use, mut not_in_use) = if places.own == own {
+            (self.loadout.uac.clone(), other)
+        } else {
+            (other, self.loadout.uac.clone())
+        };
+        if let Err(problem) = places.settings.apply(&mut in_use) {
+            return Warning::summon(grimoire, &problem);
+        }
+        if let Err(problem) = places.other.apply(&mut not_in_use) {
+            return Warning::summon(grimoire, &problem);
         }
         let kept_song = self.loadout.uac.song.clone();
         let uac = &self.loadout.uac;
@@ -1102,9 +1206,7 @@ impl Launcher {
             uac.pride_flags.clone(),
         );
         let kept_music = self.loadout.uac.music;
-        if let Err(problem) = settings.apply(&mut self.loadout.uac) {
-            return Warning::summon(grimoire, &problem);
-        }
+        let saved = self.loadout.use_settings(places.own, in_use, &not_in_use);
         // 🎶 the song and the music change now
         if self.loadout.uac.song != kept_song {
             match &self.loadout.uac.song {
@@ -1134,10 +1236,15 @@ impl Launcher {
         if now.2 != kept.2 {
             wear_picked::<Pride>(grimoire, now.2.as_deref(), &config_dir, theme::pride::wear)?;
         }
-        if self.loadout.uac.keep(&self.loadout.uac_path).is_err() {
-            Warning::save_failed(grimoire)?;
+        self.marks.clear();
+        match saved {
+            Err(Error::UacTooNew) => Warning::summon(
+                grimoire,
+                "This loadout's own settings are from a newer tdl, so they can't be used",
+            ),
+            Err(_) => Warning::save_failed(grimoire),
+            Ok(()) => Ok(()),
         }
-        Ok(())
     }
 
     /// Changes the music now, from `before` to `after`. The splash is over by now, so **splash
@@ -1172,7 +1279,7 @@ impl Launcher {
         self.loadout.uac.take_shared(settings);
         self.follow_music(before, self.loadout.uac.music);
         quips::show(!self.no_quips && !self.loadout.uac.no_quips);
-        if self.loadout.uac.keep(&self.loadout.uac_path).is_err() {
+        if self.loadout.keep_uac().is_err() {
             Warning::save_failed(grimoire)?;
         }
         Ok(())
