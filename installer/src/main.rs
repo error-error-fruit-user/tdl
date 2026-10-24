@@ -21,6 +21,9 @@
 //! One thing happens outside those folders, and `--no-link` leaves it out: the UZDoom and the base
 //! wad are kept as tdl's global ones by running the `tdl` beside this program with `--setup`.
 
+#[macro_use]
+mod journal;
+
 use std::{
     fs,
     io::{self, IsTerminal, Read, Write},
@@ -120,7 +123,7 @@ fn program_dir() -> Option<PathBuf> {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let Some(here) = program_dir() else {
-        eprintln!("Couldn't tell where this program is");
+        warn!("Couldn't tell where this program is");
         return ExitCode::FAILURE;
     };
     let mode = cli.mode.unwrap_or_else(|| {
@@ -130,44 +133,58 @@ fn main() -> ExitCode {
             Mode::InPlace
         }
     });
-    let dir = match cli.dir.clone().map(|dir| std::path::absolute(&dir).unwrap_or(dir)) {
+    let dir = match cli
+        .dir
+        .clone()
+        .map(|dir| std::path::absolute(&dir).unwrap_or(dir))
+    {
         Some(dir) => dir,
         None => match install_dir(mode, &here) {
             Ok(dir) => dir,
             Err(problem) => {
-                eprintln!("{problem}");
+                warn!("{problem}");
                 return ExitCode::FAILURE;
             }
         },
     };
     if mode == Mode::InPlace && !dir.is_dir() {
-        eprintln!("{} isn't a folder", dir.display());
+        warn!("{} isn't a folder", dir.display());
         return ExitCode::FAILURE;
     }
+    // 📓 from here on the journal is kept in the install's folder
+    let journal = journal::open(&dir, "tdl-install.log");
+    note!("this program is in {}", here.display());
+    note!("mode {mode:?}, installing in {}", dir.display());
+    note!(
+        "leaving out: uzdoom {}, freedoom {}, linking {}",
+        cli.no_uzdoom,
+        cli.no_freedoom,
+        cli.no_link
+    );
     if mode == Mode::System {
         if let Err(problem) = check_privileges() {
-            eprintln!("{problem}");
+            warn!("{problem}");
             return ExitCode::FAILURE;
         }
     }
     match mode {
-        Mode::InPlace => println!("Installing next to tdl, in {}", dir.display()),
-        Mode::User => println!("Installing tdl for you, in {}", dir.display()),
-        Mode::System => println!("Installing tdl for everyone, in {}", dir.display()),
+        Mode::InPlace => say!("Installing next to tdl, in {}", dir.display()),
+        Mode::User => say!("Installing tdl for you, in {}", dir.display()),
+        Mode::System => say!("Installing tdl for everyone, in {}", dir.display()),
     }
     if mode != Mode::InPlace {
         if let Err(problem) = place_tdl(&here, &dir) {
-            eprintln!("tdl wasn't installed: {problem}");
+            warn!("tdl wasn't installed: {problem}");
             return ExitCode::FAILURE;
         }
     }
     let scratch = Scratch::new();
     let mut failed = false;
     let mut report = |what: &str, outcome: Outcome<Option<PathBuf>>| match outcome {
-        Ok(Some(path)) => println!("{what}: {}", path.display()),
+        Ok(Some(path)) => say!("{what}: {}", path.display()),
         Ok(None) => {}
         Err(problem) => {
-            eprintln!("{what} wasn't installed: {problem}");
+            warn!("{what} wasn't installed: {problem}");
             failed = true;
         }
     };
@@ -180,7 +197,7 @@ fn main() -> ExitCode {
     if !cli.no_link {
         if mode == Mode::System {
             // 🔒 --setup would keep them in root's tdl settings, which nobody else uses
-            println!(
+            say!(
                 "Each user points tdl at them in tdl (U and B), or runs: tdl --setup --keep-uzdoom FILE --keep-base-wad FILE"
             );
         } else {
@@ -189,49 +206,68 @@ fn main() -> ExitCode {
     }
     if mode != Mode::InPlace {
         match put_on_path(mode, &dir) {
-            Ok(note) => println!("{note}"),
+            Ok(note) => say!("{note}"),
             Err(problem) => {
-                eprintln!("The tdl command wasn't added: {problem}");
+                warn!("The tdl command wasn't added: {problem}");
                 failed = true;
             }
         }
     }
+    if let Some(journal) = &journal {
+        say!("Everything this install did is in {}", journal.display());
+    }
     if failed {
         return ExitCode::FAILURE;
     }
-    println!("Done. tdl offers the wads folders as wad pools when it starts.");
+    say!("Done. tdl offers the wads folders as wad pools when it starts.");
     ExitCode::SUCCESS
 }
 
 /// Asks where tdl should live. Enter takes in place; input that ends takes it too.
 fn ask_mode(here: &Path) -> Mode {
-    println!("Where should tdl be installed?");
-    println!("  1) In place: in {}, nothing else changes (default)", here.display());
-    for (number, mode, who) in [(2, Mode::User, "for you"), (3, Mode::System, "for everyone")] {
+    say!("Where should tdl be installed?");
+    say!(
+        "  1) In place: in {}, nothing else changes (default)",
+        here.display()
+    );
+    for (number, mode, who) in [
+        (2, Mode::User, "for you"),
+        (3, Mode::System, "for everyone"),
+    ] {
         let folder = install_dir(mode, here)
             .map(|dir| dir.display().to_string())
             .unwrap_or_else(|_| "?".into());
-        let note = if mode == Mode::System { "; needs root" } else { "" };
-        println!("  {number}) {}: in {folder}, with the tdl command on your PATH{note}", capital(who));
+        let note = if mode == Mode::System {
+            "; needs root"
+        } else {
+            ""
+        };
+        say!(
+            "  {number}) {}: in {folder}, with the tdl command on your PATH{note}",
+            capital(who)
+        );
     }
     loop {
         print!("Choice [1]: ");
         let _ = io::stdout().flush();
         let mut line = String::new();
         if io::stdin().read_line(&mut line).unwrap_or(0) == 0 {
-            println!();
+            say!("");
             return Mode::InPlace;
         }
         match parse_choice(&line) {
             Some(mode) => return mode,
-            None => println!("Type 1, 2 or 3."),
+            None => say!("Type 1, 2 or 3."),
         }
     }
 }
 
 fn capital(text: &str) -> String {
     let mut chars = text.chars();
-    chars.next().map(|first| first.to_uppercase().chain(chars).collect()).unwrap_or_default()
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
 }
 
 /// What the user typed at the question, if it is an answer. Nothing at all is in place.
@@ -295,18 +331,25 @@ fn tdl_names() -> &'static [&'static str] {
 
 /// The `tdl` in `dir`, if there is one.
 fn tdl_in(dir: &Path) -> Option<PathBuf> {
-    tdl_names().iter().map(|name| dir.join(name)).find(|path| path.is_file())
+    tdl_names()
+        .iter()
+        .map(|name| dir.join(name))
+        .find(|path| path.is_file())
 }
 
 /// Copies the `tdl` beside this program (and its licenses) into `dir`, as `tdl`, unless the same
 /// file is there already.
 fn place_tdl(here: &Path, dir: &Path) -> Outcome<()> {
     let from = tdl_in(here).ok_or_else(|| {
-        format!("there is no tdl next to this program, in {}", here.display())
+        format!(
+            "there is no tdl next to this program, in {}",
+            here.display()
+        )
     })?;
     let problem = |error: io::Error| format!("{}: {error}", dir.display());
     fs::create_dir_all(dir).map_err(problem)?;
     let to = dir.join(if cfg!(windows) { "tdl.exe" } else { "tdl" });
+    note!("tdl: copying {} to {}", from.display(), to.display());
     if from != to {
         // 🧱 copied beside the real one, which is only replaced once it is whole (and a tdl that
         // is running can be replaced this way)
@@ -324,9 +367,10 @@ fn place_tdl(here: &Path, dir: &Path) -> Outcome<()> {
     for license in ["LICENSE", "THIRD_PARTY_LICENSES.txt"] {
         if here.join(license).is_file() && here != dir {
             fs::copy(here.join(license), dir.join(license)).map_err(problem)?;
+            note!("copied {} into {}", license, dir.display());
         }
     }
-    println!("tdl: {}", to.display());
+    say!("tdl: {}", to.display());
     Ok(())
 }
 
@@ -391,7 +435,9 @@ fn link_command(bin: &Path, target: &Path) -> Outcome<()> {
         }
         Err(_) => {}
     }
-    std::os::unix::fs::symlink(target, &link).map_err(problem)
+    std::os::unix::fs::symlink(target, &link).map_err(problem)?;
+    note!("linked {} to {}", link.display(), target.display());
+    Ok(())
 }
 
 /// Adds a line to `profile` that puts `bin` on the PATH, unless this program put one there already.
@@ -404,9 +450,27 @@ fn add_to_profile(profile: &Path, bin: &Path) -> Outcome<bool> {
     if old.contains(MARK) {
         return Ok(false);
     }
-    let mut file = fs::OpenOptions::new().create(true).append(true).open(profile).map_err(problem)?;
-    let separator = if old.is_empty() || old.ends_with('\n') { "" } else { "\n" };
-    write!(file, "{separator}{MARK}\nexport PATH=\"{}:$PATH\"\n", bin.display()).map_err(problem)?;
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(profile)
+        .map_err(problem)?;
+    let separator = if old.is_empty() || old.ends_with('\n') {
+        ""
+    } else {
+        "\n"
+    };
+    write!(
+        file,
+        "{separator}{MARK}\nexport PATH=\"{}:$PATH\"\n",
+        bin.display()
+    )
+    .map_err(problem)?;
+    note!(
+        "added a line putting {} on the PATH to {}",
+        bin.display(),
+        profile.display()
+    );
     Ok(true)
 }
 
@@ -414,11 +478,19 @@ fn add_to_profile(profile: &Path, bin: &Path) -> Outcome<bool> {
 /// environment is changed so that every program sees it.
 #[cfg(windows)]
 fn windows_path(mode: Mode, dir: &Path) -> Outcome<String> {
-    let scope = if mode == Mode::System { "Machine" } else { "User" };
+    let scope = if mode == Mode::System {
+        "Machine"
+    } else {
+        "User"
+    };
     let script = format!(
         "$d = $env:TDL_DIR; $p = [Environment]::GetEnvironmentVariable('Path', '{scope}'); \
          if (($p -split ';') -notcontains $d) {{ \
            [Environment]::SetEnvironmentVariable('Path', ($p.TrimEnd(';') + ';' + $d), '{scope}') }}"
+    );
+    note!(
+        "adding {} to the {scope} PATH through powershell",
+        dir.display()
     );
     let status = std::process::Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
@@ -471,31 +543,39 @@ fn link(dir: &Path) {
     let tdl = tdl_in(dir).unwrap_or_else(|| dir.join("tdl"));
     let manually = || {
         let shown: Vec<_> = args.iter().map(|arg| arg.to_string_lossy()).collect();
-        println!("To point tdl at them, run: tdl {}", shown.join(" "));
+        say!("To point tdl at them, run: tdl {}", shown.join(" "));
     };
     if !tdl.is_file() {
-        println!(
+        say!(
             "tdl isn't in {}, so it isn't linked to them yet.",
             dir.display()
         );
         manually();
         return;
     }
+    note!(
+        "running {} {}",
+        tdl.display(),
+        args.iter()
+            .map(|arg| arg.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
     match std::process::Command::new(&tdl).args(&args).status() {
         Ok(status) if status.success() => {
             if uzdoom.is_some() {
-                println!("tdl now uses that UZDoom");
+                say!("tdl now uses that UZDoom");
             }
             if base_wad.is_some() {
-                println!("tdl now uses that base wad");
+                say!("tdl now uses that base wad");
             }
         }
         Ok(status) => {
-            eprintln!("tdl --setup failed ({status}), so it isn't linked to them yet.");
+            warn!("tdl --setup failed ({status}), so it isn't linked to them yet.");
             manually();
         }
         Err(error) => {
-            eprintln!("Couldn't run {}: {error}", tdl.display());
+            warn!("Couldn't run {}: {error}", tdl.display());
             manually();
         }
     }
@@ -506,7 +586,7 @@ fn link(dir: &Path) {
 fn install_uzdoom(dir: &Path, scratch: &Scratch) -> Outcome<Option<PathBuf>> {
     let folder = dir.join("uzdoom");
     if folder.exists() {
-        println!(
+        say!(
             "UZDoom: {} is there already, so it is left alone",
             folder.display()
         );
@@ -523,6 +603,7 @@ fn install_uzdoom(dir: &Path, scratch: &Scratch) -> Outcome<Option<PathBuf>> {
         );
     };
     let file = fetch(download, scratch)?;
+    note!("unpacking {} into {}", download.name, folder.display());
     // 🧱 built beside the real one, which only appears once it is whole
     let part = dir.join("uzdoom.part");
     let _ = fs::remove_dir_all(&part);
@@ -553,6 +634,11 @@ fn place_appimage(file: &Path, folder: &Path) -> Outcome<PathBuf> {
     fs::create_dir_all(folder).map_err(made)?;
     let appimage = folder.join(APPIMAGE);
     fs::copy(file, &appimage).map_err(made)?;
+    note!(
+        "copied {} to {}, and made it runnable",
+        file.display(),
+        appimage.display()
+    );
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -567,13 +653,18 @@ fn install_freedoom(dir: &Path, scratch: &Scratch) -> Outcome<Option<PathBuf>> {
     let base_wads = dir.join("wads").join("base_wads");
     let wad = base_wads.join(FREEDOOM_FILES[0].1);
     if wad.exists() {
-        println!(
+        say!(
             "Freedoom 2: {} is there already, so it is left alone",
             wad.display()
         );
         return Ok(None);
     }
     let file = fetch(&FREEDOOM, scratch)?;
+    note!(
+        "taking {} and its license out of {}",
+        FREEDOOM_FILES[0].1,
+        FREEDOOM.name
+    );
     fs::create_dir_all(&base_wads)
         .map_err(|error| format!("couldn't make {}: {error}", base_wads.display()))?;
     let mut archive = open_zip(&file)?;
@@ -591,6 +682,13 @@ fn install_freedoom(dir: &Path, scratch: &Scratch) -> Outcome<Option<PathBuf>> {
 /// where it is.
 fn fetch(download: &Download, scratch: &Scratch) -> Outcome<PathBuf> {
     let path = scratch.dir()?.join(download.name);
+    note!(
+        "downloading {} ({} bytes, BLAKE3 {}) to {}",
+        download.url,
+        download.size,
+        download.blake3,
+        path.display()
+    );
     let failed = |error: &dyn std::fmt::Display| format!("downloading {}: {error}", download.url);
     let mut reader = ureq::get(download.url)
         .call()
@@ -625,9 +723,15 @@ fn fetch(download: &Download, scratch: &Scratch) -> Outcome<PathBuf> {
     if total != download.size {
         return Err(failed(&"it ended early"));
     }
-    if hasher.finalize().to_hex().as_str() != download.blake3 {
+    let hash = hasher.finalize().to_hex();
+    if hash.as_str() != download.blake3 {
+        note!("{} came with BLAKE3 {hash}", download.name);
         return Err(failed(&"it isn't the file it should be (its hash differs)"));
     }
+    note!(
+        "{}: {total} bytes, and its hash is the one it should be",
+        download.name
+    );
     Ok(path)
 }
 
@@ -673,13 +777,17 @@ fn write_whole(from: &mut impl Read, to: &Path) -> Outcome<()> {
     let part = PathBuf::from(part);
     let written = (|| {
         let mut file = fs::File::create(&part)?;
-        io::copy(from, &mut file)?;
+        let bytes = io::copy(from, &mut file)?;
         file.sync_all()?;
-        fs::rename(&part, to)
+        fs::rename(&part, to)?;
+        Ok::<u64, io::Error>(bytes)
     })();
-    if let Err(error) = written {
-        let _ = fs::remove_file(&part);
-        return Err(problem(error));
+    match written {
+        Ok(bytes) => note!("wrote {} ({bytes} bytes)", to.display()),
+        Err(error) => {
+            let _ = fs::remove_file(&part);
+            return Err(problem(error));
+        }
     }
     Ok(())
 }
