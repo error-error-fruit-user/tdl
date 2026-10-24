@@ -95,7 +95,22 @@ struct Cli {
     /// Doesn't point tdl at the UZDoom and the base wad.
     #[arg(long)]
     no_link: bool,
+    /// Says what it does plainly and formally, rather than as a descent through hell
+    #[arg(long)]
+    computer_speak: bool,
 }
+
+/// One of installation-groans' voices, as this was built with it (see `build.rs`).
+macro_rules! const_groan {
+    ($voice:literal) => {
+        include_str!(concat!(env!("OUT_DIR"), "/groans/", $voice))
+    };
+}
+
+/// Toiling Through Hell, the voice the install speaks in unless told `--computer-speak`.
+const TOILING_THROUGH_HELL: &str = const_groan!["toiling-through-hell.toml"];
+/// Computer Speak, for `--computer-speak`.
+const COMPUTER_SPEAK: &str = const_groan!["computer-speak.toml"];
 
 /// What went wrong, for the user.
 type Outcome<T> = Result<T, String>;
@@ -123,6 +138,11 @@ fn program_dir() -> Option<PathBuf> {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    journal::speak_in(if cli.computer_speak {
+        COMPUTER_SPEAK
+    } else {
+        TOILING_THROUGH_HELL
+    });
     let Some(here) = program_dir() else {
         warn!("Couldn't tell where this program is");
         return ExitCode::FAILURE;
@@ -169,9 +189,21 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     match mode {
-        Mode::InPlace => say!("Installing next to tdl, in {}", dir.display()),
-        Mode::User => say!("Installing tdl for you, in {}", dir.display()),
-        Mode::System => say!("Installing tdl for everyone, in {}", dir.display()),
+        Mode::InPlace => journal::tell(
+            "begin",
+            &[("what", "tdl"), ("place", &dir.display().to_string())],
+            &format!("Installing next to tdl, in {}", dir.display()),
+        ),
+        Mode::User => journal::tell(
+            "begin",
+            &[("what", "tdl"), ("place", &dir.display().to_string())],
+            &format!("Installing tdl for you, in {}", dir.display()),
+        ),
+        Mode::System => journal::tell(
+            "begin",
+            &[("what", "tdl"), ("place", &dir.display().to_string())],
+            &format!("Installing tdl for everyone, in {}", dir.display()),
+        ),
     }
     if mode != Mode::InPlace
         && let Err(problem) = place_tdl(&here, &dir)
@@ -217,7 +249,7 @@ fn main() -> ExitCode {
     }
     if mode != Mode::InPlace {
         match put_on_path(mode, &dir) {
-            Ok(note) => say!("{note}"),
+            Ok(note) => journal::tell("path", &[("place", &bin_dir(mode, &dir))], &note),
             Err(problem) => {
                 warn!("The tdl command wasn't added: {problem}");
                 failed = true;
@@ -225,12 +257,20 @@ fn main() -> ExitCode {
         }
     }
     if let Some(journal) = &journal {
-        say!("Everything this install did is in {}", journal.display());
+        journal::tell(
+            "journal",
+            &[("place", &journal.display().to_string())],
+            &format!("Everything this install did is in {}", journal.display()),
+        );
     }
     if failed {
         return ExitCode::FAILURE;
     }
-    say!("Done. tdl offers the wads folders as wad pools when it starts.");
+    journal::tell(
+        "done",
+        &[("what", "tdl")],
+        "Done. tdl offers the wads folders as wad pools when it starts.",
+    );
     ExitCode::SUCCESS
 }
 
@@ -381,8 +421,26 @@ fn place_tdl(here: &Path, dir: &Path) -> Outcome<()> {
             note!("copied {} into {}", license, dir.display());
         }
     }
-    say!("tdl: {}", to.display());
+    journal::tell(
+        "copy",
+        &[("what", "tdl"), ("place", &to.display().to_string())],
+        &format!("tdl: {}", to.display()),
+    );
     Ok(())
+}
+
+/// Where the `tdl` command goes for `mode`, as it is shown.
+fn bin_dir(mode: Mode, dir: &Path) -> String {
+    match (mode, std::env::var_os("HOME")) {
+        _ if cfg!(windows) => dir.display().to_string(),
+        (Mode::System, _) => "/usr/local/bin".into(),
+        (_, Some(home)) => Path::new(&home)
+            .join(".local")
+            .join("bin")
+            .display()
+            .to_string(),
+        (_, None) => dir.display().to_string(),
+    }
 }
 
 /// Makes `tdl` a command anywhere in the terminal. Returns what to tell the user.
@@ -604,7 +662,12 @@ fn link(dir: &Path) {
         manually();
         return;
     }
-    note!("running {} setup {}", tdl.display(), setup.display());
+    let command = format!("tdl setup {}", setup.display());
+    journal::tell(
+        "run",
+        &[("command", &command)],
+        &format!("running {}", command),
+    );
     match std::process::Command::new(&tdl)
         .arg("setup")
         .arg(&setup)
@@ -612,10 +675,18 @@ fn link(dir: &Path) {
     {
         Ok(status) if status.success() => {
             if uzdoom.is_some() {
-                say!("tdl now uses that UZDoom");
+                journal::tell(
+                    "link",
+                    &[("what", "UZDoom"), ("place", "tdl's settings")],
+                    "tdl now uses that UZDoom",
+                );
             }
             if base_wad.is_some() {
-                say!("tdl now uses that base wad");
+                journal::tell(
+                    "link",
+                    &[("what", "the base wad"), ("place", "tdl's settings")],
+                    "tdl now uses that base wad",
+                );
             }
         }
         Ok(status) => {
@@ -634,9 +705,13 @@ fn link(dir: &Path) {
 fn install_uzdoom(dir: &Path, scratch: &Scratch) -> Outcome<Option<PathBuf>> {
     let folder = dir.join("uzdoom");
     if folder.exists() {
-        say!(
-            "UZDoom: {} is there already, so it is left alone",
-            folder.display()
+        journal::tell(
+            "skip",
+            &[("what", "UZDoom"), ("place", &folder.display().to_string())],
+            &format!(
+                "UZDoom: {} is there already, so it is left alone",
+                folder.display()
+            ),
         );
         return Ok(None);
     }
@@ -651,7 +726,14 @@ fn install_uzdoom(dir: &Path, scratch: &Scratch) -> Outcome<Option<PathBuf>> {
         );
     };
     let file = fetch(download, scratch)?;
-    note!("unpacking {} into {}", download.name, folder.display());
+    journal::tell(
+        "unpack",
+        &[
+            ("name", download.name),
+            ("place", &folder.display().to_string()),
+        ],
+        &format!("unpacking {} into {}", download.name, folder.display()),
+    );
     // 🧱 built beside the real one, which only appears once it is whole
     let part = dir.join("uzdoom.part");
     let _ = fs::remove_dir_all(&part);
@@ -701,9 +783,16 @@ fn install_freedoom(dir: &Path, scratch: &Scratch) -> Outcome<Option<PathBuf>> {
     let base_wads = dir.join("wads").join("base_wads");
     let wad = base_wads.join(FREEDOOM_FILES[0].1);
     if wad.exists() {
-        say!(
-            "Freedoom 2: {} is there already, so it is left alone",
-            wad.display()
+        journal::tell(
+            "skip",
+            &[
+                ("what", "Freedoom 2"),
+                ("place", &wad.display().to_string()),
+            ],
+            &format!(
+                "Freedoom 2: {} is there already, so it is left alone",
+                wad.display()
+            ),
         );
         return Ok(None);
     }
@@ -730,6 +819,18 @@ fn install_freedoom(dir: &Path, scratch: &Scratch) -> Outcome<Option<PathBuf>> {
 /// where it is.
 fn fetch(download: &Download, scratch: &Scratch) -> Outcome<PathBuf> {
     let path = scratch.dir()?.join(download.name);
+    journal::tell(
+        "download",
+        &[
+            ("name", download.name),
+            ("size", &journal::size(download.size)),
+        ],
+        &format!(
+            "Downloading {} ({})",
+            download.name,
+            journal::size(download.size)
+        ),
+    );
     note!(
         "downloading {} ({} bytes, BLAKE3 {}) to {}",
         download.url,
@@ -774,11 +875,21 @@ fn fetch(download: &Download, scratch: &Scratch) -> Outcome<PathBuf> {
     let hash = hasher.finalize().to_hex();
     if hash.as_str() != download.blake3 {
         note!("{} came with BLAKE3 {hash}", download.name);
+        journal::tell(
+            "corrupted",
+            &[("name", download.name)],
+            &format!("{} isn't the file it should be", download.name),
+        );
         return Err(failed(&"it isn't the file it should be (its hash differs)"));
     }
     note!(
         "{}: {total} bytes, and its hash is the one it should be",
         download.name
+    );
+    journal::tell(
+        "verified",
+        &[("name", download.name)],
+        &format!("{}: checked", download.name),
     );
     Ok(path)
 }
