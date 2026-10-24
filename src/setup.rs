@@ -15,6 +15,7 @@
 //! name = "Freedoom"
 //! wads = []                    # files or mod folders, in load order
 //! base_wad = "wads/base_wads/freedoom2.wad"   # and uzdoom, ini and args, each its own
+//! place = 1                    # its place in the list (1 is first); else last, or where it was
 //! ```
 //!
 //! Every key may be left out, and no other key is allowed. Paths are relative to the TOML's own
@@ -41,6 +42,9 @@ pub struct Profile {
     pub uzdoom: Option<String>,
     pub ini: Option<String>,
     pub args: Option<String>,
+    /// Where in the list it goes, from 1 (first); left out, a new profile goes last and one that
+    /// was there stays where it was.
+    pub place: Option<usize>,
 }
 
 /// What a setup TOML holds.

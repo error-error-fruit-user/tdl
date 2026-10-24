@@ -714,6 +714,19 @@ impl Launcher {
             }
         };
         saved.map_err(|error| format!("Could not save {name}: {error}"))?;
+        if let Some(place) = given.place
+            && let Some(index) = find_profile(&self.loadout.profiles, &name)
+        {
+            let to = place.clamp(1, self.loadout.profiles.len()) - 1;
+            if to != index {
+                let profile = self.loadout.profiles.remove(index);
+                self.loadout.profiles.insert(to, profile);
+                self.loadout
+                    .config
+                    .write(&self.loadout.config_dir, &self.loadout.profiles)
+                    .map_err(|error| format!("Could not put {name} in place {place}: {error}"))?;
+            }
+        }
         ritual::murmur(format!(
             "{} the profile {name}",
             if found.is_some() {

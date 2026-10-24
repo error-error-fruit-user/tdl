@@ -469,6 +469,16 @@ fn setting_up() {
     super_user
         .tdl(&["setup", &toml.display().to_string()])
         .says("Took again the wads of the profile e1");
+    // a profile put first in the list, as nacht's setup-waw.toml puts Nacht des Schreckens
+    let first = super_user.dir.join("first.toml");
+    fs::write(
+        &first,
+        "loadout = \"local\"\nremember_loadout = false\n\n[[profiles]]\nname = \"Schreckens\"\nplace = 1\n",
+    )
+    .unwrap();
+    super_user
+        .tdl(&["setup", &first.display().to_string()])
+        .says("Made the profile Schreckens");
     let local = super_user.dir.join("local").display().to_string();
     let output = Command::new(env!("CARGO_BIN_EXE_tdl"))
         .env("HOME", super_user.dir.join("home"))
@@ -476,7 +486,14 @@ fn setting_up() {
         .args(["--session", "--loadout", &local, "cli", "profiles"])
         .output()
         .unwrap();
-    Said { output }.says("2 profiles").says("e1        1 wad");
+    let listed = Said { output };
+    listed.says("3 profiles").says("e1");
+    let out = listed.out();
+    let order: Vec<_> = ["Schreckens", "e1", "Freedoom"]
+        .iter()
+        .map(|name| out.find(name).unwrap())
+        .collect();
+    assert!(order.is_sorted(), "Schreckens isn't first in\n{out}");
     // 🗑️ garbage: keys that aren't, TOML that isn't, files that aren't there, a profile with no name
     let garbage = Altar::new("setup-garbage");
     let write = |name: &str, text: &str| {
@@ -489,6 +506,10 @@ fn setting_up() {
     let missing = write("missing.toml", "uzdoom = \"/no/such/uzdoom\"\n");
     let nameless = write("nameless.toml", "[[profiles]]\nwads = []\n");
     let escaping = write("escaping.toml", "[[profiles]]\nname = \"../../escape\"\n");
+    let misplaced = write(
+        "misplaced.toml",
+        "[[profiles]]\nname = \"e1\"\nplace = -1\n",
+    );
     garbage
         .tdl(&["setup", &unknown])
         .fails_with_code(2, "unknown field `colour`");
@@ -501,6 +522,9 @@ fn setting_up() {
     garbage
         .tdl(&["setup", &nameless])
         .fails_with_code(2, "missing field `name`");
+    garbage
+        .tdl(&["setup", &misplaced])
+        .fails_with_code(2, "invalid value");
     garbage
         .tdl(&["setup", &escaping])
         .fails_with("can't be a profile's name");
