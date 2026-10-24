@@ -1,27 +1,33 @@
 #!/usr/bin/env python3
-"""Cross-build the Windows release into published/, with THIRD_PARTY_LICENSES.txt.
+"""Cross-build the Windows release into published/releases/, with THIRD_PARTY_LICENSES.txt, and Linux
+AppImages of tdl and tdl-install.
 
-usage: python3 publish.py
+usage: python3 publish.py [--no-appimages]
 
-Needs cargo-license (cargo install cargo-license). published/ gets tdl.exe, tdl-install.exe
+Needs cargo-license (cargo install cargo-license). published/releases/ gets tdl.exe, tdl-install.exe
 (the installer for UZDoom and Freedoom 2, from installer/), LICENSE,
-upgrade_legacy.py and the license text of every crate linked into the binary. A crate that ships
+upgrade_legacy.py and the license text of every crate linked into the binary. Then appimage.py
+makes tdl.AppImage and tdl-install.AppImage there (needs mksquashfs;
+--no-appimages skips them). A crate that ships
 no license file gets its text from licenses/ instead (see licenses/README.md); the
 script fails, naming them, if any has none.
 
 Dependency-free Python 3.8+.
 """
 
+import argparse
 import json
 import os
 import shutil
 import subprocess
 import sys
 
+import appimage
+
 TARGET = "x86_64-pc-windows-gnu"
 # The workspace's own programs, shipped side by side
 PROGRAMS = ["tdl", "tdl-install"]
-OUT = "published"
+OUT = os.path.join("published", "releases")
 # A crate that ships no license file gets its text from here
 KEPT = "licenses"
 # 🏚️ for anyone coming from a tdl before 1.0.0, whose files it upgrades
@@ -81,6 +87,10 @@ def third_party_licenses(target):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--no-appimages", action="store_true", help="don't build the AppImages")
+    options = parser.parse_args()
+
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     if shutil.which("cargo-license") is None:
         sys.exit("cargo-license is missing: cargo install cargo-license")
@@ -98,6 +108,8 @@ def main():
             shutil.copy(script, OUT)
 
         missing = third_party_licenses(os.path.join(OUT, "THIRD_PARTY_LICENSES.txt"))
+        if not options.no_appimages:
+            appimage.build_all(OUT)
     except subprocess.CalledProcessError as error:
         sys.exit(error.returncode)
 
