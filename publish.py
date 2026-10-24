@@ -97,6 +97,21 @@ def rust_on_path():
         os.environ["PATH"] = folder + os.pathsep + os.environ.get("PATH", "")
 
 
+def clear(folder):
+    """Empties `folder` for the new release. One that can't be emptied, left by a run with sudo,
+    is said, with how to take it back, rather than failed on."""
+    try:
+        shutil.rmtree(folder)
+    except FileNotFoundError:
+        pass
+    except PermissionError as error:
+        import getpass
+        sys.exit(f"{folder} can't be replaced ({error.strerror}: {error.filename}). It was left by "
+                 "another user, root most likely, by a run with sudo. Take it back with:\n"
+                 f"  sudo chown -R {getpass.getuser()} {os.path.abspath(os.path.dirname(folder))}")
+    os.makedirs(folder)
+
+
 def main():
     rust_on_path()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -111,8 +126,7 @@ def main():
         packages = [arg for program in PROGRAMS for arg in ("-p", program)]
         cargo("+stable", "build", "--release", "--target", TARGET, *packages)
 
-        shutil.rmtree(OUT, ignore_errors=True)
-        os.makedirs(OUT)
+        clear(OUT)
         for program in PROGRAMS:
             shutil.copy(os.path.join("target", TARGET, "release", program + ".exe"), OUT)
         shutil.copy("LICENSE", os.path.join(OUT, "LICENSE"))
