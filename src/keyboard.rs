@@ -1,6 +1,7 @@
-//! The controller's on-screen keyboard. It is drawn over the bottom of whatever text field is being
-//! typed in, and its buttons become the keys that field already knows (characters, `Backspace`,
-//! `←`/`→`, `Enter`...), so no field needs to know it is there: the ritual loop asks a ritual
+//! The controller's on-screen keyboard. It is never brought up by itself: in a text field a line
+//! says Select brings it up, and then it is drawn over the bottom of the field being typed in, and
+//! its buttons become the keys that field already knows (characters, `Backspace`, `←`/`→`,
+//! `Enter`...), so no field needs to know it is there: the ritual loop asks a ritual
 //! whether it is [`typing`](crate::ritual::Ritual::typing) and, if a controller spoke last, shows
 //! this and feeds what it makes to the ritual instead of the plain keys.
 //!
@@ -142,15 +143,28 @@ pub enum Output {
     Help,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct PadKeyboard {
     layer: Layer,
     /// The letters the keyboard had last, lower or upper case, for the symbols to go back to.
     letters: Layer,
     row: usize,
     col: usize,
-    /// Put away with Select: the buttons are then the plain ones.
+    /// Put away with Select: the buttons are then the plain ones. It starts put away, so it is
+    /// never brought up but by Select.
     pub hidden: bool,
+}
+
+impl Default for PadKeyboard {
+    fn default() -> Self {
+        Self {
+            layer: Layer::default(),
+            letters: Layer::default(),
+            row: 0,
+            col: 0,
+            hidden: true,
+        }
+    }
 }
 
 impl PadKeyboard {
