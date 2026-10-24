@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Publish tdl, then install it with the tdl-install just published.
 
-usage: python3 publish-install.py [--accept] [--no-build | --source] [tdl-install options]
+usage: python3 publish-install.py [--accept] [--no-build | --source] [--no-shortcuts]
+                                  [tdl-install options]
 
 First it says, under a red warning, exactly what it will do, and asks before doing any of it
 (--accept goes ahead without asking). Then it builds the release with publish.py (tdl and
@@ -9,7 +10,9 @@ tdl-install for Windows and as AppImages, into published/releases/), or with --s
 and tdl-install for this machine (cargo build --release), or with --no-build nothing at all; and
 runs the tdl-install in published/releases/, which copies the tdl beside it where it is asked to
 (--mode), puts UZDoom and Freedoom 2 next to it and points tdl at them. --mode, --dir,
---no-uzdoom, --no-freedoom and --no-link go to tdl-install (see its --help).
+--no-uzdoom, --no-freedoom and --no-link go to tdl-install (see its --help). Right after the
+warning it asks whether to make shortcuts for tdl (the app menu and the desktop, or the Start menu
+and the desktop on Windows) with the system's lock icon; --no-shortcuts makes none without asking.
 
 Dependency-free Python 3.8+.
 """
@@ -109,6 +112,96 @@ def agreed(accept):
     return answer.lower() in ("y", "yes")
 
 
+
+# The system's lock icon for every shortcut: the icon theme's on Linux, shell32.dll's padlock on Windows
+LOCK_ICON = "system-lock-screen"
+WINDOWS_LOCK_ICON = r"%SystemRoot%\System32\shell32.dll,47"
+
+
+def shortcut_places():
+    """Where shortcuts go on Linux: the app menu, and the desktop if there is one."""
+    home = os.path.expanduser("~")
+    data = os.environ.get("XDG_DATA_HOME") or os.path.join(home, ".local", "share")
+    places = [os.path.join(data, "applications")]
+    try:
+        desktop = subprocess.run(["xdg-user-dir", "DESKTOP"], capture_output=True,
+                                 text=True).stdout.strip()
+    except OSError:
+        desktop = ""
+    desktop = desktop or os.path.join(home, "Desktop")
+    if os.path.isdir(desktop) and os.path.abspath(desktop) != os.path.abspath(home):
+        places.append(desktop)
+    return places
+
+
+def wants_shortcuts(args, what):
+    """Asks, right after the warning, whether to make shortcuts for `what` (--no-shortcuts: no,
+    without asking)."""
+    if args.no_shortcuts:
+        note("--no-shortcuts: no shortcuts, and no question about them")
+        return False
+    if not sys.stdin.isatty():
+        note("no one to ask about shortcuts: none are made")
+        return False
+    if WINDOWS:
+        where = "your Start menu and desktop"
+    else:
+        where = " and ".join(place.replace(os.path.expanduser("~"), "~", 1)
+                             for place in shortcut_places())
+    answer = input(f"Make shortcuts for {what} in {where}, with the system's lock icon? "
+                   "[y/N] ").strip()
+    note(f"asked about shortcuts for {what}, the answer was {answer!r}")
+    return answer.lower() in ("y", "yes")
+
+
+def exec_quoted(arg):
+    """`arg` as a desktop entry's Exec line wants it."""
+    if arg and not any(c in arg for c in " \t\n\"'\\><~|&;$*?#()`"):
+        return arg
+    return '"' + "".join("\\" + c if c in '"`$\\' else c for c in arg) + '"'
+
+
+def make_shortcut(title, file_id, command, comment):
+    """A shortcut called `title` that runs `command` in a terminal, with the lock icon: a desktop
+    entry `file_id`.desktop in each of `shortcut_places()` on Linux, a .lnk in the Start menu and on
+    the desktop on Windows."""
+    if WINDOWS:
+        def ps(text):
+            return "'" + text.replace("'", "''") + "'"
+        script = (
+            "$shell = New-Object -ComObject WScript.Shell\n"
+            "foreach ($folder in @([Environment]::GetFolderPath('Programs'), "
+            "[Environment]::GetFolderPath('Desktop'))) {\n"
+            f"  $link = $shell.CreateShortcut((Join-Path $folder {ps(title + '.lnk')}))\n"
+            f"  $link.TargetPath = {ps(command[0])}\n"
+            f"  $link.Arguments = {ps(subprocess.list2cmdline(command[1:]))}\n"
+            f"  $link.WorkingDirectory = {ps(os.path.dirname(os.path.abspath(command[0])))}\n"
+            f"  $link.Description = {ps(comment)}\n"
+            f"  $link.IconLocation = {ps(WINDOWS_LOCK_ICON)}\n"
+            "  $link.Save()\n"
+            "  Write-Output (Join-Path $folder " + ps(title + ".lnk") + ")\n"
+            "}\n")
+        run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script])
+        return
+    exec_line = " ".join(exec_quoted(arg) for arg in command)
+    entry = ("[Desktop Entry]\nType=Application\n"
+             f"Name={title}\nComment={comment}\n"
+             f"Exec={exec_line.replace(chr(92), chr(92) * 2).replace('%', '%%')}\n"
+             f"Icon={LOCK_ICON}\nTerminal=true\nCategories=Game;\n")
+    for place in shortcut_places():
+        os.makedirs(place, exist_ok=True)
+        path = os.path.join(place, file_id + ".desktop")
+        with open(path, "w", encoding="utf-8") as file:
+            file.write(entry)
+        os.chmod(path, 0o755)
+        # a desktop launches only the shortcuts it is told to trust
+        if not path.startswith(shortcut_places()[0]) and shutil.which("gio"):
+            subprocess.run(["gio", "set", path, "metadata::trusted", "true"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        note(f"made the shortcut {path}: {exec_line}")
+        print("Shortcut:", path)
+
+
 def plan(args):
     """What saying yes does, step by step."""
     lines = ["Saying yes will:"]
@@ -151,7 +244,7 @@ def plan(args):
     lines.append("")
     lines.append("To change that: --no-build installs what is published already, --source builds only "
                  "for this machine, --no-uzdoom, --no-freedoom and --no-link leave those out, and "
-                 "--mode and --dir say where.")
+                 "--mode and --dir say where; --no-shortcuts doesn't ask about shortcuts.")
     return lines
 
 
@@ -186,6 +279,27 @@ def installer():
     sys.exit("There is no tdl-install in published/releases/: build it (leave out --no-build).")
 
 
+def installed_tdl(args):
+    """The tdl tdl-install just put somewhere: in --dir, or where --mode puts it, or (when it
+    asked) the newest of those places."""
+    if args.dir:
+        folders = [args.dir]
+    else:
+        home = os.path.expanduser("~")
+        modes = {
+            "in-place": RELEASES,
+            "user": (os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "tdl") if WINDOWS
+                     else os.path.join(home, ".local", "opt", "tdl")),
+            "system": (os.path.join(os.environ.get("ProgramFiles", ""), "tdl") if WINDOWS
+                       else "/opt/tdl"),
+        }
+        folders = [modes[args.mode]] if args.mode else list(modes.values())
+    names = ["tdl.exe"] if WINDOWS else ["tdl", "tdl.AppImage"]
+    found = [os.path.abspath(os.path.join(folder, name)) for folder in folders for name in names
+             if os.path.isfile(os.path.join(folder, name))]
+    return max(found, key=os.path.getmtime) if found else None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--accept", action="store_true", help="go ahead without asking")
@@ -200,10 +314,13 @@ def main():
     passed.add_argument("--no-uzdoom", action="store_true")
     passed.add_argument("--no-freedoom", action="store_true")
     passed.add_argument("--no-link", action="store_true")
+    parser.add_argument("--no-shortcuts", action="store_true",
+                        help="make no shortcuts, and don't ask about them")
     args = parser.parse_args()
     note(f"=== {os.path.basename(__file__)} {' '.join(sys.argv[1:])} ===")
 
     warning(plan(args))
+    shortcuts = wants_shortcuts(args, "tdl")
     if not agreed(args.accept):
         note("not going ahead: nothing was done")
         sys.exit("Nothing was done.")
@@ -217,6 +334,12 @@ def main():
                                       ("--no-freedoom", args.no_freedoom),
                                       ("--no-link", args.no_link)) if on]
     run(command)
+    if shortcuts:
+        tdl = installed_tdl(args)
+        if tdl:
+            make_shortcut("tdl", "tdl", [tdl], "Terminal launcher for UZDoom")
+        else:
+            print("Made no shortcut: tdl-install put tdl nowhere this can find.")
 
 
 if __name__ == "__main__":
