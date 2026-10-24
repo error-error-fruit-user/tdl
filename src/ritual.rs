@@ -534,6 +534,24 @@ pub fn murmur(words: impl std::fmt::Display) {
     );
 }
 
+// 📣 a proclamation: a heading over what follows, in the theme's title color
+pub fn proclaim(words: impl std::fmt::Display) {
+    utter(
+        std::io::stdout(),
+        theme::worn().colors.title,
+        &words.to_string(),
+    );
+}
+
+// 🌫️ an aside: something said in passing, faint, like a breath on the glass
+pub fn aside(words: impl std::fmt::Display) {
+    utter(
+        std::io::stdout(),
+        theme::worn().colors.muted,
+        &format!("     {words}"),
+    );
+}
+
 // 😱 a wail: something went wrong or was gone along with, said to the night (stderr)
 pub fn wail(words: impl std::fmt::Display) {
     utter(
@@ -595,12 +613,14 @@ pub fn farewell(peaceful: bool, words: &str) {
 // from its legend; and what UZDoom says goes into the prayer from beyond (uzdoom.log) beside it.
 // a script line is presses (keys like `j`, `enter`, `shift+b`, `ctrl+c`, and buttons the way the
 // legends' aliases write them, `⟨a⟩`, `⟨lb+a⟩`, `⟨rb+down⟩`), separated by spaces, or `wait 2s`;
-// `#` starts a comment
+// `#` starts a comment. a ` speaks the rest of its line as a `tdl cli` command: the rituals close
+// for it (`Curse::Rite`), and open again after
 
-/// One press of the possession: how the script wrote it, and the key it makes.
+/// One press of the possession: how the script wrote it, and the key it makes, or for ` the
+/// `tdl cli` command spoken after it.
 struct Press {
     label: String,
-    portent: Portent,
+    portent: Result<Portent, String>,
 }
 
 /// The spirit at the keyboard, while one is.
@@ -702,8 +722,10 @@ pub fn hear() -> Omen<Portent> {
                 spirit.last = press.label;
                 Some(press.portent)
             });
-            if let Some(portent) = press {
-                return Yass(portent);
+            match press {
+                Some(Yass(portent)) => return Yass(portent),
+                Some(Err(rite)) => return Err(Curse::Rite(rite)),
+                None => {}
             }
         }
     }
@@ -724,6 +746,38 @@ pub fn confess(heard_by: &str, deed: Option<String>) {
         let _ = writeln!(file, "[{:8.3}s] {line}", began.elapsed().as_secs_f64());
         confession(&line);
     });
+}
+
+// 📜 a spoken rite's words, split the way a shell would at spaces, keeping "quoted words" together
+pub fn rite_words(spoken: &str) -> Result<Vec<String>, String> {
+    let mut words = Vec::new();
+    let mut word = String::new();
+    let (mut quoted, mut started) = (false, false);
+    for c in spoken.chars() {
+        match c {
+            '"' => {
+                quoted = !quoted;
+                started = true;
+            }
+            c if c.is_whitespace() && !quoted => {
+                if started {
+                    words.push(std::mem::take(&mut word));
+                    started = false;
+                }
+            }
+            c => {
+                word.push(c);
+                started = true;
+            }
+        }
+    }
+    if quoted {
+        return Err(format!("a quote isn't closed in `{spoken}"));
+    }
+    if started {
+        words.push(word);
+    }
+    Yass(words)
 }
 
 // 🫢 something the spirit should know that no press caused (a file dialog it can't answer), told
@@ -884,6 +938,15 @@ fn confession(line: &str) {
 impl Possession {
     fn listen(&mut self, patience: std::time::Duration) -> Omen<bool> {
         loop {
+            // 📜 a spoken rite is handed over before anything else can hear it
+            if let Some(Press {
+                portent: Err(_), ..
+            }) = self.presses.front()
+            {
+                let press = self.presses.pop_front().unwrap();
+                self.last = press.label;
+                return Err(Curse::Rite(press.portent.unwrap_err()));
+            }
             if !self.presses.is_empty() {
                 return Yass(true);
             }
@@ -918,13 +981,29 @@ impl Possession {
                 self.until = Some((now, now + how_long));
                 continue;
             }
-            for label in text.split_whitespace() {
+            // 🗣️ a ` speaks the rest of the line as a command, after the presses before it
+            let (presses, rite) = match text.split_once('`') {
+                Some((presses, rite)) => (presses, Some(rite.trim())),
+                None => (text, None),
+            };
+            let mut heard = Vec::new();
+            for label in presses.split_whitespace() {
                 let portent = press(label).map_err(|problem| self.failed(number, &problem))?;
-                self.presses.push_back(Press {
+                heard.push(Press {
                     label: label.to_string(),
-                    portent,
+                    portent: Yass(portent),
                 });
             }
+            if let Some(rite) = rite {
+                if rite.is_empty() {
+                    return Err(self.failed(number, "` needs a command after it, like `profiles"));
+                }
+                heard.push(Press {
+                    label: "`".into(),
+                    portent: Err(rite.to_string()),
+                });
+            }
+            self.presses.extend(heard);
         }
     }
 

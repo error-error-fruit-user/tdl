@@ -1,8 +1,9 @@
-//! tdl's tests: the scripts of presses in `tests/scripts/`, each pressed by
-//! `tdl headless --script ... --log` on a loadout of its own, with `tests/fake-uzdoom` standing in
-//! for UZDoom, and checked by how the run ended and by what it left: `tdl.log`, a line per press
-//! saying which screen heard it and what it did there, and `uzdoom.log`. Each run has a home of
-//! its own and `tests/fixtures` as its wad dir. A failing run prints its `tdl.log`.
+//! `tdl headless`'s tests, one for each kind of user: a standard one (plain keys), a super one
+//! (buttons, chords, the wads screen, spoken commands, hosting) and a garbage one (presses and
+//! commands that are no such thing). Each script is pressed by `tdl headless --script ... --log` on
+//! a loadout and home of its own, with `tests/fixtures` as its wad dir and `tests/fake-uzdoom` as
+//! UZDoom, and checked by how it ended and what it left: `tdl.log`, a line per press saying which
+//! screen heard it and what it did there, and `uzdoom.log`. A failing run prints its `tdl.log`.
 #![cfg(unix)]
 
 use std::{
@@ -22,7 +23,6 @@ impl Run {
         fs::read_to_string(self.dir.join("logs").join(name)).unwrap_or_default()
     }
 
-    /// The run's own account of itself, for a failure message.
     fn account(&self) -> String {
         format!(
             "stdout:\n{}\nstderr:\n{}\ntdl.log:\n{}",
@@ -32,13 +32,34 @@ impl Run {
         )
     }
 
+    #[track_caller]
     fn succeeded(&self) -> &Self {
         assert!(self.output.status.success(), "{}", self.account());
         assert!(self.log("tdl.log").contains("] done"), "{}", self.account());
         self
     }
 
+    /// Ended with an error code, `tdl.log` saying `words`, and nothing pressed after it.
+    #[track_caller]
+    fn failed_with(&self, words: &str) -> &Self {
+        assert_eq!(self.output.status.code(), Some(1), "{}", self.account());
+        assert!(
+            self.log("tdl.log").contains(words),
+            "no \"{words}\" in\n{}",
+            self.account()
+        );
+        self
+    }
+
+    #[track_caller]
+    fn played_uzdoom(&self, times: usize) -> &Self {
+        let log = self.log("uzdoom.log");
+        assert_eq!(log.matches("fake uzdoom args").count(), times, "{log}");
+        self
+    }
+
     /// That `press`, heard by `screen`, did `deed` (spaces between them don't matter).
+    #[track_caller]
     fn confessed(&self, press: &str, screen: &str, deed: &str) -> &Self {
         let wanted = format!("{press} {screen} → {deed}");
         let log = self.log("tdl.log");
@@ -50,9 +71,14 @@ impl Run {
         self
     }
 
-    fn played_uzdoom(&self, times: usize) -> &Self {
-        let log = self.log("uzdoom.log");
-        assert_eq!(log.matches("fake uzdoom args").count(), times, "{log}");
+    #[track_caller]
+    fn said(&self, words: &str) -> &Self {
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&self.output.stdout),
+            String::from_utf8_lossy(&self.output.stderr)
+        );
+        assert!(all.contains(words), "no \"{words}\" in\n{}", self.account());
         self
     }
 }
@@ -66,10 +92,10 @@ impl Drop for Run {
     }
 }
 
-/// Plays `tests/scripts/<name>.txt` from the package's dir, so the paths in it are relative to it.
-fn play(name: &str) -> Run {
+/// Presses `script` from the package's dir, so the paths in it are relative to it.
+fn press(name: &str, script: &Path) -> Run {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let dir = env::temp_dir().join(format!("tdl-script-{name}-{}", std::process::id()));
+    let dir = env::temp_dir().join(format!("tdl-headless-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("loadout")).unwrap();
     // 🏠 a home of its own, so the user's global settings and wad dirs never come into it
@@ -82,7 +108,7 @@ fn play(name: &str) -> Run {
         .env("XDG_CACHE_HOME", home.join(".cache"))
         .arg("headless")
         .arg("--script")
-        .arg(root.join("tests/scripts").join(format!("{name}.txt")))
+        .arg(script)
         .arg("--log")
         .arg(dir.join("logs"))
         .arg("--session")
@@ -100,92 +126,108 @@ fn play(name: &str) -> Run {
     Run { output, dir }
 }
 
-#[test]
-fn a_profile_made_with_keys_and_buttons_launches_and_shows_its_log_window() {
-    play("launch")
-        .succeeded()
-        .played_uzdoom(1)
-        .confessed("⟨lb+a⟩", "launcher", "Add a Profile")
-        .confessed("e", "editor", "Input (Spaces Too)")
-        .confessed("⟨a⟩", "editor", "Save and Quit")
-        .confessed("⟨up⟩", "launcher", "Traverse (Home/End: First/Last)")
-        .confessed("⟨a⟩", "launcher", "Launch")
-        .confessed("L", "running", "Show UZDoom's log")
-        .confessed("⟨b⟩", "running", "Close UZDoom's log")
-        .confessed("⟨b⟩", "launcher", "Save and Quit (unselects first)");
+/// Presses `tests/scripts/<name>.txt`.
+fn play(name: &str) -> Run {
+    press(
+        name,
+        &Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/scripts")
+            .join(format!("{name}.txt")),
+    )
+}
+
+/// Presses `text`, written to a script of its own first.
+fn play_text(name: &str, text: &str) -> Run {
+    let script = env::temp_dir().join(format!("tdl-headless-{name}-{}.txt", std::process::id()));
+    fs::write(&script, text).unwrap();
+    let run = press(name, &script);
+    let _ = fs::remove_file(script);
+    run
 }
 
 #[test]
-fn a_profile_with_a_wad_from_the_wads_screen_is_hosted_with_the_host_trigger() {
-    let run = play("host");
+fn a_standard_user_makes_a_profile_and_plays_it() {
+    play("standard")
+        .succeeded()
+        .played_uzdoom(1)
+        .confessed("a", "launcher", "Add a Profile")
+        .confessed("e", "editor", "Input (Spaces Too)")
+        .confessed("enter", "editor", "Save and Quit")
+        .confessed("enter", "launcher", "Launch")
+        .confessed("L", "running", "Show UZDoom's log")
+        .confessed("esc", "running", "Close UZDoom's log")
+        .confessed("esc", "launcher", "Save and Quit (unselects first)");
+}
+
+#[test]
+fn a_super_user_presses_buttons_speaks_commands_and_hosts() {
+    let run = play("super");
     run.succeeded()
         .played_uzdoom(1)
+        .confessed("⟨start⟩", "launcher", "Show the legend")
+        .confessed("⟨b⟩", "legend", "Close the legend")
+        .confessed("<lb+a>", "launcher", "Add a Profile")
         .confessed("w", "editor", "Add Wads From the Wads/Files")
         .confessed(
             "enter",
             "library",
             "Open/Close Dir (Takes the Wad When Picking)",
         )
+        .confessed(
+            "`",
+            "tdl cli",
+            "tdl cli wads add e1 tests/fixtures/base.wad",
+        )
+        .confessed("`", "tdl cli", "tdl cli set e1 args \"-skill 4\"")
         // 🎮 the trigger makes F2, which the legend names only by its alias: H⟨host⟩
         .confessed("⟨host⟩", "launcher", "Host")
         .confessed("1", "host settings form", "Input")
-        .confessed("enter", "host settings form", "Launch");
-    let uzdoom = run.log("uzdoom.log");
-    assert!(
-        uzdoom.contains("-host 2") && uzdoom.contains("e1m1.wad"),
-        "{uzdoom}"
-    );
-}
-
-#[test]
-fn buttons_are_written_the_way_the_legends_alias_them() {
-    let run = play("controller");
-    run.succeeded()
-        .played_uzdoom(0)
-        .confessed("⟨start⟩", "launcher", "Show the legend")
-        .confessed("⟨b⟩", "legend", "Close the legend")
+        .confessed("enter", "host settings form", "Launch")
         .confessed(
             "⟨lb+rb+left⟩",
             "launcher",
             "Add a Profile That Watches a Dir",
         )
-        .confessed("⟨lb+a⟩", "launcher", "Add a Profile")
-        .confessed("⟨b⟩", "editor", "Quit (Asks to Save Changes)")
-        .confessed("⟨b⟩", "launcher", "Save and Quit (unselects first)");
+        .confessed("⟨b⟩", "launcher", "Save and Quit (unselects first)")
+        .said("args      -skill 4");
     // 🫢 the watched dir's dialog can't be answered, and the spirit is told
     assert!(
         run.log("tdl.log").contains("no spirit can answer one"),
         "{}",
         run.account()
     );
-}
-
-#[test]
-fn buttons_can_be_written_in_plain_angle_brackets() {
-    play("ascii")
-        .succeeded()
-        .confessed("<lb+a>", "launcher", "Add a Profile")
-        .confessed("<b>", "editor", "Quit (Asks to Save Changes)")
-        .confessed("<b>", "launcher", "Save and Quit (unselects first)");
-}
-
-#[test]
-fn buttons_that_arent_any_end_the_run_with_an_error() {
-    let run = play("no-such-button");
-    assert_eq!(run.output.status.code(), Some(1), "{}", run.account());
-    let log = run.log("tdl.log");
+    let uzdoom = run.log("uzdoom.log");
     assert!(
-        log.contains("failed: line 2: ⟨lb+zz⟩ isn't buttons"),
-        "{log}"
+        uzdoom.contains("-host 2") && uzdoom.contains("-skill 4"),
+        "{uzdoom}"
+    );
+    assert!(
+        uzdoom.contains("e1m1.wad") && uzdoom.contains("base.wad"),
+        "{uzdoom}"
     );
 }
 
 #[test]
-fn a_press_that_is_no_key_ends_the_run_with_an_error() {
-    let run = play("unreadable");
-    assert_eq!(run.output.status.code(), Some(1), "{}", run.account());
-    let log = run.log("tdl.log");
-    assert!(log.contains("failed: line 3"), "{log}");
-    // 🛑 nothing on the bad line is pressed, even what comes before the bad press
-    assert_eq!(log.matches("→").count(), 1, "{log}");
+fn a_garbage_user_gets_errors_not_damage() {
+    // 🗑️ presses that are no key or button end the run, with nothing on their line pressed
+    play_text("key", "j\nj nope+x\nesc\n")
+        .failed_with("failed: line 2: nope in nope+x")
+        .confessed("j", "launcher", "Traverse (Home/End: First/Last)");
+    play_text("button", "⟨lb+zz⟩\n").failed_with("⟨lb+zz⟩ isn't buttons");
+    play_text("mash", "\u{7}\u{1b}[A ;rm -rf ~\n").failed_with("failed: line 1:");
+    play_text("wait", "wait forever\n").failed_with("wait needs a time");
+    play_text("silence", "j `\n").failed_with("` needs a command after it");
+    // 💀 commands that are no such thing, or would do harm, are refused, and the run goes on
+    play_text(
+        "rites",
+        "`nope\n`new ../../escape\n`new \"unclosed\n`delete e1\n`settings song /etc/passwd\nesc\n",
+    )
+    .succeeded()
+    .said("unrecognized subcommand 'nope'")
+    .said("can't be a profile's name")
+    .said("a quote isn't closed")
+    .said("There is no profile called 'e1'")
+    .said("song:");
+    // 🕳️ nothing at all is no harm either
+    play_text("empty", "").succeeded();
 }

@@ -1,3 +1,0 @@
-# The same buttons in angle brackets a plain keyboard has.
-<lb+a>
-<b> <b>

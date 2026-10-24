@@ -1,9 +1,0 @@
-# A profile made in the editor with keys and buttons, launched with A, UZDoom's log window opened
-# with L and closed with B while it runs, then the launcher left with B.
-⟨lb+a⟩ e 1 ⟨a⟩
-⟨up⟩ ⟨a⟩
-wait 300ms
-L
-⟨b⟩
-wait 1500ms
-⟨b⟩

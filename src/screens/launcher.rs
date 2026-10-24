@@ -15,7 +15,7 @@ use ratatui::{
 };
 
 use crate::{
-    cli::{Ask, Command, Forget, Keep, Seal},
+    cli::{Ask, Command, Forget, Keep, Rite, Seal},
     clipboard::Clipboard,
     error::{Error, Result},
     layout,
@@ -49,6 +49,7 @@ use crate::{
     screens::settings::{Places, Settings, SettingsForm},
     screens::splash,
     screens::wrap_around,
+    slayer::commands,
     slayer::host_game,
     slayer::join_game,
     slayer::plain,
@@ -529,21 +530,7 @@ impl Launcher {
             .command
             .take()
             .ok_or("--headless needs launch, host or join")?;
-        if launcher.passed_wads.iter().any(|dir| !dir.is_dir()) {
-            launcher.leave_out_missing_wads();
-        }
-        launcher.loadout.wad_dirs.retain(|dir| dir.is_dir());
-        launcher.use_session_files();
-        if let Some(path) = launcher.session_base_wad.take() {
-            let wad = Wad::hashed(&path, &mut ())
-                .map_err(|error| format!("Could not read --base-wad: {error}"))?;
-            launcher.loadout.uac.session_base_wad = Some(wad);
-            launcher.loadout.forget_lookup();
-        }
-        // 🗝️ with no windows nothing can be asked, so only the --keep- flags keep anything
-        for problem in launcher.keep_unasked() {
-            crate::ritual::wail(problem);
-        }
+        launcher.settle_plain()?;
         let loadout = &mut launcher.loadout;
         match command {
             Command::Host { profile, overrides } => {
@@ -570,6 +557,48 @@ impl Launcher {
                 plain::launch(loadout, index)
             }
         }
+    }
+
+    /// `tdl cli`: a rite done on the loadout, opened as [`Launcher::summon_plain`] opens it, with no
+    /// windows. Playing is the `--headless` flows; the rest is in [`commands`]. `Err` says what
+    /// stopped it.
+    pub fn rite(start: Start, rite: Rite) -> std::result::Result<(), String> {
+        let command = match rite {
+            Rite::Launch { profile } => Command::Launch { profile },
+            Rite::Host { profile, game } => game.command(profile),
+            Rite::Join { host, game } => game.command(host),
+            rite => {
+                let mut launcher = Self::open_plain(start)?;
+                launcher.settle_plain()?;
+                return commands::perform(&mut launcher.loadout, rite);
+            }
+        };
+        Self::summon_plain(Start {
+            command: Some(command),
+            ..start
+        })
+    }
+
+    /// What a run with no windows does before its work, after [`Launcher::open_plain`]: the wad
+    /// dirs that are there, this session's UZDoom, base wad and ini, and only what the `--keep-`
+    /// flags keep, since nothing can be asked.
+    fn settle_plain(&mut self) -> std::result::Result<(), String> {
+        if self.passed_wads.iter().any(|dir| !dir.is_dir()) {
+            self.leave_out_missing_wads();
+        }
+        self.loadout.wad_dirs.retain(|dir| dir.is_dir());
+        self.use_session_files();
+        if let Some(path) = self.session_base_wad.take() {
+            let wad = Wad::hashed(&path, &mut ())
+                .map_err(|error| format!("Could not read --base-wad: {error}"))?;
+            self.loadout.uac.session_base_wad = Some(wad);
+            self.loadout.forget_lookup();
+        }
+        // 🗝️ with no windows nothing can be asked, so only the --keep- flags keep anything
+        for problem in self.keep_unasked() {
+            crate::ritual::wail(problem);
+        }
+        Ok(())
     }
 
     /// The launcher for a run with no windows, with the loadout checked as fine to use: notices are
@@ -1617,7 +1646,7 @@ impl Launcher {
 
 /// The position of the profile called `name`: that exact name, or else the only one that matches
 /// it but for case (`Brutal_Doom` for `brutal_doom`), or `None`.
-fn find_profile(profiles: &[Profile], name: &str) -> Option<usize> {
+pub fn find_profile(profiles: &[Profile], name: &str) -> Option<usize> {
     if let Some(exact) = profiles.iter().position(|p| p.name == name) {
         return Some(exact);
     }

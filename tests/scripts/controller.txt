@@ -1,8 +1,0 @@
-# Buttons as the legends write them: Start shows the launcher's legend and B closes it, both
-# bumpers with left add a profile that watches a dir (whose dialog no spirit can answer), LB+A adds
-# a profile and B leaves the editor and then the launcher.
-⟨start⟩ ⟨b⟩
-⟨lb+rb+left⟩
-⟨lb+a⟩
-⟨b⟩
-⟨b⟩

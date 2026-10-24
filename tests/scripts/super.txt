@@ -1,0 +1,18 @@
+# A super user, with every kind of press: buttons and chords as the legends write them (and in
+# plain angle brackets), the legend, a wad taken from the wads screen, commands spoken with `,
+# and the host trigger to host on a port typed into the host form.
+⟨start⟩ ⟨b⟩
+<lb+a> e 1 tab w
+tab j enter
+k ⟨a⟩
+`wads add e1 tests/fixtures/base.wad
+`set e1 args "-skill 4"
+# the launcher opens again on e1 after the commands
+⟨host⟩
+tab tab tab
+backspace backspace backspace backspace 1 8 7 6 3
+enter
+wait 1500ms
+`show e1
+⟨lb+rb+left⟩
+⟨b⟩

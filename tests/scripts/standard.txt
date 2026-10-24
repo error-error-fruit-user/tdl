@@ -1,0 +1,9 @@
+# A standard user, with keys: makes a profile, launches it, peeks at UZDoom's log while it runs,
+# and quits.
+a e 1 enter
+home enter
+wait 300ms
+L
+esc
+wait 1500ms
+esc

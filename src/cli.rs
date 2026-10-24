@@ -1,5 +1,6 @@
 //! The command line, read by clap: `tdl [options] [dir]` opens the launcher, `tdl launch`,
-//! `tdl host` and `tdl join` do one thing and close, `tdl headless` presses keys from a script
+//! `tdl host` and `tdl join` do one thing and close, `tdl cli` does the launcher's work from the command line,
+//! `tdl headless` presses keys from a script
 //! (see the possession in [`ritual`](crate::ritual)), and `tdl --seal` and `tdl --list-quips` do theirs without any
 //! windows. `tdl --help` lists it all, in the theme's colors.
 
@@ -88,6 +89,8 @@ pub struct Cli {
     pub headless: bool,
     /// `tdl headless`: a script of presses, with no splash and nothing drawn.
     pub play: Option<Play>,
+    /// `tdl cli ...`: one of the launcher's rites, done from the command line.
+    pub rite: Option<Rite>,
 }
 
 /// `tdl headless`: the script of presses (stdin if there is none), and where `--log` writes
@@ -577,26 +580,8 @@ enum Commands {
     Host {
         /// The profile's name (case doesn't matter if only one fits)
         profile: String,
-        /// How many players, 2 to 8
-        #[arg(long, value_name = "N", value_parser = clap::value_parser!(u8).range(2..=8))]
-        players: Option<u8>,
-        /// Play cooperatively
-        #[arg(long, conflicts_with = "deathmatch")]
-        coop: bool,
-        /// Play deathmatch
-        #[arg(long)]
-        deathmatch: bool,
-        /// The map to start on, like MAP07 or E1M1
-        #[arg(long, value_parser = map_name)]
-        map: Option<String>,
         #[command(flatten)]
-        connection: Connection,
-        /// Serve the ini you host with too, for joiners who want to play with it
-        #[arg(long, conflicts_with = "no_share_ini")]
-        share_ini: bool,
-        /// Keep your ini to yourself, even if the profile's host defaults share it
-        #[arg(long)]
-        no_share_ini: bool,
+        game: HostArgs,
         /// No form and no windows, only plain lines in the terminal
         #[arg(long)]
         headless: bool,
@@ -607,21 +592,16 @@ enum Commands {
         #[arg(value_name = "IP")]
         host: String,
         #[command(flatten)]
-        connection: Connection,
-        /// Download the wads that aren't installed without asking first
-        #[arg(long)]
-        always_download: bool,
-        /// Play with the host's ini, if it shares it (your own player, controls, screen and sound
-        /// stay yours)
-        #[arg(long)]
-        host_ini: bool,
-        /// Like --host-ini, and add the host's key bindings on keys you haven't bound (never one
-        /// that could reach a file or rebind keys)
-        #[arg(long)]
-        host_ini_with_keys: bool,
+        game: JoinArgs,
         /// No form and no windows, only plain lines in the terminal (needs --code)
         #[arg(long, requires = "code")]
         headless: bool,
+    },
+    /// Use the launcher from the command line: profiles, their wads, playing, the settings, the
+    /// wad pools and sharing, with no windows
+    Cli {
+        #[command(subcommand)]
+        rite: Rite,
     },
     /// Press keys and buttons from a script, with no splash and nothing drawn: each line is
     /// presses separated by spaces (keys like j, enter, shift+b, ctrl+c; buttons as the legends
@@ -639,8 +619,245 @@ enum Commands {
     },
 }
 
+/// How a game is hosted: `tdl host`'s flags, and `tdl cli host`'s.
+#[derive(ClapArgs, Clone, Debug, PartialEq)]
+pub struct HostArgs {
+    /// How many players, 2 to 8
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u8).range(2..=8))]
+    players: Option<u8>,
+    /// Play cooperatively
+    #[arg(long, conflicts_with = "deathmatch")]
+    coop: bool,
+    /// Play deathmatch
+    #[arg(long)]
+    deathmatch: bool,
+    /// The map to start on, like MAP07 or E1M1
+    #[arg(long, value_parser = map_name)]
+    map: Option<String>,
+    #[command(flatten)]
+    connection: Connection,
+    /// Serve the ini you host with too, for joiners who want to play with it
+    #[arg(long, conflicts_with = "no_share_ini")]
+    share_ini: bool,
+    /// Keep your ini to yourself, even if the profile's host defaults share it
+    #[arg(long)]
+    no_share_ini: bool,
+}
+
+impl HostArgs {
+    /// Hosting `profile` with these over its host defaults.
+    pub fn command(self, profile: String) -> Command {
+        Command::Host {
+            profile,
+            overrides: HostOverrides {
+                players: self.players,
+                deathmatch: (self.coop || self.deathmatch).then_some(self.deathmatch),
+                map: self.map,
+                port: self.connection.port,
+                code: self.connection.code,
+                share_ini: (self.share_ini || self.no_share_ini).then_some(self.share_ini),
+            },
+        }
+    }
+}
+
+/// How a game is joined: `tdl join`'s flags, and `tdl cli join`'s.
+#[derive(ClapArgs, Clone, Debug, PartialEq)]
+pub struct JoinArgs {
+    #[command(flatten)]
+    connection: Connection,
+    /// Download the wads that aren't installed without asking first
+    #[arg(long)]
+    always_download: bool,
+    /// Play with the host's ini, if it shares it (your own player, controls, screen and sound
+    /// stay yours)
+    #[arg(long)]
+    host_ini: bool,
+    /// Like --host-ini, and add the host's key bindings on keys you haven't bound (never one
+    /// that could reach a file or rebind keys)
+    #[arg(long)]
+    host_ini_with_keys: bool,
+}
+
+impl JoinArgs {
+    /// Joining the game at `host` with these.
+    pub fn command(self, host: String) -> Command {
+        Command::Join {
+            host,
+            port: self.connection.port,
+            code: self.connection.code,
+            always_download: self.always_download,
+            host_ini: match (self.host_ini, self.host_ini_with_keys) {
+                (_, true) => HostIni::WithKeys,
+                (true, false) => HostIni::Settings,
+                (false, false) => HostIni::Yours,
+            },
+        }
+    }
+}
+
+/// `tdl cli`: the launcher's work from the command line, one rite at a time. A PROFILE is a
+/// profile's name (case doesn't matter if only one fits); a WAD is a wad's number in its profile's
+/// load order (from 1) or its file name.
+#[derive(Subcommand, Clone, Debug, PartialEq)]
+pub enum Rite {
+    /// List the profiles, in the launcher's order
+    Profiles,
+    /// Show a profile: its wads in load order, and what it plays with
+    Show { profile: String },
+    /// Make a profile with these wads, in load order (a folder is a mod folder)
+    New {
+        name: String,
+        #[arg(id = "new_wads", value_name = "WAD")]
+        wads: Vec<PathBuf>,
+    },
+    /// Rename a profile (its saves go with it)
+    Rename { profile: String, name: String },
+    /// Copy a profile, as NAME or else as its name tagged (brutal_2)
+    Copy {
+        profile: String,
+        name: Option<String>,
+    },
+    /// Delete a profile and its saves, after asking
+    Delete {
+        profile: String,
+        /// Don't ask
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Change a profile's wads
+    #[command(subcommand)]
+    Wads(WadRite),
+    /// Show what a profile plays with, or set its own: NAME VALUE pairs (uzdoom FILE, base-wad
+    /// FILE, ini FILE, args ARGS), where the VALUE `global` puts the global one back
+    Set {
+        profile: String,
+        #[arg(
+            value_name = "NAME VALUE",
+            num_args = 0..,
+            trailing_var_arg = true,
+            allow_hyphen_values = true
+        )]
+        changes: Vec<String>,
+    },
+    /// Play a profile
+    Launch { profile: String },
+    /// Host a profile, with its host defaults changed by these
+    Host {
+        profile: String,
+        #[command(flatten)]
+        game: HostArgs,
+    },
+    /// Join the game at IP (needs --code)
+    Join {
+        #[arg(value_name = "IP")]
+        host: String,
+        #[command(flatten)]
+        game: JoinArgs,
+    },
+    /// Show the settings in use, or change them: NAME VALUE pairs (uzdoom FILE, base-wad FILE, ini
+    /// FILE|none, args ARGS, theme NAME|FILE|default, splash NAME|FILE|default, splash-screen
+    /// on|off, splash-quip WORDS|random, quips on|off, music off|splash|kept, song FILE|none,
+    /// pride on|off)
+    Settings {
+        #[arg(
+            value_name = "NAME VALUE",
+            num_args = 0..,
+            trailing_var_arg = true,
+            allow_hyphen_values = true
+        )]
+        changes: Vec<String>,
+    },
+    /// The wad pools: the dirs wads are picked from and looked for in
+    #[command(subcommand)]
+    Pools(PoolRite),
+    /// Seal profiles (all of them if none are named) into SCROLL, to share
+    Seal {
+        scroll: PathBuf,
+        #[arg(value_name = "PROFILE")]
+        profiles: Vec<String>,
+        /// Seal your global settings in too (never your song)
+        #[arg(long)]
+        with_settings: bool,
+    },
+    /// Unseal a scroll's profiles into the loadout, looking for their wads in the wad pools
+    Unseal {
+        scroll: PathBuf,
+        /// Take the global settings sealed in it, in place of yours
+        #[arg(long)]
+        with_settings: bool,
+        /// Delete every profile in the loadout first (with their saves), after asking
+        #[arg(long)]
+        replace: bool,
+        /// Don't ask
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Make a profile that watches DIR: wads put in it are added, wads taken out of it leave
+    Watch {
+        dir: PathBuf,
+        /// Its name, or else the dir's
+        name: Option<String>,
+    },
+}
+
+/// `tdl cli wads`: a profile's wads.
+#[derive(Subcommand, Clone, Debug, PartialEq)]
+pub enum WadRite {
+    /// Add wads (or mod folders), at the end or before wad --at N
+    Add {
+        profile: String,
+        #[arg(id = "added_wads", value_name = "WAD", required = true)]
+        wads: Vec<PathBuf>,
+        /// Put them before this wad (from 1)
+        #[arg(long, value_name = "N")]
+        at: Option<usize>,
+    },
+    /// Take wads out of a profile (the files stay)
+    Remove {
+        profile: String,
+        #[arg(id = "taken_wads", value_name = "WAD", required = true)]
+        wads: Vec<String>,
+    },
+    /// Move a wad to place TO in the load order (from 1)
+    Move {
+        profile: String,
+        wad: String,
+        to: usize,
+    },
+    /// Put another file (or mod folder) in a wad's place
+    Replace {
+        profile: String,
+        wad: String,
+        file: PathBuf,
+    },
+    /// Mark a wad volatile (it may change, so its hash isn't held to), or not with --off
+    Volatile {
+        profile: String,
+        wad: String,
+        #[arg(long)]
+        off: bool,
+    },
+}
+
+/// `tdl cli pools`: the wad pools.
+#[derive(Subcommand, Clone, Debug, PartialEq)]
+pub enum PoolRite {
+    /// List the wad pools: this run's, the ones kept for every loadout and for this one, and the
+    /// downloads
+    List,
+    /// Keep DIR as a wad pool, for every loadout (or --this-loadout, this one)
+    Add {
+        dir: PathBuf,
+        #[arg(long)]
+        this_loadout: bool,
+    },
+    /// Stop keeping DIR as a wad pool
+    Remove { dir: PathBuf },
+}
+
 /// Where a game is found: on both `host` and `join`.
-#[derive(ClapArgs, Debug)]
+#[derive(ClapArgs, Clone, Debug, PartialEq)]
 struct Connection {
     /// The port the host serves its wads on [default: 8080]
     #[arg(long, value_parser = clap::value_parser!(u16).range(1..))]
@@ -747,6 +964,7 @@ impl Cli {
         }
         let mut headless = false;
         let mut play = None;
+        let mut rite = None;
         let command = args.command.and_then(|command| match command {
             Commands::Headless { script, log } => {
                 play = Some(Play { script, log });
@@ -761,48 +979,23 @@ impl Cli {
             }
             Commands::Host {
                 profile,
-                players,
-                coop,
-                deathmatch,
-                map,
-                connection,
-                share_ini,
-                no_share_ini,
+                game,
                 headless: plain,
             } => {
                 headless = plain;
-                Some(Command::Host {
-                    profile,
-                    overrides: HostOverrides {
-                        players,
-                        deathmatch: (coop || deathmatch).then_some(deathmatch),
-                        map,
-                        port: connection.port,
-                        code: connection.code,
-                        share_ini: (share_ini || no_share_ini).then_some(share_ini),
-                    },
-                })
+                Some(game.command(profile))
             }
             Commands::Join {
                 host,
-                connection,
-                always_download,
-                host_ini,
-                host_ini_with_keys,
+                game,
                 headless: plain,
             } => {
                 headless = plain;
-                Some(Command::Join {
-                    host,
-                    port: connection.port,
-                    code: connection.code,
-                    always_download,
-                    host_ini: match (host_ini, host_ini_with_keys) {
-                        (_, true) => HostIni::WithKeys,
-                        (true, false) => HostIni::Settings,
-                        (false, false) => HostIni::Yours,
-                    },
-                })
+                Some(game.command(host))
+            }
+            Commands::Cli { rite: given } => {
+                rite = Some(given);
+                None
             }
         });
         let session = args.session;
@@ -871,6 +1064,7 @@ impl Cli {
             command,
             headless,
             play,
+            rite,
         })
     }
 }

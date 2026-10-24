@@ -112,6 +112,7 @@ fn main() {
     }
     let headless = cli.headless;
     let play = cli.play;
+    let rite = cli.rite;
     let seal = cli.seal;
     let setup = cli.setup;
     let start = Start {
@@ -157,6 +158,14 @@ fn main() {
         }
         return;
     }
+    // 📜 tdl cli: one of the launcher's rites, from the command line, said through the séance
+    if let Some(rite) = rite {
+        if let Err(problem) = Launcher::rite(start, rite) {
+            ritual::farewell(false, &problem);
+            std::process::exit(1);
+        }
+        return;
+    }
     // 👻 tdl headless: a spirit presses the keys from a script, on pages nobody sees
     if let Some(play) = play {
         let outcome = ritual::possess(play.script.as_deref(), play.log.as_deref())
@@ -168,10 +177,14 @@ fn main() {
                     no_music: true,
                     ..start
                 };
-                match Launcher::summon(&mut grimoire, start) {
-                    // 🚪 the launcher quit, the spirit's script ran out, or it pressed Ctrl+C
-                    Ok(()) | Err(Error::ScriptEnd | Error::Interrupted) => Ok(()),
-                    Err(error) => Err(error.to_string()),
+                loop {
+                    match Launcher::summon(&mut grimoire, start.clone()) {
+                        // 🚪 the launcher quit, the spirit's script ran out, or it pressed Ctrl+C
+                        Ok(()) | Err(Error::ScriptEnd | Error::Interrupted) => break Ok(()),
+                        // 📜 a spoken rite: done on the loadout, then the launcher opens again
+                        Err(Error::Rite(spoken)) => speak(&start, &spoken),
+                        Err(error) => break Err(error.to_string()),
+                    }
                 }
             });
         ritual::exorcise(&outcome);
@@ -199,5 +212,28 @@ fn main() {
         if matches!(error, Error::Interrupted) {
             std::process::exit(INTERRUPTED_EXIT);
         }
+    }
+}
+
+/// Does the `tdl cli` command a possessed run spoke after a `, confessed, with what it says said
+/// through the séance. One that fails is wailed about, and the possession carries on.
+fn speak(start: &Start, spoken: &str) {
+    ritual::confess("tdl cli", Some(format!("tdl cli {spoken}")));
+    let rite = ritual::rite_words(spoken).and_then(|words| {
+        let args = std::iter::once("cli".to_string()).chain(words);
+        // ✂️ clap's own words, without the help it points at, which nobody here can ask for
+        let cli = Cli::parse(args).map_err(|error| {
+            let said = error.to_string();
+            said.lines()
+                .next()
+                .unwrap_or_default()
+                .trim_start_matches("error: ")
+                .to_string()
+        })?;
+        cli.rite
+            .ok_or_else(|| format!("`{spoken} isn't a tdl cli command"))
+    });
+    if let Err(problem) = rite.and_then(|rite| Launcher::rite(start.clone(), rite)) {
+        ritual::wail(problem);
     }
 }

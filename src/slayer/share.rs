@@ -216,7 +216,7 @@ fn clear(
 
 /// A profile off a scroll, as it goes into `loadout`. A base wad that is the global one already is
 /// left to the global setting.
-fn into_profile(loadout: &Loadout, unsealed: UnsealedProfile) -> Profile {
+pub fn into_profile(loadout: &Loadout, unsealed: UnsealedProfile) -> Profile {
     let base_wad = unsealed.base_wad.filter(|wad| {
         loadout
             .uac
@@ -229,6 +229,22 @@ fn into_profile(loadout: &Loadout, unsealed: UnsealedProfile) -> Profile {
         host_defaults: unsealed.host_defaults,
         ..Profile::new(unsealed.name, unsealed.wads)
     }
+}
+
+/// The scroll at `path`, checked as safe to break, for `tdl cli unseal`: `Err` says why not.
+pub fn read_plain(path: &Path) -> std::result::Result<Scroll, String> {
+    if !path.is_file() {
+        return Err(format!("There is no scroll at {}", path.display()));
+    }
+    if Scroll::stored_version(path).is_some_and(|version| version > Scroll::current()) {
+        return Err("The scroll is from a newer tdl, please update!".into());
+    }
+    if legacy::is_legacy_scroll(path) {
+        return Err(legacy::scroll_advice(path));
+    }
+    let scroll = Scroll::open(path).ok_or("That file isn't a scroll tdl can read")?;
+    scroll.check().map_err(str::to_string)?;
+    Ok(scroll)
 }
 
 /// The scroll at `path`, checked as safe to break, or `None` after telling the user why not.

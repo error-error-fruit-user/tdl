@@ -52,6 +52,11 @@ pub enum Error {
     #[error("{0}")]
     Script(String),
 
+    /// The spirit pressed ` and spoke a `tdl cli` command: the words after it, for the launcher to
+    /// close for, so the rite can be done on the loadout. Not a failure.
+    #[error("A rite: {0}")]
+    Rite(String),
+
     /// The spirit's script is over. Not a failure.
     #[error("The script is over")]
     ScriptEnd,

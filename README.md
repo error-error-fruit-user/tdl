@@ -140,11 +140,22 @@ tdl join 10.0.0.2 --code abc234 --port 9000           # the join form, filled in
   - keys: `j`, `enter`, `esc`, `tab`, `shift+b`, `ctrl+c`, `space`, `f1`, the arrows, `home`, `end`, `pageup`, `pagedown`, `backspace`, `delete`, or a character
   - buttons, written the way tdl's legends alias them: `⟨a⟩`, `⟨b⟩`, `⟨lb+a⟩`, `⟨rb+down⟩`, `⟨lb+rb+left⟩`, `⟨host⟩`, `⟨start⟩` (`a b x y lb rb lt rt l3 r3 home start select up down left right host join`; `<lb+a>` works too)
 
+  A `` ` `` speaks the rest of its line as a `tdl cli` command (`` `new e1 doom/e1.wad ``, `` `profiles ``): the launcher closes while it is done on the loadout, what it says is shown, and the launcher opens again for the next press. One that fails is said, and the presses carry on.
+
   With `--log [DIR]`, every press is shown as it is made, with the screen that heard it and what it did there (named from that screen's legend), and kept in `DIR/tdl.log` (DIR is the working directory if not given), with everything UZDoom printed in `DIR/uzdoom.log`. File dialogs can't be answered, so they are cancelled. tdl ends when the launcher is quit or the script runs out; a line it can't read ends it with an error code.
 
   ```sh
   printf 'j enter\nwait 5s\nL\n⟨b⟩\n' | tdl headless --log
   ```
+
+- `cli` does the launcher's work from the command line, with no windows, saying what it did in the theme's colors (`tdl cli --help`, and `--help` after any of its commands). A PROFILE is a profile's name (case doesn't matter if only one fits); a WAD in a profile is its number in the load order (from 1) or its file name:
+  - profiles: `profiles` lists them, `show PROFILE`, `new NAME [WAD...]` (a folder is a [mod folder](#mod-folders)), `rename PROFILE NAME`, `copy PROFILE [NAME]` (tagged `brutal_2` without a name), `delete PROFILE [--yes]` (asks first)
+  - a profile's wads: `wads add PROFILE WAD... [--at N]`, `wads remove PROFILE WAD...`, `wads move PROFILE WAD TO`, `wads replace PROFILE WAD FILE`, `wads volatile PROFILE WAD [--off]`
+  - what a profile plays with: `set PROFILE [NAME VALUE]...`, with `uzdoom FILE`, `base-wad FILE`, `ini FILE` and `args ARGS`, where `global` puts the global one back (`tdl cli set e1 args "-skill 4"`)
+  - playing: `launch PROFILE`, `host PROFILE [options]` and `join IP --code CODE [options]`, with `tdl host`'s and `tdl join`'s options, done as `--headless` does them
+  - the settings: `settings` shows them, and `settings NAME VALUE...` changes them: `uzdoom FILE`, `base-wad FILE`, `ini FILE|none`, `args ARGS`, `theme NAME|FILE|default`, `splash NAME|FILE|default`, `splash-screen on|off`, `splash-quip WORDS|random`, `quips on|off`, `music off|splash|kept`, `song FILE|none`, `pride on|off` (they are name-value pairs because `--uzdoom` and the rest already mean this run's)
+  - wad pools: `pools list`, `pools add DIR [--this-loadout]` (for every loadout, or this one), `pools remove DIR`
+  - sharing: `seal SCROLL [PROFILE...] [--with-settings]` (every profile if none are named), `unseal SCROLL [--with-settings] [--replace [--yes]]` (the wads are looked for in the wad pools; a name that is taken is tagged), and `watch DIR [NAME]`, a profile that watches DIR
 
 | Key | Action |
 | --- | --- |
