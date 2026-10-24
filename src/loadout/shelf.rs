@@ -27,6 +27,11 @@ pub struct Shelf {
     pub uac_writable: bool,
     /// Every file moved by a cut and paste, from where to where, in the order they moved.
     pub moves: Vec<(PathBuf, PathBuf)>,
+    /// The dirs closed on the wads screen, which it opens closed again.
+    pub closed: Vec<PathBuf>,
+    /// The order the dirs were moved into on the wads screen (the downloads among them); dirs not
+    /// in it come after them.
+    pub order: Vec<PathBuf>,
 }
 
 /// Where a wad dir added on the wads screen is kept: just for this session, for every loadout, or
@@ -39,13 +44,46 @@ pub enum Keep {
 }
 
 impl Shelf {
-    /// Every place wads are looked for: the wad dirs, then the downloads.
+    /// Every place wads are looked for: the wad dirs, then the downloads, in the order they were
+    /// moved into, if they were.
     pub fn sources(&self) -> Vec<PathBuf> {
-        self.dirs
+        let mut sources: Vec<PathBuf> = self
+            .dirs
             .iter()
             .cloned()
             .chain([self.downloads.clone()])
-            .collect()
+            .collect();
+        // 🔢 a stable sort: the dirs never moved keep their own order, after the moved ones
+        sources.sort_by_key(|dir| {
+            self.order
+                .iter()
+                .position(|placed| placed == dir)
+                .unwrap_or(usize::MAX)
+        });
+        sources
+    }
+
+    /// Moves `dir` one place down the sources (or up), keeping the order from then on.
+    /// Returns whether it moved: not past either end.
+    pub fn shift(&mut self, dir: &Path, down: bool) -> bool {
+        let mut sources = self.sources();
+        let Some(at) = sources.iter().position(|source| source == dir) else {
+            return false;
+        };
+        let to = if down {
+            at + 1
+        } else {
+            match at.checked_sub(1) {
+                Some(to) => to,
+                None => return false,
+            }
+        };
+        if to >= sources.len() {
+            return false;
+        }
+        sources.swap(at, to);
+        self.order = sources;
+        true
     }
 
     /// Whether `dir` is already looked in.
@@ -68,6 +106,10 @@ impl Shelf {
             kept.push(dir.clone());
         }
         if !self.has(&dir) {
+            // 📍 a new dir goes before the downloads, wherever the dirs were moved
+            if let Some(downloads) = self.order.iter().position(|dir| *dir == self.downloads) {
+                self.order.insert(downloads, dir.clone());
+            }
             self.dirs.push(dir);
         }
     }
@@ -78,6 +120,8 @@ impl Shelf {
         self.dirs.retain(|known| known != dir);
         self.kept_loadout.retain(|known| known != dir);
         self.kept_global.retain(|known| known != dir);
+        self.order.retain(|known| known != dir);
+        self.closed.retain(|known| known != dir);
     }
 }
 

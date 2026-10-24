@@ -32,6 +32,14 @@ pub struct Config {
     /// dirs, so tdl stops asking about them. Missing in older files, which count as none.
     #[serde(default, with = "paths")]
     pub ignored_wad_dirs: Vec<OsString>,
+    /// The wad dirs closed on the wads screen when it was last left, so it opens the same way.
+    /// Missing in older files, which count as every dir open.
+    #[serde(default, with = "paths")]
+    pub closed_wad_dirs: Vec<OsString>,
+    /// The order the wads screen shows the wad dirs in (the downloads among them), as they were
+    /// last moved there; dirs not in it come after. Missing in older files, which count as none.
+    #[serde(default, with = "paths")]
+    pub wad_dir_order: Vec<OsString>,
 }
 
 impl Edition for Config {

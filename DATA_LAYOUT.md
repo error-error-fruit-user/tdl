@@ -98,6 +98,8 @@ Every `.rite` file is MessagePack, a compact binary format, in a wrapper that re
 | `wad_dirs` | Wad dirs kept for this loadout from `--wads` (or `--keep-loadout-wads`), used whenever tdl starts without it (before the global ones). Missing means none. |
 | `own_settings` | `true` if the loadout uses its own settings (`settings.rite`) instead of the global ones (`uac.rite`). Missing means `false`. |
 | `ignored_wad_dirs` | Dirs with `wad` in their name, found beside tdl or where it was started, that you said **Never** to keeping as wad pools, so tdl stops asking. Missing means none. |
+| `closed_wad_dirs` | The dirs closed on the wads screen when it was last left, which it opens closed again. Missing means none. |
+| `wad_dir_order` | The order the wads screen shows the dirs in (`.downloads` among them), as they were last moved there with `}`/`{`; dirs not in it come after. Missing means none. |
 
 Only what belongs to the loadout is here; the settings are in `uac.rite`, or in `settings.rite` while `own_settings` is on.
 

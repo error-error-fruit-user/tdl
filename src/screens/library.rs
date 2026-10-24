@@ -105,6 +105,7 @@ impl<'a> Library<'a> {
         ["J↓/K↑", "Traverse (Home/End: First/Last)"],
         Search::LEGEND,
         ["Enter", "Open/Close Dir (Takes the Wad When Picking)"],
+        ["}⟨rb+down⟩/{⟨rb+up⟩", "Move Dir Down/Up"],
         ["Space", "Take the Picked Wads or a Dir's (Picking Wads)"],
         Selection::LEGEND,
         ["Y/X", "Copy/Cut (Selected, or Whole Dir)"],
@@ -151,12 +152,14 @@ impl<'a> Library<'a> {
     }
 
     fn new(shelf: &'a mut Shelf, clipboard: &'a mut Clipboard) -> Self {
+        // 📂 the dirs closed when the screen was last left are closed again
+        let closed = shelf.closed.iter().cloned().collect();
         let mut library = Self {
             shelf,
             clipboard,
             sources: Vec::new(),
             stock: Vec::new(),
-            closed: HashSet::new(),
+            closed,
             every: false,
             rows: Vec::new(),
             labels: Vec::new(),
@@ -598,13 +601,32 @@ impl<'a> Library<'a> {
         Ok(())
     }
 
-    /// Opens or closes the dir under the cursor.
+    /// Opens or closes the dir under the cursor, which the shelf keeps for next time.
     fn toggle(&mut self, source: usize) {
         let dir = &self.sources[source];
         if !self.closed.remove(dir) {
             self.closed.insert(dir.clone());
         }
+        self.shelf.closed = self
+            .sources
+            .iter()
+            .filter(|dir| self.closed.contains(*dir))
+            .cloned()
+            .collect();
         self.arrange();
+    }
+
+    /// Moves the dir under the cursor one place down (or up), the cursor with it.
+    fn shift(&mut self, down: bool) -> bool {
+        let Some(Item::Source(source)) = self.current() else {
+            return false;
+        };
+        let dir = self.sources[source].clone();
+        if !self.shelf.shift(&dir, down) {
+            return false;
+        }
+        self.restack();
+        true
     }
 
     /// The file name a search looks at, for the row `row`; dirs and the add row have none.
@@ -881,6 +903,8 @@ impl Ritual for Library<'_> {
                 self.selection.toggle_mark(self.cursor(), count);
                 Ok(Phase::Render)
             }
+            KeyCode::Char('}') => Ok(Phase::render_if(!self.every && self.shift(true))),
+            KeyCode::Char('{') => Ok(Phase::render_if(!self.every && self.shift(false))),
             KeyCode::Char('y') => Ok(Phase::render_if(self.take(false))),
             KeyCode::Char('x') => Ok(Phase::render_if(self.take(true))),
             KeyCode::Char('p') => {

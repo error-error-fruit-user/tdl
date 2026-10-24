@@ -196,6 +196,8 @@ impl Loadout {
             kept_global: paths(&self.uac.wad_dirs),
             uac_writable: self.uac_writable,
             moves: Vec::new(),
+            closed: paths(&self.config.closed_wad_dirs),
+            order: paths(&self.config.wad_dir_order),
         }
     }
 
@@ -338,8 +340,15 @@ impl Loadout {
             note(self.keep_uac().map_err(std::io::Error::other));
         }
         let kept_loadout = saved(shelf.kept_loadout);
-        let config_changed = kept_loadout != self.config.wad_dirs;
+        let closed = saved(shelf.closed);
+        let order = saved(shelf.order);
+        // 📂 how the wads screen was left, its dirs' order and which were closed, is the loadout's
+        let config_changed = kept_loadout != self.config.wad_dirs
+            || closed != self.config.closed_wad_dirs
+            || order != self.config.wad_dir_order;
         self.config.wad_dirs = kept_loadout;
+        self.config.closed_wad_dirs = closed;
+        self.config.wad_dir_order = order;
         for profile in &mut self.profiles {
             let mut followed = false;
             for (from, to) in &shelf.moves {

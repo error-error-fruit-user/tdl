@@ -1,5 +1,5 @@
-//! `tdl headless`'s tests: the sessions people go through (making profiles, launching, hosting, the
-//! command line, the keys and buttons themselves), each gone through by three kinds of user in their
+//! `tdl headless`'s tests: the sessions people go through (making profiles, the wads screen,
+//! launching, hosting, the command line, the keys and buttons themselves), each gone through by three kinds of user in their
 //! own way: a standard one (plain keys, the obvious way), a super one (buttons, chords, the wads
 //! screen, spoken commands, every option) and a garbage one (presses and commands that are no such
 //! thing, or would do harm, which must end in errors, never damage). Each script is pressed by
@@ -170,6 +170,53 @@ fn making_profiles() {
     .said("a quote isn't closed")
     .said("There is no profile called 'nobody'")
     .said("There are no profiles yet");
+}
+
+#[test]
+fn the_wads_screen() {
+    // 🧑 standard: a dir closed with Enter, which the loadout remembers once the screen is left
+    play("wads-standard", "w enter esc\n`pools list\nesc\n")
+        .succeeded()
+        .confessed("w", "launcher", "Wads (Every Dir)")
+        .confessed(
+            "enter",
+            "library",
+            "Open/Close Dir (Takes the Wad When Picking)",
+        )
+        .said("fixtures  (this run, closed)");
+    // 🦸 super: the dir moved below the downloads with the chord, and closed with a button
+    let super_user = play("wads-super", "w ⟨rb+down⟩ ⟨a⟩ ⟨b⟩\n`pools list\n⟨b⟩\n");
+    super_user
+        .succeeded()
+        .confessed("⟨rb+down⟩", "library", "Move Dir Down/Up")
+        .said("fixtures  (this run, closed)");
+    let out = String::from_utf8_lossy(&super_user.output.stdout).into_owned();
+    let downloads = out
+        .find("(the downloads)")
+        .unwrap_or_else(|| panic!("{}", super_user.account()));
+    let fixtures = out
+        .find("/tests/fixtures  (")
+        .unwrap_or_else(|| panic!("{}", super_user.account()));
+    assert!(
+        downloads < fixtures,
+        "fixtures wasn't moved below the downloads:\n{out}"
+    );
+    // 🗑️ garbage: moving the add row, a wad, the top dir up, the last one down and in the
+    // every-wad view, which move nothing and close nothing
+    let garbage = play(
+        "wads-garbage",
+        "w end } home { j } k end k } tab } { tab esc\n`pools list\nesc\n",
+    );
+    garbage.succeeded();
+    let out = String::from_utf8_lossy(&garbage.output.stdout).into_owned();
+    assert!(!out.contains("closed"), "{out}");
+    let fixtures = out
+        .find("fixtures  (this run)")
+        .unwrap_or_else(|| panic!("{}", garbage.account()));
+    let downloads = out
+        .find("(the downloads)")
+        .unwrap_or_else(|| panic!("{}", garbage.account()));
+    assert!(fixtures < downloads, "{out}");
 }
 
 #[test]

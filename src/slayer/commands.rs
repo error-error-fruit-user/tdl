@@ -687,26 +687,41 @@ fn pools(loadout: &mut Loadout, rite: PoolRite) -> Outcome {
     match rite {
         PoolRite::List => {
             proclaim("Wad pools");
-            let kept: Vec<PathBuf> = loadout
-                .uac
-                .wad_dirs
+            // 📂 in the wads screen's order, saying which it has closed
+            let shelf = loadout.shelf();
+            let global: Vec<PathBuf> = loadout.uac.wad_dirs.iter().map(PathBuf::from).collect();
+            let here: Vec<PathBuf> = loadout.config.wad_dirs.iter().map(PathBuf::from).collect();
+            let sources = shelf.sources();
+            for dir in &sources {
+                let kept = if *dir == shelf.downloads {
+                    "the downloads"
+                } else if global.contains(dir) {
+                    "kept for every loadout"
+                } else if here.contains(dir) {
+                    "kept for this loadout"
+                } else {
+                    "this run"
+                };
+                let closed = if shelf.closed.contains(dir) {
+                    ", closed"
+                } else {
+                    ""
+                };
+                murmur(format!("  {}  ({kept}{closed})", dir.display()));
+            }
+            // 🗄️ and the kept ones this run doesn't look in (--wads gave others)
+            for dir in global
                 .iter()
-                .chain(&loadout.config.wad_dirs)
-                .map(PathBuf::from)
-                .collect();
-            for dir in loadout.wad_dirs.iter().filter(|dir| !kept.contains(dir)) {
-                murmur(format!("  {}  (this run)", dir.display()));
+                .chain(&here)
+                .filter(|dir| !sources.contains(dir))
+            {
+                let kept = if global.contains(dir) {
+                    "kept for every loadout"
+                } else {
+                    "kept for this loadout"
+                };
+                murmur(format!("  {}  ({kept}, not this run)", dir.display()));
             }
-            for dir in &loadout.uac.wad_dirs {
-                murmur(format!("  {}  (kept for every loadout)", shown(dir)));
-            }
-            for dir in &loadout.config.wad_dirs {
-                murmur(format!("  {}  (kept for this loadout)", shown(dir)));
-            }
-            murmur(format!(
-                "  {}  (the downloads)",
-                loadout.downloads_dir().display()
-            ));
             Ok(())
         }
         PoolRite::Add {
