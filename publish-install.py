@@ -154,7 +154,7 @@ def plan(args):
     lines.append("To change that, here or after the y: --no-build installs what is published already, "
                  "--source builds only for this machine, --no-uzdoom, --no-freedoom and --no-link "
                  "leave those out, --mode in-place|user|system and --dir say where, "
-                 "--desktop-shortcut and --menu-entry make shortcuts, and --computer-speak speaks "
+                 "--desktop-shortcut and --menu-entry make shortcuts, --reinstall does it all again, and --computer-speak speaks "
                  "plainly.")
     return lines
 
@@ -163,6 +163,11 @@ def build(args):
     if args.no_build:
         return
     groans.section("build")
+    if not args.reinstall and not args.source and groans.up_to_date([os.path.join(RELEASES, name + (".exe" if WINDOWS else ".AppImage")) for name in PROGRAMS], [HERE]):
+        groans.say("skip", "The release is newer than its sources: nothing to build "
+                   "(--reinstall builds it again)", what="tdl's release", place=RELEASES)
+        return
+
     if args.source:
         groans.run(["cargo", "build", "--release", "--workspace"], cwd=HERE)
         os.makedirs(RELEASES, exist_ok=True)
@@ -210,6 +215,9 @@ def parser():
                         help="make a shortcut to tdl on the desktop")
     passed.add_argument("--menu-entry", action="store_true",
                         help="make an entry for tdl in the app menu (the Start menu on Windows)")
+    flags.add_argument("--reinstall", action="store_true",
+                       help="build and install everything again, where a run picks up where the last "
+                            "one left off")
     flags.add_argument("--computer-speak", action="store_true",
                        help="say what it does plainly and formally, rather than as a descent through "
                             "hell (and have tdl-install do the same)")
@@ -247,6 +255,7 @@ def main():
     command += [flag for flag, on in (("--no-uzdoom", args.no_uzdoom),
                                       ("--no-freedoom", args.no_freedoom),
                                       ("--no-link", args.no_link),
+                                      ("--reinstall", args.reinstall),
                                       ("--desktop-shortcut", args.desktop_shortcut),
                                       ("--menu-entry", args.menu_entry)) if on]
     # 🔑 an install for everyone runs the installer alone with sudo

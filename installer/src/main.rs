@@ -28,6 +28,10 @@
 
 /// The journal and the voice: installation-groans' groans.rs, built in (see `build.rs`).
 #[macro_use]
+#[allow(
+    dead_code,
+    reason = "groans.rs serves every installer; each uses what it needs"
+)]
 mod journal {
     include!(concat!(env!("OUT_DIR"), "/groans/groans.rs"));
 }
@@ -109,6 +113,10 @@ struct Cli {
     /// Doesn't point tdl at the UZDoom and the base wad.
     #[arg(long)]
     no_link: bool,
+    /// Does everything again, where a run picks up where the last one left off: downloads again,
+    /// and keeps UZDoom and the base wad as tdl's again though they were changed since
+    #[arg(long)]
+    reinstall: bool,
     /// Makes a shortcut to tdl on the desktop, with the system's lock icon
     #[arg(long)]
     desktop_shortcut: bool,
@@ -239,10 +247,13 @@ fn main() -> ExitCode {
         journal::section("download");
     }
     if !cli.no_uzdoom {
-        report("UZDoom", install_uzdoom(&art, &scratch));
+        report("UZDoom", install_uzdoom(&art, &scratch, cli.reinstall));
     }
     if !cli.no_freedoom {
-        report("Freedoom 2", install_freedoom(&art, &scratch));
+        report(
+            "Freedoom 2",
+            install_freedoom(&art, &scratch, cli.reinstall),
+        );
     }
     if !cli.no_link {
         if mode == Mode::System {
@@ -264,7 +275,12 @@ fn main() -> ExitCode {
                 Err(problem) => warn!("{problem}"),
             }
         } else {
-            link(&art, &dir);
+            let mut steps = journal::Steps::open(&art, cli.reinstall);
+            if steps.done("tdl-install: link") {
+                steps.skip("tdl's UZDoom and base wad", "tdl's settings");
+            } else if link(&art, &dir) {
+                steps.finish("tdl-install: link");
+            }
         }
     }
     if mode != Mode::InPlace {
@@ -364,11 +380,20 @@ fn plan(cli: &Cli, dir: &Path, art: &Path) -> Vec<String> {
             .push("  - make an entry for tdl in your app menu, with the system's lock icon".into());
     }
     lines.push("  - leave alone what is there already".into());
+    let steps = journal::Steps::open(art, cli.reinstall);
+    let earlier = steps.earlier();
+    if !earlier.is_empty() {
+        lines.push(format!(
+            "  - skip what an earlier run finished ({}), picking up where it left off (--reinstall does it all again)",
+            earlier.join(", ")
+        ));
+    }
     lines.push(String::new());
     lines.push(
         "To change that, here or after the y: --mode in-place|user|system, --dir and --artifacts say \
-         where, --no-uzdoom, --no-freedoom and --no-link leave those out, --desktop-shortcut and \
-         --menu-entry make shortcuts, and --computer-speak speaks plainly."
+         where, --no-uzdoom, --no-freedoom and --no-link leave those out, --reinstall does \
+         everything again, --desktop-shortcut and --menu-entry make shortcuts, and \
+         --computer-speak speaks plainly."
             .into(),
     );
     lines
@@ -700,12 +725,12 @@ fn write_setup(dir: &Path, uzdoom: Option<&Path>, base_wad: Option<&Path>) -> Ou
 /// Points tdl at the UZDoom and the base wad in `art`, the artifacts: writes them in
 /// `art/setup.toml` and runs the `tdl` in `dir` with `setup` on it. Without a `tdl` there, or if it fails, says what to run instead.
 /// Nothing is an error: the files are in place, and tdl can pick them (`U` and `B`).
-fn link(art: &Path, dir: &Path) {
+fn link(art: &Path, dir: &Path) -> bool {
     let uzdoom = uzdoom_in(art);
     let base_wad = Some(art.join("wads").join("base_wads").join(FREEDOOM_FILES[0].1))
         .filter(|path| path.is_file());
     if uzdoom.is_none() && base_wad.is_none() {
-        return;
+        return false;
     }
     journal::section("setup");
     let setup = match write_setup(art, uzdoom.as_deref(), base_wad.as_deref()) {
@@ -713,7 +738,7 @@ fn link(art: &Path, dir: &Path) {
         Err(problem) => {
             warn!("{problem}");
             say!("Point tdl at them in tdl (U and B) instead.");
-            return;
+            return false;
         }
     };
     let tdl = tdl_in(dir).unwrap_or_else(|| dir.join("tdl"));
@@ -724,7 +749,7 @@ fn link(art: &Path, dir: &Path) {
             dir.display()
         );
         manually();
-        return;
+        return false;
     }
     let command = format!("tdl setup {}", setup.display());
     match journal::run(
@@ -732,6 +757,7 @@ fn link(art: &Path, dir: &Path) {
         &command,
     ) {
         Ok(status) if status.success() => {
+            let linked = true;
             if uzdoom.is_some() {
                 journal::tell(
                     "link",
@@ -746,22 +772,29 @@ fn link(art: &Path, dir: &Path) {
                     "tdl now uses that base wad",
                 );
             }
+            linked
         }
         Ok(status) => {
             warn!("tdl setup failed ({status}), so it isn't linked to them yet.");
             manually();
+            false
         }
         Err(error) => {
             warn!("Couldn't run {}: {error}", tdl.display());
             manually();
+            false
         }
     }
 }
 
 /// Unpacks or places UZDoom in `<dir>/uzdoom/`, unless that is there already. Returns the
 /// executable to pick in tdl, or `None` if nothing was done.
-fn install_uzdoom(dir: &Path, scratch: &Scratch) -> Outcome<Option<PathBuf>> {
+fn install_uzdoom(dir: &Path, scratch: &Scratch, reinstall: bool) -> Outcome<Option<PathBuf>> {
     let folder = dir.join("uzdoom");
+    if reinstall && folder.exists() {
+        note!("--reinstall: replacing {}", folder.display());
+        fs::remove_dir_all(&folder).map_err(|error| format!("{}: {error}", folder.display()))?;
+    }
     if folder.exists() {
         journal::tell(
             "skip",
@@ -837,10 +870,10 @@ fn place_appimage(file: &Path, folder: &Path) -> Outcome<PathBuf> {
 
 /// Takes Freedoom 2 and its license out of the Freedoom zip into `<dir>/wads/base_wads/`, unless
 /// the wad is there already. Returns the wad, or `None` if nothing was done.
-fn install_freedoom(dir: &Path, scratch: &Scratch) -> Outcome<Option<PathBuf>> {
+fn install_freedoom(dir: &Path, scratch: &Scratch, reinstall: bool) -> Outcome<Option<PathBuf>> {
     let base_wads = dir.join("wads").join("base_wads");
     let wad = base_wads.join(FREEDOOM_FILES[0].1);
-    if wad.exists() {
+    if wad.exists() && !reinstall {
         journal::tell(
             "skip",
             &[
