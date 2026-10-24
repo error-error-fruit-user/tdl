@@ -178,29 +178,9 @@ fn main() {
         }
         return;
     }
-    // 👻 tdl headless: a spirit presses the keys from a script, on pages nobody sees
+    // 👻 tdl headless: the possession, in ritual.rs, from the first press to the exorcism
     if let Some(play) = play {
-        let outcome = ritual::possess(play.script.as_deref(), play.log.as_deref())
-            .and_then(|()| ritual::void_grimoire(100, 30))
-            .map_err(|error| error.to_string())
-            .and_then(|mut grimoire| {
-                let start = Start {
-                    splash: false,
-                    no_music: true,
-                    ..start
-                };
-                loop {
-                    match Launcher::summon(&mut grimoire, start.clone()) {
-                        // 🚪 the launcher quit, the spirit's script ran out, or it pressed Ctrl+C
-                        Ok(()) | Err(Error::ScriptEnd | Error::Interrupted) => break Ok(()),
-                        // 📜 a spoken rite: done on the loadout, then the launcher opens again
-                        Err(Error::Rite(spoken)) => speak(&start, &spoken),
-                        Err(error) => break Err(error.to_string()),
-                    }
-                }
-            });
-        ritual::exorcise(&outcome);
-        if outcome.is_err() {
+        if !ritual::haunt(play.script.as_deref(), play.log.as_deref(), start) {
             std::process::exit(1);
         }
         return;
@@ -224,19 +204,5 @@ fn main() {
         if matches!(error, Error::Interrupted) {
             std::process::exit(INTERRUPTED_EXIT);
         }
-    }
-}
-
-/// Does the `tdl cli` command (or `sh` and a shell command) a possessed run spoke after a `, confessed, with what it says said
-/// through the séance. One that fails is wailed about, and the possession carries on.
-fn speak(start: &Start, spoken: &str) {
-    ritual::confess("tdl cli", Some(format!("tdl cli {spoken}")));
-    // 🐚 `sh ...` runs a shell command, behind the same guard rails as the launcher's command line
-    let outcome = match spoken.strip_prefix("sh ") {
-        Some(command) => slayer::commands::shell(command),
-        None => cli::Rite::from_phrase(spoken).and_then(|rite| Launcher::rite(start.clone(), rite)),
-    };
-    if let Err(problem) = outcome {
-        ritual::wail(problem);
     }
 }

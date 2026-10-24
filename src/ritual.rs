@@ -55,20 +55,23 @@ pub type Grimoire = ratatui::Terminal<Ink<Quill>>;
 pub enum Quill {
     Inkwell(Inkwell),
     Void,
+    // 📜 parchment: no terminal either, but always written on: the séance draws its lines on it
+    // with `bewitch`, then reads them off into the terminal, colors and all
+    Parchment,
 }
 
 impl Scribble for Quill {
     fn write(&mut self, ink: &[u8]) -> std::io::Result<usize> {
         match self {
             Self::Inkwell(inkwell) => inkwell.write(ink),
-            Self::Void => Yass(ink.len()),
+            Self::Void | Self::Parchment => Yass(ink.len()),
         }
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
         match self {
             Self::Inkwell(inkwell) => inkwell.flush(),
-            Self::Void => Yass(BOO),
+            Self::Void | Self::Parchment => Yass(BOO),
         }
     }
 }
@@ -154,20 +157,29 @@ pub unsafe trait Haunted {
 unsafe impl Haunted for Grimoire {
     #[inline]
     fn bewitch(&mut self, outfit: impl Rental(&mut Costume)) -> Omen<Ghost> {
-        // 🫥 a look nobody will see is a look nobody has to serve: while a spirit has the
-        // keyboard, nobody watches the page, so the whole outfit stays on the hanger 👻
-        if possessed() {
+        // 🫥 a look nobody will see is a look nobody has to serve: a possessed run's screens are
+        // drawn into the void, and nobody watches the void, so that outfit stays on the hanger 👻
+        let parchment = INSCRIBING.get();
+        if possessed() && !parchment {
             return Yass(BOO);
         }
         // 🕯️ just because I'm drawing circles doesn't mean I don't have to look fabulous 💅
-        self.draw(|costume| {
-            // 🌑 every page starts in the dark, whatever was drawn on it before
-            let void = Rouge::new()
-                .fg(theme::worn().colors.text)
-                .bg(theme::worn().colors.background);
-            costume.render_widget(Veil::new().style(void), costume.area());
+        let drawn = self.draw(|costume| {
+            // 🌑 every page starts in the dark, whatever was drawn on it before (parchment stays
+            // bare, so the words sit on the terminal's own background)
+            if !parchment {
+                let void = Rouge::new()
+                    .fg(theme::worn().colors.text)
+                    .bg(theme::worn().colors.background);
+                costume.render_widget(Veil::new().style(void), costume.area());
+            }
             outfit(costume)
         })?;
+        // 📜 what was written on parchment is kept, for the séance to read off
+        if parchment {
+            let page = drawn.buffer.clone();
+            PARCHMENT.with_borrow_mut(|kept| *kept = Some(page));
+        }
         Yass(BOO)
     }
 
@@ -523,14 +535,23 @@ fn tint(hex: Hex) -> ratatui::crossterm::style::Color {
     }
 }
 
-// 🗣️ one line said to `out`, in `hex` if a terminal is listening. raw mode (a game going under
-// `--headless`) needs its own carriage return, or the words drift off to the right like a ghost
-fn utter(mut out: impl Scribble + std::io::IsTerminal, hex: Hex, words: &str) {
-    use ratatui::crossterm::style::Stylize;
+std::thread_local! {
+    // ✍️ whether the page being bewitched is parchment (see `inscribe`)
+    static INSCRIBING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    // 📜 the last page written on parchment, waiting to be read off
+    static PARCHMENT: std::cell::RefCell<Option<ratatui::buffer::Buffer>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+// 🗣️ verses said to `out`: drawn on parchment with `bewitch`, styled from the theme, then read off
+// cell by cell into the terminal in their colors, or bare when it is only a file. raw mode (a game
+// going under `--headless`) needs its own carriage return, or the words drift off like a ghost
+fn utter(mut out: impl Scribble + std::io::IsTerminal, verses: Vec<Verse<'static>>) {
+    let bare: Vec<String> = verses.iter().map(ToString::to_string).collect();
     let written = CURTAIN.with_borrow_mut(|curtain| {
         curtain
             .as_mut()
-            .map(|said| said.extend(words.lines().map(str::to_string)))
+            .map(|said| said.extend(bare.iter().cloned()))
     });
     if written.is_some() {
         return;
@@ -541,48 +562,119 @@ fn utter(mut out: impl Scribble + std::io::IsTerminal, hex: Hex, words: &str) {
     } else {
         "\n"
     };
-    let _ = if out.is_terminal() {
-        write!(out, "{}{end}", words.with(tint(hex)))
-    } else {
-        write!(out, "{words}{end}")
-    };
+    let read_off = out.is_terminal().then(|| inscribe(verses)).flatten();
+    match read_off {
+        Some(page) => {
+            for row in page {
+                let _ = write!(out, "{row}{end}");
+            }
+        }
+        None => {
+            for line in bare {
+                let _ = write!(out, "{line}{end}");
+            }
+        }
+    }
     let _ = out.flush();
+}
+
+// ✍️ the verses written on a parchment page just their size with `bewitch`, then read back off it
+// as the terminal's own colored text, a row per verse. `None` if the parchment wouldn't take ink
+fn inscribe(verses: Vec<Verse<'static>>) -> Option<Vec<String>> {
+    use ratatui::crossterm::style::{Attribute, SetAttribute, SetForegroundColor};
+    let width = verses
+        .iter()
+        .map(Verse::width)
+        .max()
+        .unwrap_or(0)
+        .clamp(1, 2000) as u16;
+    let height = verses.len().clamp(1, 2000) as u16;
+    let mut parchment = ratatui::Terminal::with_options(
+        Ink::new(Quill::Parchment),
+        ratatui::TerminalOptions {
+            viewport: ratatui::Viewport::Fixed(Plot::new(0, 0, width, height)),
+        },
+    )
+    .ok()?;
+    INSCRIBING.set(true);
+    let inked = parchment.bewitch(|costume| {
+        for (row, verse) in verses.into_iter().enumerate() {
+            costume.render_widget(verse, Plot::new(0, row as u16, width, 1));
+        }
+    });
+    INSCRIBING.set(false);
+    inked.ok()?;
+    let page = PARCHMENT.with_borrow_mut(Option::take)?;
+    let rows = (0..height)
+        .map(|y| {
+            let cells: Vec<_> = (0..width).map(|x| &page[(x, y)]).collect();
+            let used = cells
+                .iter()
+                .rposition(|cell| cell.symbol() != " ")
+                .map_or(0, |last| last + 1);
+            let mut row = String::new();
+            let mut last: Option<Rouge> = None;
+            for cell in &cells[..used] {
+                let style = cell.style();
+                if last != Some(style) {
+                    row.push_str(&SetAttribute(Attribute::Reset).to_string());
+                    if style.fg.is_some_and(|fg| fg != Hex::Reset) {
+                        row.push_str(&SetForegroundColor(tint(style.fg.unwrap())).to_string());
+                    }
+                    if style.add_modifier.contains(Flair::BOLD) {
+                        row.push_str(&SetAttribute(Attribute::Bold).to_string());
+                    }
+                    if style.add_modifier.contains(Flair::ITALIC) {
+                        row.push_str(&SetAttribute(Attribute::Italic).to_string());
+                    }
+                    last = Some(style);
+                }
+                row.push_str(cell.symbol());
+            }
+            row.push_str(&SetAttribute(Attribute::Reset).to_string());
+            row
+        })
+        .collect();
+    Some(rows)
+}
+
+// 🖌️ `words` as verses, a verse per line, all in `rouge`, each after `indent`
+fn verses(words: &str, rouge: Rouge, indent: &str) -> Vec<Verse<'static>> {
+    words
+        .lines()
+        .map(|line| Verse::from(Syllable::styled(format!("{indent}{line}"), rouge)))
+        .collect()
 }
 
 // 💬 a murmur: what is happening, said plainly to whoever is listening (stdout)
 pub fn murmur(words: impl std::fmt::Display) {
-    utter(
-        std::io::stdout(),
-        theme::worn().colors.text,
-        &words.to_string(),
-    );
+    let rouge = Rouge::new().fg(theme::worn().colors.text);
+    utter(std::io::stdout(), verses(&words.to_string(), rouge, ""));
 }
 
-// 📣 a proclamation: a heading over what follows, in the theme's title color
+// 📣 a proclamation: a heading over what follows, bold, in the theme's title color
 pub fn proclaim(words: impl std::fmt::Display) {
-    utter(
-        std::io::stdout(),
-        theme::worn().colors.title,
-        &words.to_string(),
-    );
+    let rouge = Rouge::new()
+        .fg(theme::worn().colors.title)
+        .add_modifier(Flair::BOLD);
+    utter(std::io::stdout(), verses(&words.to_string(), rouge, ""));
 }
 
-// 🌫️ an aside: something said in passing, faint, like a breath on the glass
+// 🌫️ an aside: something said in passing, faint and slanted, like a breath on the glass
 pub fn aside(words: impl std::fmt::Display) {
+    let rouge = Rouge::new()
+        .fg(theme::worn().colors.muted)
+        .add_modifier(Flair::ITALIC);
     utter(
         std::io::stdout(),
-        theme::worn().colors.muted,
-        &format!("     {words}"),
+        verses(&words.to_string(), rouge, "     "),
     );
 }
 
 // 😱 a wail: something went wrong or was gone along with, said to the night (stderr)
 pub fn wail(words: impl std::fmt::Display) {
-    utter(
-        std::io::stderr(),
-        theme::worn().colors.warning,
-        &words.to_string(),
-    );
+    let rouge = Rouge::new().fg(theme::worn().colors.warning);
+    utter(std::io::stderr(), verses(&words.to_string(), rouge, ""));
 }
 
 // 🪄 the planchette spins on the last line while the table waits for a sign, and says how long
@@ -620,10 +712,27 @@ pub fn hush() {
 // 🌅 the spirits rest (✓) or the circle is broken (✗): how the séance ended
 pub fn farewell(peaceful: bool, words: &str) {
     let colors = &theme::worn().colors;
-    if peaceful {
-        utter(std::io::stdout(), colors.title, &format!("   ✓ {words}"));
+    let (sign, hue, out_hue) = if peaceful {
+        ("✓", colors.title, colors.text)
     } else {
-        utter(std::io::stderr(), colors.warning, &format!("   ✗ {words}"));
+        ("✗", colors.warning, colors.warning)
+    };
+    let mut said: Vec<Verse<'static>> = Vec::new();
+    for (index, line) in words.lines().enumerate() {
+        let lead = if index == 0 {
+            format!("   {sign} ")
+        } else {
+            "     ".to_string()
+        };
+        said.push(Verse::from(vec![
+            Syllable::styled(lead, Rouge::new().fg(hue).add_modifier(Flair::BOLD)),
+            Syllable::styled(line.to_string(), Rouge::new().fg(out_hue)),
+        ]));
+    }
+    if peaceful {
+        utter(std::io::stdout(), said);
+    } else {
+        utter(std::io::stderr(), said);
     }
 }
 
@@ -755,21 +864,75 @@ pub fn hear() -> Omen<Portent> {
     }
 }
 
+// 🏚️ a whole haunting: the spirit takes the keyboard (`possess`), the launcher opens on a page in
+// the void with no splash and no music, and the spirit presses its script into it; when it speaks
+// a rite (`), the launcher closes, the rite is done (`speak`), and it opens again; the launcher
+// quitting, the script running out or Ctrl+C ends it, and the spirit is exorcised. returns
+// whether it ended well
+pub fn haunt(
+    script: Option<&std::path::Path>,
+    prayers: Option<&std::path::Path>,
+    start: crate::screens::launcher::Start,
+) -> bool {
+    use crate::screens::launcher::{Launcher, Start};
+    let outcome = possess(script, prayers)
+        .and_then(|()| void_grimoire(100, 30))
+        .map_err(|error| error.to_string())
+        .and_then(|mut grimoire| {
+            let start = Start {
+                splash: false,
+                no_music: true,
+                ..start
+            };
+            loop {
+                match Launcher::summon(&mut grimoire, start.clone()) {
+                    // 🚪 the launcher quit, the spirit's script ran out, or it pressed Ctrl+C
+                    Yass(()) | Err(Curse::ScriptEnd | Curse::Interrupted) => break Yass(()),
+                    // 📜 a spoken rite: done on the loadout, then the launcher opens again
+                    Err(Curse::Rite(spoken)) => speak(&start, &spoken),
+                    Err(curse) => break Err(curse.to_string()),
+                }
+            }
+        });
+    exorcise(&outcome);
+    outcome.is_ok()
+}
+
+// 🗣️ the `tdl cli` command (or `sh` and a shell command) the spirit spoke after a `, confessed and
+// done, with what it says said through the séance. one that fails is wailed about, and the
+// possession carries on
+fn speak(start: &crate::screens::launcher::Start, spoken: &str) {
+    confess("tdl cli", Some(format!("tdl cli {spoken}")));
+    // 🐚 `sh ...` runs a shell command, behind the same guard rails as the launcher's command line
+    let outcome = match spoken.strip_prefix("sh ") {
+        Some(command) => crate::slayer::commands::shell(command),
+        None => crate::cli::Rite::from_phrase(spoken)
+            .and_then(|rite| crate::screens::launcher::Launcher::rite(start.clone(), rite)),
+    };
+    if let Err(problem) = outcome {
+        wail(problem);
+    }
+}
+
 // 🙏 the spirit confesses the press just heard: which ritual heard it, and what it did there
 // (`None` is nothing). only when it prays (`--log`): on the terminal and in its prayer
 pub fn confess(heard_by: &str, deed: Option<String>) {
-    SPIRIT.with_borrow_mut(|spirit| {
-        let Some(spirit) = spirit.as_mut() else {
-            return;
-        };
-        let Some((file, began)) = &mut spirit.prayer else {
-            return;
-        };
-        let deed = deed.unwrap_or_else(|| "nothing".into());
-        let line = format!("{:<12} {heard_by:<18} → {deed}", spirit.last);
+    // 🙏 written in the prayer while the spirit is held, said once it is let go: saying it draws
+    // on parchment, and `bewitch` asks after the spirit
+    let press = SPIRIT.with_borrow_mut(|spirit| {
+        let spirit = spirit.as_mut()?;
+        let (file, began) = spirit.prayer.as_mut()?;
+        let line = format!(
+            "{:<12} {heard_by:<18} → {}",
+            spirit.last,
+            deed.as_deref().unwrap_or("nothing")
+        );
         let _ = writeln!(file, "[{:8.3}s] {line}", began.elapsed().as_secs_f64());
-        confession(&line);
+        Some(spirit.last.clone())
     });
+    if let Some(press) = press {
+        confession(&press, heard_by, deed.as_deref());
+    }
 }
 
 // 📜 a spoken rite's words, split the way a shell would at spaces, keeping "quoted words" together
@@ -807,20 +970,16 @@ pub fn rite_words(spoken: &str) -> Result<Vec<String>, String> {
 // 🫢 something the spirit should know that no press caused (a file dialog it can't answer), told
 // the same way as a confession, when it prays
 pub fn whisper(words: &str) {
-    SPIRIT.with_borrow_mut(|spirit| {
-        let Some(spirit) = spirit.as_mut() else {
-            return;
-        };
-        let Some((file, began)) = &mut spirit.prayer else {
-            return;
+    let prays = SPIRIT.with_borrow_mut(|spirit| {
+        let Some((file, began)) = spirit.as_mut().and_then(|spirit| spirit.prayer.as_mut()) else {
+            return false;
         };
         let _ = writeln!(file, "[{:8.3}s] {words}", began.elapsed().as_secs_f64());
-        utter(
-            std::io::stdout(),
-            theme::worn().colors.muted,
-            &format!("     {words}"),
-        );
+        true
     });
+    if prays {
+        aside(words);
+    }
 }
 
 // ⚰️ the prayer from beyond (uzdoom.log), opened to add UZDoom's words to, if the spirit prays
@@ -953,12 +1112,25 @@ fn key_takes(token: &str, chant: Chant) -> bool {
 }
 
 // 🖋️ a confession on the terminal: the press in the key color, the rest in the text color
-fn confession(line: &str) {
-    utter(
-        std::io::stdout(),
-        theme::worn().colors.text,
-        &format!("  {line}"),
-    );
+fn confession(press: &str, heard_by: &str, deed: Option<&str>) {
+    let colors = &theme::worn().colors;
+    let deed = match deed {
+        Some(deed) => Syllable::styled(deed.to_string(), Rouge::new().fg(colors.text)),
+        None => Syllable::styled(
+            "nothing",
+            Rouge::new().fg(colors.muted).add_modifier(Flair::ITALIC),
+        ),
+    };
+    let verse = Verse::from(vec![
+        Syllable::styled(
+            format!("  {press:<12} "),
+            Rouge::new().fg(colors.key).add_modifier(Flair::BOLD),
+        ),
+        Syllable::styled(format!("{heard_by:<18} "), Rouge::new().fg(colors.muted)),
+        Syllable::styled("→ ", Rouge::new().fg(colors.muted)),
+        deed,
+    ]);
+    utter(std::io::stdout(), vec![verse]);
 }
 
 impl Possession {
