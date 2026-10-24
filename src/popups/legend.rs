@@ -126,6 +126,17 @@ impl Ritual for Legend<'_> {
 
     /// One column if it fits the terminal's height, otherwise as many as fit its width, otherwise
     /// a page at a time.
+    fn deed(&self, chant: KeyCode) -> Option<String> {
+        match chant {
+            KeyCode::Char('j') | KeyCode::Down | KeyCode::Char('k') | KeyCode::Up
+                if self.pages > 1 =>
+            {
+                Some("Turn the legend's page".into())
+            }
+            _ => Some("Close the legend".into()),
+        }
+    }
+
     fn render(&mut self, page: &mut Page) {
         let area = page.area();
         // 📏 the margins, the sigil's row, the borders and a blank row above and below the keys

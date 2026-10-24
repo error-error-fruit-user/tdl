@@ -54,6 +54,27 @@ impl<'a> ThreeWayDialog<'a> {
 impl Ritual for ThreeWayDialog<'_> {
     type Return = Option<usize>;
 
+    fn deed(&self, chant: KeyCode) -> Option<String> {
+        match chant {
+            KeyCode::Esc => Some("Back out".into()),
+            KeyCode::Enter if self.selected.is_some() => Some("Answer the selected one".into()),
+            KeyCode::Left | KeyCode::Right | KeyCode::Tab | KeyCode::BackTab => {
+                Some("Move between the answers".into())
+            }
+            KeyCode::Char(typed) => self
+                .options
+                .iter()
+                .find(|option| {
+                    option
+                        .chars()
+                        .next()
+                        .is_some_and(|first| first.eq_ignore_ascii_case(&typed))
+                })
+                .map(|option| (*option).to_string()),
+            _ => None,
+        }
+    }
+
     fn render(&mut self, page: &mut Page) {
         let lines: Vec<_> = popups::wrap(self.message, page.area())
             .into_iter()

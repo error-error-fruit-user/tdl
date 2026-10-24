@@ -672,6 +672,10 @@ impl Ritual for Library<'_> {
         self.search.is_some()
     }
 
+    fn legend(&self) -> &[[&'static str; 2]] {
+        Self::LEGEND
+    }
+
     fn render(&mut self, page: &mut Page) {
         let title = match (self.purpose, self.every) {
             (Purpose::Wad(what), _) => format!("pick the {what}"),

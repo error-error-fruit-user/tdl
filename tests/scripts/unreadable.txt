@@ -1,0 +1,4 @@
+# A press that is no key or button ends the run with an error, before anything after it.
+j
+j nope+x
+esc

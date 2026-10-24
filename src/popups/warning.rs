@@ -162,6 +162,11 @@ impl Warning {
 impl Ritual for Warning {
     type Return = ();
 
+    fn deed(&self, chant: KeyCode) -> Option<String> {
+        let _ = chant;
+        Some("Dismiss the warning".into())
+    }
+
     fn render(&mut self, page: &mut Page) {
         let area = page.area();
         let lines: Vec<_> = self

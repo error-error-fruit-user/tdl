@@ -55,8 +55,8 @@ struct Keys {
 impl Keys {
     fn take() -> Self {
         Keys {
-            // 📜 a script typed on stdin needs the terminal as it is
-            raw: !crate::script::playing() && terminal::enable_raw_mode().is_ok(),
+            // 👻 a spirit's script typed on stdin needs the terminal as it is
+            raw: !crate::ritual::possessed() && terminal::enable_raw_mode().is_ok(),
         }
     }
 
@@ -664,8 +664,8 @@ fn ask(question: &str) -> bool {
 /// typed, trimmed. `None` if nothing could be read, or if there is no terminal to ask on, which is
 /// said along with what is done `instead`.
 fn answer(question: &str, answers: &str, instead: &str) -> Option<String> {
-    // 📜 a script's stdin is the script, never an answer
-    if crate::script::playing() || !io::stdin().is_terminal() {
+    // 👻 a spirit's stdin is its script, never an answer
+    if crate::ritual::possessed() || !io::stdin().is_terminal() {
         crate::ritual::wail(format!("{question} No one to ask, so {instead}"));
         return None;
     }

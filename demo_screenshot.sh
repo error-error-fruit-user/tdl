@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Records the README's demo and screenshots: demo.gif (ten seconds of the splash, from
 # demo.tape) and every picture in docs/screenshots/ (from screenshots.tape, taken of the example
-# profiles that `tdl headless` lays out on the screens from screenshots.txt).
+# profiles that `tdl headless` presses into the screens from screenshots.txt).
 #
 # Needs vhs, ttyd and ffmpeg on PATH, and Rust (stable is fine). Everything runs on throwaway
 # loadouts and homes in /tmp, which are removed afterwards, so nothing of yours is read or written.
@@ -42,12 +42,15 @@ for name in brutalv22.pk3 nashgore.pk3 smooth_weapons.pk3; do
 done
 printf '#!/bin/sh\n' >"$SHOTS/uzdoom.sh"
 chmod +x "$SHOTS/uzdoom.sh"
-# 📜 played in $SHOTS, where its paths are, with the same HOME the tape gives tdl
-tdl="$PWD/target/release/tdl"
+# 👻 pressed in $SHOTS, where the picks' paths are, with the same HOME the tape gives tdl; a debug
+# build, where TDL_PICKS answers the file dialogs from screenshots.picks
+cargo build
+cp screenshots.picks "$SHOTS/picks"
+tdl="$PWD/target/debug/tdl"
 script="$PWD/screenshots.txt"
-(cd "$SHOTS" && env -u XDG_CONFIG_HOME -u XDG_DATA_HOME HOME="$SHOTS/home" "$tdl" headless \
-    --script "$script" --session --loadout "$SHOTS/loadout" --wads "$SHOTS/wads" \
-    --wads "$SHOTS/mods" >/dev/null)
+(cd "$SHOTS" && env -u XDG_CONFIG_HOME -u XDG_DATA_HOME HOME="$SHOTS/home" TDL_PICKS="$SHOTS/picks" \
+    "$tdl" headless --script "$script" --session --loadout "$SHOTS/loadout" \
+    --wads "$SHOTS/wads" --wads "$SHOTS/mods" >/dev/null)
 # 🩹 then one of sigil_run's wads goes missing and another changes
 rm "$SHOTS/wads/gone.pk3"
 printf 'changed-and-grown' >"$SHOTS/wads/changed.wad"

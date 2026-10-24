@@ -192,6 +192,23 @@ impl Prompt {
         })
     }
 
+    /// The key a press of buttons makes, written the way the legends' aliases are (`lb+a`,
+    /// `rb+down`, `lb+rb+x`, `host`; see [`Prompt::alias`]): the last button pressed while the
+    /// bumpers before it are held. `None` if it isn't one.
+    pub fn press(aliases: &str) -> Option<KeyCode> {
+        let names: Vec<&str> = aliases.split('+').collect();
+        let (last, held) = names.split_last()?;
+        let prompt = Self::alias(last)?;
+        if held.is_empty() {
+            return Some(prompt.chant());
+        }
+        let (left, right) = (held.contains(&"lb"), held.contains(&"rb"));
+        if held.len() != usize::from(left) + usize::from(right) {
+            return None;
+        }
+        chord(left, right, prompt).map(KeyCode::Char)
+    }
+
     /// The button an alias names: `a`, `b`, `x` and `y` for the face buttons (where Xbox has them),
     /// `lb`, `rb`, `lt`, `rt`, `l3`, `r3`, `start`, `select`, the four d-pad directions, and `host`
     /// and `join` for the triggers.

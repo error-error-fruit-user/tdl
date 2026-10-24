@@ -683,6 +683,14 @@ impl Ritual for Editor<'_> {
     }
 
     /// The name and the wad list in one window, and under it what the profile overrides.
+    fn legend(&self) -> &[[&'static str; 2]] {
+        if self.editing_wads {
+            Self::EDITING_LEGEND
+        } else {
+            Self::NAMING_LEGEND
+        }
+    }
+
     fn render(&mut self, page: &mut Page) {
         let name = [Field {
             label: "name",

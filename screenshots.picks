@@ -1,0 +1,6 @@
+uzdoom.sh
+wads/DOOM2.WAD
+wads/brutalv22.pk3:wads/brutal_extras.pk3:wads/hud_minimal.pk3
+wads/sigil_v1_21.wad:wads/gone.pk3:wads/changed.wad:wads/my_mod_wip.pk3
+wads/hud_minimal.pk3
+no-such-uzdoom

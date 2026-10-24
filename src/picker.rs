@@ -35,12 +35,12 @@ pub fn file(
     filter: Option<Filter>,
     start: Option<&Path>,
 ) -> Result<Option<PathBuf>> {
-    if crate::script::playing() {
-        return Ok(crate::script::pick()?.and_then(|paths| paths.into_iter().next()));
-    }
     #[cfg(debug_assertions)]
     if let Some(picked) = stand_in() {
         return Ok(picked.and_then(|paths| paths.into_iter().next()));
+    }
+    if crate::ritual::possessed() {
+        return Ok(unanswered());
     }
     Ok(dialog(grimoire, filter, start)?.and_then(|dialog| dialog.pick_file()))
 }
@@ -52,13 +52,12 @@ pub fn files(
     filter: Option<Filter>,
     start: Option<&Path>,
 ) -> Result<Option<Vec<PathBuf>>> {
-    // 📜 a script answers with its pick line
-    if crate::script::playing() {
-        return crate::script::pick();
-    }
     #[cfg(debug_assertions)]
     if let Some(picked) = stand_in() {
         return Ok(picked);
+    }
+    if crate::ritual::possessed() {
+        return Ok(unanswered());
     }
     Ok(dialog(grimoire, filter, start)?.and_then(|dialog| dialog.pick_files()))
 }
@@ -70,15 +69,24 @@ pub fn save(
     filter: Option<Filter>,
     file_name: &str,
 ) -> Result<Option<PathBuf>> {
-    if crate::script::playing() {
-        return Ok(crate::script::pick()?.and_then(|paths| paths.into_iter().next()));
-    }
     #[cfg(debug_assertions)]
     if let Some(picked) = stand_in() {
         return Ok(picked.and_then(|paths| paths.into_iter().next()));
     }
+    if crate::ritual::possessed() {
+        return Ok(unanswered());
+    }
     Ok(dialog(grimoire, filter, None)?
         .and_then(|dialog| dialog.set_file_name(file_name).save_file()))
+}
+
+/// A dialog nobody can answer: a spirit at the keyboard has no mouse, so it is cancelled, and the
+/// spirit is told (unless `TDL_PICKS` answers it first, in a debug build).
+fn unanswered<T>() -> Option<T> {
+    crate::ritual::whisper(
+        "a file dialog opened, and no spirit can answer one, so it was cancelled",
+    );
+    None
 }
 
 /// The session's wad dirs, as set by [`set_wad_dirs`].
@@ -88,12 +96,12 @@ pub fn wad_dirs() -> Vec<PathBuf> {
 
 /// Asks for a dir. `None` if the user cancels, or if there is no dir to open the dialog in.
 pub fn dir(grimoire: &mut Grimoire, start: Option<&Path>) -> Result<Option<PathBuf>> {
-    if crate::script::playing() {
-        return Ok(crate::script::pick()?.and_then(|paths| paths.into_iter().next()));
-    }
     #[cfg(debug_assertions)]
     if let Some(picked) = stand_in() {
         return Ok(picked.and_then(|paths| paths.into_iter().next()));
+    }
+    if crate::ritual::possessed() {
+        return Ok(unanswered());
     }
     Ok(dialog(grimoire, None, start)?.and_then(|dialog| dialog.pick_folder()))
 }

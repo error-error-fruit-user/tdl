@@ -168,6 +168,18 @@ impl Ritual for HostSettingsForm {
         matches!(self.index, Index::Map | Index::Port | Index::Code)
     }
 
+    fn legend(&self) -> &[[&'static str; 2]] {
+        match self.index {
+            Index::PlayerCount => Self::PLAYER_COUNT_LEGEND,
+            Index::Mode => Self::MODE_LEGEND,
+            Index::Map => Self::MAP_LEGEND,
+            Index::Port => Self::PORT_LEGEND,
+            Index::Code => Self::CODE_LEGEND,
+            Index::Ini => Self::INI_LEGEND,
+            Index::Save | Index::Clear => Self::BUTTON_LEGEND,
+        }
+    }
+
     fn render(&mut self, page: &mut Page) {
         let mode = if self.settings.is_deathmatch {
             "deathmatch"

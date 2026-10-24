@@ -1,4 +1,4 @@
-# The README's screenshots, taken from the example profiles that screenshots.txt lays out.
+# The README's screenshots, taken from the example profiles that screenshots.txt presses in.
 # Run by demo_screenshot.sh, which lays them out in /tmp/tdl-shots first.
 #
 # vhs saves a screenshot a moment after asking for it, so each one is followed by a second's wait,

@@ -1,8 +1,8 @@
-//! tdl's tests: the scripts in `tests/scripts/`, each played by `tdl headless --script ... --log`
-//! on a loadout of its own, with `tests/fake-uzdoom` standing in for UZDoom, and checked by how
-//! the run ended and by the `tdl.log` and `uzdoom.log` it left. Each run has a home of its own
-//! and `tests/fixtures` as its wad dir. A script checks the screens itself (`expect`,
-//! `wait-for`); a failing run prints its `tdl.log`, screens and all.
+//! tdl's tests: the scripts of presses in `tests/scripts/`, each pressed by
+//! `tdl headless --script ... --log` on a loadout of its own, with `tests/fake-uzdoom` standing in
+//! for UZDoom, and checked by how the run ended and by what it left: `tdl.log`, a line per press
+//! saying which screen heard it and what it did there, and `uzdoom.log`. Each run has a home of
+//! its own and `tests/fixtures` as its wad dir. A failing run prints its `tdl.log`.
 #![cfg(unix)]
 
 use std::{
@@ -35,6 +35,18 @@ impl Run {
     fn succeeded(&self) -> &Self {
         assert!(self.output.status.success(), "{}", self.account());
         assert!(self.log("tdl.log").contains("] done"), "{}", self.account());
+        self
+    }
+
+    /// That `press`, heard by `screen`, did `deed` (spaces between them don't matter).
+    fn confessed(&self, press: &str, screen: &str, deed: &str) -> &Self {
+        let wanted = format!("{press} {screen} → {deed}");
+        let log = self.log("tdl.log");
+        let found = log.lines().any(|line| {
+            let line = line.split_once("] ").map_or(line, |(_, rest)| rest);
+            line.split_whitespace().collect::<Vec<_>>().join(" ") == wanted
+        });
+        assert!(found, "no \"{wanted}\" in\n{log}");
         self
     }
 
@@ -89,38 +101,91 @@ fn play(name: &str) -> Run {
 }
 
 #[test]
-fn a_profile_made_in_the_editor_launches_with_its_log_window() {
-    let run = play("launch");
-    run.succeeded().played_uzdoom(1);
-    assert!(run.log("tdl.log").contains("UZDoom's log"));
+fn a_profile_made_with_keys_and_buttons_launches_and_shows_its_log_window() {
+    play("launch")
+        .succeeded()
+        .played_uzdoom(1)
+        .confessed("⟨lb+a⟩", "launcher", "Add a Profile")
+        .confessed("e", "editor", "Input (Spaces Too)")
+        .confessed("⟨a⟩", "editor", "Save and Quit")
+        .confessed("⟨up⟩", "launcher", "Traverse (Home/End: First/Last)")
+        .confessed("⟨a⟩", "launcher", "Launch")
+        .confessed("L", "running", "Show UZDoom's log")
+        .confessed("⟨b⟩", "running", "Close UZDoom's log")
+        .confessed("⟨b⟩", "launcher", "Save and Quit (unselects first)");
 }
 
 #[test]
-fn a_command_plays_with_the_screens_closed_and_they_open_again() {
-    let run = play("command");
-    run.succeeded().played_uzdoom(1);
-    let stdout = String::from_utf8_lossy(&run.output.stdout);
-    assert!(stdout.contains("Launching e1"), "{}", run.account());
-}
-
-#[test]
-fn a_file_dialog_is_answered_by_pick() {
-    play("wads").succeeded().played_uzdoom(0);
-}
-
-#[test]
-fn a_hosted_profile_starts_uzdoom_as_the_host() {
+fn a_profile_with_a_wad_from_the_wads_screen_is_hosted_with_the_host_trigger() {
     let run = play("host");
-    run.succeeded().played_uzdoom(1);
-    assert!(run.log("uzdoom.log").contains("-host"), "{}", run.account());
+    run.succeeded()
+        .played_uzdoom(1)
+        .confessed("w", "editor", "Add Wads From the Wads/Files")
+        .confessed(
+            "enter",
+            "library",
+            "Open/Close Dir (Takes the Wad When Picking)",
+        )
+        // 🎮 the trigger makes F2, which the legend names only by its alias: H⟨host⟩
+        .confessed("⟨host⟩", "launcher", "Host")
+        .confessed("1", "host settings form", "Input")
+        .confessed("enter", "host settings form", "Launch");
+    let uzdoom = run.log("uzdoom.log");
+    assert!(
+        uzdoom.contains("-host 2") && uzdoom.contains("e1m1.wad"),
+        "{uzdoom}"
+    );
 }
 
 #[test]
-fn a_line_that_isnt_on_the_screen_fails_the_script() {
-    let run = play("fails");
+fn buttons_are_written_the_way_the_legends_alias_them() {
+    let run = play("controller");
+    run.succeeded()
+        .played_uzdoom(0)
+        .confessed("⟨start⟩", "launcher", "Show the legend")
+        .confessed("⟨b⟩", "legend", "Close the legend")
+        .confessed(
+            "⟨lb+rb+left⟩",
+            "launcher",
+            "Add a Profile That Watches a Dir",
+        )
+        .confessed("⟨lb+a⟩", "launcher", "Add a Profile")
+        .confessed("⟨b⟩", "editor", "Quit (Asks to Save Changes)")
+        .confessed("⟨b⟩", "launcher", "Save and Quit (unselects first)");
+    // 🫢 the watched dir's dialog can't be answered, and the spirit is told
+    assert!(
+        run.log("tdl.log").contains("no spirit can answer one"),
+        "{}",
+        run.account()
+    );
+}
+
+#[test]
+fn buttons_can_be_written_in_plain_angle_brackets() {
+    play("ascii")
+        .succeeded()
+        .confessed("<lb+a>", "launcher", "Add a Profile")
+        .confessed("<b>", "editor", "Quit (Asks to Save Changes)")
+        .confessed("<b>", "launcher", "Save and Quit (unselects first)");
+}
+
+#[test]
+fn buttons_that_arent_any_end_the_run_with_an_error() {
+    let run = play("no-such-button");
+    assert_eq!(run.output.status.code(), Some(1), "{}", run.account());
+    let log = run.log("tdl.log");
+    assert!(
+        log.contains("failed: line 2: ⟨lb+zz⟩ isn't buttons"),
+        "{log}"
+    );
+}
+
+#[test]
+fn a_press_that_is_no_key_ends_the_run_with_an_error() {
+    let run = play("unreadable");
     assert_eq!(run.output.status.code(), Some(1), "{}", run.account());
     let log = run.log("tdl.log");
     assert!(log.contains("failed: line 3"), "{log}");
-    // 🛑 nothing after the failure is played
-    assert!(!log.contains("line 4: press a"), "{log}");
+    // 🛑 nothing on the bad line is pressed, even what comes before the bad press
+    assert_eq!(log.matches("→").count(), 1, "{log}");
 }

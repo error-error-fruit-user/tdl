@@ -1,6 +1,6 @@
 //! The command line, read by clap: `tdl [options] [dir]` opens the launcher, `tdl launch`,
-//! `tdl host` and `tdl join` do one thing and close, `tdl headless` plays a script (see
-//! [`script`](crate::script)), and `tdl --seal` and `tdl --list-quips` do theirs without any
+//! `tdl host` and `tdl join` do one thing and close, `tdl headless` presses keys from a script
+//! (see the possession in [`ritual`](crate::ritual)), and `tdl --seal` and `tdl --list-quips` do theirs without any
 //! windows. `tdl --help` lists it all, in the theme's colors.
 
 use std::path::PathBuf;
@@ -86,11 +86,11 @@ pub struct Cli {
     /// `--headless`: launch, host or join with no forms or windows, only plain lines in the
     /// terminal.
     pub headless: bool,
-    /// `tdl headless`: a script to play, with no splash and no terminal.
+    /// `tdl headless`: a script of presses, with no splash and nothing drawn.
     pub play: Option<Play>,
 }
 
-/// `tdl headless`: the script to play (stdin if there is none), and where `--log` writes
+/// `tdl headless`: the script of presses (stdin if there is none), and where `--log` writes
 /// `tdl.log` and `uzdoom.log`, if it was given.
 #[derive(Debug, PartialEq)]
 pub struct Play {
@@ -623,15 +623,17 @@ enum Commands {
         #[arg(long, requires = "code")]
         headless: bool,
     },
-    /// Play a script with no splash and no terminal: keys for the screens (press, type, wait,
-    /// expect, wait-for, pick) and commands (launch, host, join), one a line, from SCRIPT or else
-    /// typed on stdin
+    /// Press keys and buttons from a script, with no splash and nothing drawn: each line is
+    /// presses separated by spaces (keys like j, enter, shift+b, ctrl+c; buttons as the legends
+    /// write them, like ⟨a⟩, ⟨lb+a⟩, ⟨rb+down⟩, or <lb+a>) or `wait 2s`, from SCRIPT or else typed
+    /// on stdin
     Headless {
         /// The script, a text file; without it the lines are read from stdin
         #[arg(long, value_name = "SCRIPT")]
         script: Option<PathBuf>,
-        /// Record the run in DIR (or the working directory): tdl.log, with every line played and
-        /// every screen it led to, and uzdoom.log, with everything UZDoom printed
+        /// Show each press, the screen that heard it and what it did there, and keep them in
+        /// DIR/tdl.log (DIR is the working directory if not given), with everything UZDoom
+        /// printed in DIR/uzdoom.log
         #[arg(long, value_name = "DIR", num_args = 0..=1, default_missing_value = ".")]
         log: Option<PathBuf>,
     },

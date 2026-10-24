@@ -136,18 +136,14 @@ tdl join 10.0.0.2 --code abc234 --port 9000           # the join form, filled in
 - `host` opens the host form for the profile, filled in from its saved host defaults and changed by `--players` (2–8), `--coop` or `--deathmatch`, `--map`, `--port`, `--code`, and `--share-ini` or `--no-share-ini` (whether joiners can play with your ini, see Multiplayer); `Enter` starts the game.
 - `join` opens the join form, filled in with the IP, `--code` and `--port` (8080 if not given), then finds or downloads a profile. With `--always-download` the wads you don't have are downloaded without asking first, with `--host-ini` you play with the host's ini, if it shares it, and with `--host-ini-with-keys` its key bindings too (see Multiplayer).
 - `--headless`, with `launch`, `host` or `join`, shows no forms and no windows at all: just plain lines in the terminal, so `join` needs `--code`. Joining still asks `[Y/N]` before downloading wads that aren't installed (no answer, or no terminal to ask on, is no), unless `--always-download` is given, and asks `[r/n/S]` about a wad of yours that isn't the host's version (see Multiplayer; no answer is skip, and `--always-download` replaces it without asking); a profile made for it is named after the host (`joined_10_0_0_2`). Anything that stops the game ends tdl with an error code, and `Ctrl+C` stops a game or a download cleanly, leaving any finished downloads for next time.
-- `headless` plays a script instead of a person: no splash, no music, and the screens drawn where nobody sees them (only when the script is about to look), with what it does said line by line in the terminal, a spinner while it waits, and a ✓ or ✗ at the end (with the last screen, if a line failed). The script is a text file given with `--script FILE`, or else typed on stdin, a line at a time. `--log [DIR]` records the run in DIR (or the working directory): `tdl.log`, every line played and every screen it led to, and `uzdoom.log`, everything UZDoom printed. A line that fails ends tdl with an error code. Its lines (`#` starts a comment):
-  - `press KEY...`: keys for the screens, like `press j j enter`, `press shift+b` or `press ctrl+c` (`enter`, `esc`, `tab`, the arrows, `home`, `end`, `pageup`, `pagedown`, `backspace`, `delete`, `space`, `f1`... or a character)
-  - `type TEXT`: the text, a key at a time
-  - `wait 2s` (or `500ms`)
-  - `expect TEXT`: TEXT is on the screen now, or the script fails
-  - `wait-for TEXT [TIME]`: TEXT comes on the screen within TIME (10s unless given; quote a TEXT that ends in a time)
-  - `pick PATH...`: the answer to the file dialog the last key opened (`pick` alone cancels it)
-  - `launch PROFILE`, `host PROFILE [options]`, `join IP --code CODE [options]`: done as `--headless` does them, with the options of `tdl host` and `tdl join`; the screens close for them and open again for the next key line
-  - `quit`, or the end of the script, ends tdl
+- `headless` presses keys and buttons from a script instead of a person, with no splash, no music and nothing drawn. The script is a text file given with `--script FILE`, or else typed on stdin, a line at a time. Each line is presses separated by spaces, or `wait 2s` (or `500ms`); `#` starts a comment:
+  - keys: `j`, `enter`, `esc`, `tab`, `shift+b`, `ctrl+c`, `space`, `f1`, the arrows, `home`, `end`, `pageup`, `pagedown`, `backspace`, `delete`, or a character
+  - buttons, written the way tdl's legends alias them: `⟨a⟩`, `⟨b⟩`, `⟨lb+a⟩`, `⟨rb+down⟩`, `⟨lb+rb+left⟩`, `⟨host⟩`, `⟨start⟩` (`a b x y lb rb lt rt l3 r3 home start select up down left right host join`; `<lb+a>` works too)
+
+  With `--log [DIR]`, every press is shown as it is made, with the screen that heard it and what it did there (named from that screen's legend), and kept in `DIR/tdl.log` (DIR is the working directory if not given), with everything UZDoom printed in `DIR/uzdoom.log`. File dialogs can't be answered, so they are cancelled. tdl ends when the launcher is quit or the script runs out; a line it can't read ends it with an error code.
 
   ```sh
-  printf 'wait-for "[ launcher ]"\nlaunch brutal_doom\n' | tdl headless --log
+  printf 'j enter\nwait 5s\nL\n⟨b⟩\n' | tdl headless --log
   ```
 
 | Key | Action |

@@ -47,6 +47,10 @@ impl<'a> ProfilePicker<'a> {
 impl Ritual for ProfilePicker<'_> {
     type Return = Option<Profile>;
 
+    fn legend(&self) -> &[[&'static str; 2]] {
+        Self::LEGEND
+    }
+
     fn render(&mut self, page: &mut Page) {
         let width = self
             .profiles

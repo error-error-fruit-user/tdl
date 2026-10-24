@@ -519,42 +519,6 @@ impl Launcher {
         Ok(())
     }
 
-    /// `tdl headless`: plays the script that [`script::start`](crate::script::start) began, in
-    /// turns: a command is done the plain way ([`Launcher::summon_plain`]), and key lines go to the
-    /// launcher, drawn on `grimoire` with no splash and no music, until the script moves on to a
-    /// command (the launcher closes, and opens again for the next key line) or ends. `Err` says
-    /// what stopped it.
-    pub fn play(grimoire: &mut Grimoire, start: Start) -> std::result::Result<(), String> {
-        use crate::script::{self, Turn};
-        loop {
-            match script::turn().map_err(|error| error.to_string())? {
-                Turn::End => return Ok(()),
-                Turn::Command(command) => {
-                    let start = Start {
-                        command: Some(command),
-                        ..start.clone()
-                    };
-                    Self::summon_plain(start)?;
-                    script::note("the command is done");
-                }
-                Turn::Screens => {
-                    let start = Start {
-                        command: None,
-                        splash: false,
-                        no_music: true,
-                        ..start.clone()
-                    };
-                    match Self::summon(grimoire, start) {
-                        // 🚪 quit, or Ctrl+C: a key line after it opens the launcher again
-                        Ok(()) | Err(Error::Interrupted) => script::note("the launcher closed"),
-                        Err(Error::ScriptCommand | Error::ScriptEnd) => {}
-                        Err(error) => return Err(error.to_string()),
-                    }
-                }
-            }
-        }
-    }
-
     /// `tdl host --headless` and `tdl join --headless`: set up like [`Launcher::prepare`], but with no
     /// windows at all. What would be a notice is a line on stderr, and anything that would need a
     /// question (a file to upgrade) is an error instead; then the command runs (see
@@ -1695,6 +1659,10 @@ impl Ritual for Launcher {
     /// The profile list, each row with its badge, and under it a panel for whatever the cursor is
     /// on: what that profile would launch with, with the global settings beside it while the
     /// terminal is wide enough, or the global settings alone on the new-profile row.
+    fn legend(&self) -> &[[&'static str; 2]] {
+        Self::LEGEND
+    }
+
     fn render(&mut self, page: &mut Page) {
         let selected = self.table_state.selected();
         let profile = selected.and_then(|i| self.loadout.profiles.get(i));

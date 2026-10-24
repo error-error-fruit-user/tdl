@@ -25,7 +25,9 @@ pub use ratatui::Frame as Page;
 use ratatui::{
     Frame as Costume,
     backend::CrosstermBackend as Ink,
-    crossterm::event::{Event as Portent, KeyCode as Chant, KeyModifiers as Charm},
+    crossterm::event::{
+        self as portent, Event as Portent, KeyCode as Chant, KeyModifiers as Charm,
+    },
     layout::{Alignment as Stance, Rect as Plot},
     // 🎨 a Color is a Hex: sometimes a hex code, sometimes a curse, always a vibe
     style::{Color as Hex, Modifier as Flair, Style as Rouge},
@@ -152,13 +154,13 @@ pub unsafe trait Haunted {
 unsafe impl Haunted for Grimoire {
     #[inline]
     fn bewitch(&mut self, outfit: impl Rental(&mut Costume)) -> Omen<Ghost> {
-        // 🫥 a look nobody will see is a look nobody has to serve: when a script isn't about to
-        // read the page, the whole outfit stays on the hanger and the spell is a no-op 👻
-        if !crate::script::wants_page() {
+        // 🫥 a look nobody will see is a look nobody has to serve: while a spirit has the
+        // keyboard, nobody watches the page, so the whole outfit stays on the hanger 👻
+        if possessed() {
             return Yass(BOO);
         }
         // 🕯️ just because I'm drawing circles doesn't mean I don't have to look fabulous 💅
-        let drawn = self.draw(|costume| {
+        self.draw(|costume| {
             // 🌑 every page starts in the dark, whatever was drawn on it before
             let void = Rouge::new()
                 .fg(theme::worn().colors.text)
@@ -166,8 +168,6 @@ unsafe impl Haunted for Grimoire {
             costume.render_widget(Veil::new().style(void), costume.area());
             outfit(costume)
         })?;
-        // 📜 a script reads what was drawn
-        crate::script::saw(drawn.buffer);
         Yass(BOO)
     }
 
@@ -222,11 +222,26 @@ pub trait Ritual {
         false
     }
 
+    /// 📜 the legend this ritual shows on F1 right now (none by default), which also names what a
+    /// possessed run's presses do
+    fn legend(&self) -> &[[&'static str; 2]] {
+        &[]
+    }
+
+    /// 🗡️ what `chant` does here, in words, for a possessed run's confession: its legend's line, by
+    /// default. `None` is nothing
+    fn deed(&self, chant: Chant) -> Option<String> {
+        // 📖 F1 (Start on a controller) shows the legend itself, which never lists it
+        deed_in(self.legend(), chant).or_else(|| {
+            (chant == Chant::F(1) && !self.legend().is_empty()).then(|| "Show the legend".into())
+        })
+    }
+
     /// 🕯️ a séance: attach once, hold the circle, and don't break it until the spirit has some tea to spill to yourSelf 👻    
     fn invoke(&mut self, grimoire: &mut Grimoire) -> Omen<SpillTea<Spirit<Self>>> {
         // 🔓 first rule of Grimoires: read the warnings before you break the seal. the compiler already did, and it has notes 🧙
-        // 📜 a script plays without any controller, even one that is plugged in
-        if !crate::script::playing() {
+        // 👻 a possessed run hears only its spirit, never a controller, even one that is plugged in
+        if !possessed() {
             familiar::start();
         }
         self.unseal(grimoire)?;
@@ -249,7 +264,13 @@ pub trait Ritual {
                 let card = beckon(
                     grimoire,
                     typing.then_some(&mut keyboard),
-                    &mut |grimoire, chant| self.intone(grimoire, chant),
+                    &mut |grimoire, chant| {
+                        // 🙏 the spirit owns up to each press before the ritual answers it
+                        if possessed() {
+                            confess(&spirit_name::<Self>(), self.deed(chant));
+                        }
+                        self.intone(grimoire, chant)
+                    },
                 )?;
                 // 🎃 match is exhaustive: the compiler won't let any variant miss out. inclusion, but type-checked 🏳️‍🌈
                 match card {
@@ -405,16 +426,16 @@ fn beckon<T>(
                     }
                 }
             }
-        } else if !crate::script::playing()
+        } else if !possessed()
             && let Some(chant) = familiar::chant()
         {
             let vibe = question(grimoire, chant)?;
             return Yass(change_costume(voice, vibe));
         }
         // 🧪 a test with a pretend controller has nothing to wait for once it has said its piece
-        // 📜 a script's keys come the same way a person's do
-        if crate::script::poll(familiar::patience())? {
-            break crate::script::read()?;
+        // 👻 a spirit's keys come the same way a person's do
+        if listen(familiar::patience())? {
+            break hear()?;
         }
     };
     // 📏 a grimoire that's too small is a cramped coven: let the user fix that first
@@ -429,6 +450,7 @@ fn beckon<T>(
         familiar::keyboard_used();
         // 🛑 Ctrl+C is the safe word: everything stops, no questions asked
         if key.code == Chant::Char('c') && key.modifiers.contains(Charm::CONTROL) {
+            confess("tdl", Some("Stop tdl".into()));
             Err(Curse::Interrupted)
         } else {
             let vibe = question(grimoire, key.code)?;
@@ -451,8 +473,8 @@ fn change_costume<T>(voice: Option<familiar::Family>, vibe: Vibe<T>) -> Vibe<T> 
 // 🕯️🔮 THE SÉANCE 🔮🕯️
 // with no window to haunt (`tdl headless`, `--headless`), tdl talks to the dead in plain lines
 // instead: every word the command line says goes through here, dressed in the theme's colors when
-// a terminal is listening and bare when it is only a file. the living speak in script lines, the
-// spirits answer in screens, and the planchette spins while everyone waits for a sign 👻
+// a terminal is listening and bare when it is only a file. the possessed confess their presses,
+// and the planchette spins while everyone waits for a sign 👻
 
 // 🪄 is the planchette mid-spin on the last line? it has to stop before anyone else can speak
 static SPINNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -521,24 +543,6 @@ pub fn wail(words: impl std::fmt::Display) {
     );
 }
 
-// 📜 an invocation: a line of the script, spoken aloud as it is played, its number in the margin
-pub fn invoke_line(number: usize, words: &str) {
-    use ratatui::crossterm::style::Stylize;
-    let colors = &theme::worn().colors;
-    let mut out = std::io::stdout();
-    hush();
-    let _ = if std::io::IsTerminal::is_terminal(&out) {
-        writeln!(
-            out,
-            "{} {}",
-            format!("{number:>4} │").with(tint(colors.muted)),
-            words.with(tint(colors.text))
-        )
-    } else {
-        writeln!(out, "{number:>4} │ {words}")
-    };
-}
-
 // 🪄 the planchette spins on the last line while the table waits for a sign, and says how long
 // it has been waiting. only a terminal sees it: a file would just fill up with spinning
 pub fn planchette(waiting_for: &str, waited: std::time::Duration) {
@@ -571,18 +575,6 @@ pub fn hush() {
     }
 }
 
-// 👻 an apparition: a screen the spirits showed, drawn in plain text, faint, for when the séance
-// breaks and everyone needs to see what was on the table
-pub fn apparition(page: &str) {
-    for row in page.lines() {
-        utter(
-            std::io::stderr(),
-            theme::worn().colors.muted,
-            &format!("     │{row}"),
-        );
-    }
-}
-
 // 🌅 the spirits rest (✓) or the circle is broken (✗): how the séance ended
 pub fn farewell(peaceful: bool, words: &str) {
     let colors = &theme::worn().colors;
@@ -591,6 +583,458 @@ pub fn farewell(peaceful: bool, words: &str) {
     } else {
         utter(std::io::stderr(), colors.warning, &format!("   ✗ {words}"));
     }
+}
+
+// 🪦👻 THE POSSESSION 👻🪦
+// `tdl headless`: no one sits at the keyboard, so a spirit does. it presses keys and buttons from a
+// script (a file, or stdin a line at a time), and every ritual hears them exactly as it would hear
+// a person's: through `listen` and `hear`, which stand in for crossterm's poll and read wherever
+// tdl waits for a key. nobody watches the pages, so none are drawn (see `bewitch`). with `--log`
+// the spirit prays: it confesses every press as it makes it, on the terminal and in its prayer
+// (tdl.log): the key or button, the ritual that heard it and what that ritual does with it, named
+// from its legend; and what UZDoom says goes into the prayer from beyond (uzdoom.log) beside it.
+// a script line is presses (keys like `j`, `enter`, `shift+b`, `ctrl+c`, and buttons the way the
+// legends' aliases write them, `⟨a⟩`, `⟨lb+a⟩`, `⟨rb+down⟩`), separated by spaces, or `wait 2s`;
+// `#` starts a comment
+
+/// One press of the possession: how the script wrote it, and the key it makes.
+struct Press {
+    label: String,
+    portent: Portent,
+}
+
+/// The spirit at the keyboard, while one is.
+struct Possession {
+    /// The script's lines, numbered from 1, as they come.
+    lines: std::sync::mpsc::Receiver<(usize, String)>,
+    /// Presses read and not heard yet.
+    presses: std::collections::VecDeque<Press>,
+    /// When a `wait` is over, and when it began.
+    until: Option<(std::time::Instant, std::time::Instant)>,
+    /// How the last press heard was written, for its confession.
+    last: String,
+    /// The spirit's prayer (tdl.log), and when the possession began, with `--log`.
+    prayer: Option<(std::fs::File, std::time::Instant)>,
+}
+
+std::thread_local! {
+    static SPIRIT: std::cell::RefCell<Option<Possession>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Where the prayers are kept (`--log`'s dir), once a spirit has the keyboard.
+static CONFESSIONAL: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+// 🕯️ the spirit takes the keyboard: its script from `script` (stdin without one), its prayers in
+// `prayers` (tdl.log and uzdoom.log) if given. from here on every key tdl hears is the spirit's
+pub fn possess(
+    script: Option<&std::path::Path>,
+    prayers: Option<&std::path::Path>,
+) -> std::io::Result<()> {
+    let source: Box<dyn std::io::Read + Send> = match script {
+        Some(script) => Box::new(std::fs::File::open(script).map_err(|error| {
+            std::io::Error::new(error.kind(), format!("{}: {error}", script.display()))
+        })?),
+        None => Box::new(std::io::stdin()),
+    };
+    // 📜 read on a thread of its own, so a script typed line by line never holds a ritual up
+    let (sender, lines) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        for (index, line) in std::io::BufReader::new(source).lines().enumerate() {
+            let Yass(line) = line else { break };
+            if sender.send((index + 1, line)).is_err() {
+                break;
+            }
+        }
+    });
+    let prayer = match prayers {
+        Some(dir) => {
+            std::fs::create_dir_all(dir)?;
+            std::fs::File::create(dir.join("uzdoom.log"))?;
+            let _ = CONFESSIONAL.set(dir.to_path_buf());
+            let mut file = std::fs::File::create(dir.join("tdl.log"))?;
+            let read = script.map_or("stdin".into(), |script| script.display().to_string());
+            writeln!(
+                file,
+                "tdl {} headless, pressing {read}",
+                env!("CARGO_PKG_VERSION")
+            )?;
+            Some((file, std::time::Instant::now()))
+        }
+        None => None,
+    };
+    SPIRIT.with_borrow_mut(|spirit| {
+        *spirit = Some(Possession {
+            lines,
+            presses: std::collections::VecDeque::new(),
+            until: None,
+            last: String::new(),
+            prayer,
+        })
+    });
+    Yass(BOO)
+}
+
+// 👻 is a spirit at the keyboard?
+pub fn possessed() -> bool {
+    SPIRIT.with_borrow(Option::is_some)
+}
+
+// 👂 like crossterm's poll: whether a key is ready within `patience`. possessed, the keys are the
+// spirit's, and its waits are waited on the way to the next one
+pub fn listen(patience: std::time::Duration) -> Omen<bool> {
+    if !possessed() {
+        return Yass(portent::poll(patience)?);
+    }
+    SPIRIT.with_borrow_mut(|spirit| spirit.as_mut().unwrap().listen(patience))
+}
+
+// 🗣️ like crossterm's read: the next key, the spirit's while it has the keyboard
+pub fn hear() -> Omen<Portent> {
+    if !possessed() {
+        return Yass(portent::read()?);
+    }
+    loop {
+        if listen(std::time::Duration::from_secs(1))? {
+            let press = SPIRIT.with_borrow_mut(|spirit| {
+                let spirit = spirit.as_mut().unwrap();
+                let press = spirit.presses.pop_front()?;
+                spirit.last = press.label;
+                Some(press.portent)
+            });
+            if let Some(portent) = press {
+                return Yass(portent);
+            }
+        }
+    }
+}
+
+// 🙏 the spirit confesses the press just heard: which ritual heard it, and what it did there
+// (`None` is nothing). only when it prays (`--log`): on the terminal and in its prayer
+pub fn confess(heard_by: &str, deed: Option<String>) {
+    SPIRIT.with_borrow_mut(|spirit| {
+        let Some(spirit) = spirit.as_mut() else {
+            return;
+        };
+        let Some((file, began)) = &mut spirit.prayer else {
+            return;
+        };
+        let deed = deed.unwrap_or_else(|| "nothing".into());
+        let line = format!("{:<12} {heard_by:<18} → {deed}", spirit.last);
+        let _ = writeln!(file, "[{:8.3}s] {line}", began.elapsed().as_secs_f64());
+        confession(&line);
+    });
+}
+
+// 🫢 something the spirit should know that no press caused (a file dialog it can't answer), told
+// the same way as a confession, when it prays
+pub fn whisper(words: &str) {
+    SPIRIT.with_borrow_mut(|spirit| {
+        let Some(spirit) = spirit.as_mut() else {
+            return;
+        };
+        let Some((file, began)) = &mut spirit.prayer else {
+            return;
+        };
+        let _ = writeln!(file, "[{:8.3}s] {words}", began.elapsed().as_secs_f64());
+        utter(
+            std::io::stdout(),
+            theme::worn().colors.muted,
+            &format!("     {words}"),
+        );
+    });
+}
+
+// ⚰️ the prayer from beyond (uzdoom.log), opened to add UZDoom's words to, if the spirit prays
+pub fn prayer_from_beyond() -> Option<std::fs::File> {
+    let dir = CONFESSIONAL.get()?;
+    std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(dir.join("uzdoom.log"))
+        .ok()
+}
+
+// 🌄 the spirit lets go: how the possession ended, said on the terminal (a failure always, the
+// rest when it prays) and written at the end of its prayer
+pub fn exorcise(outcome: &Result<(), String>) {
+    let logged = SPIRIT.with_borrow_mut(|spirit| {
+        let Some((file, began)) = spirit.as_mut().and_then(|spirit| spirit.prayer.as_mut()) else {
+            return false;
+        };
+        let ending = match outcome {
+            Yass(()) => "done".to_string(),
+            Err(problem) => format!("ended: {problem}"),
+        };
+        let _ = writeln!(file, "[{:8.3}s] {ending}", began.elapsed().as_secs_f64());
+        true
+    });
+    match outcome {
+        Yass(()) if logged => farewell(true, "the spirit is at rest"),
+        Yass(()) => {}
+        Err(problem) => farewell(false, problem),
+    }
+}
+
+// 🏷️ a ritual's name, the way a confession says it: `ProfileNamer` heard it as "profile namer"
+pub fn spirit_name<Soul: ?Sized>() -> String {
+    let full = std::any::type_name::<Soul>();
+    let bare = full.split('<').next().unwrap_or(full);
+    let bare = bare.rsplit("::").next().unwrap_or(bare);
+    let mut name = String::new();
+    for c in bare.chars() {
+        if c.is_uppercase() && !name.is_empty() {
+            name.push(' ');
+        }
+        name.push(c.to_ascii_lowercase());
+    }
+    name
+}
+
+// 📜 what `chant` does according to `legend`: the text of the first line whose keys take it
+pub fn deed_in(legend: &[[&'static str; 2]], chant: Chant) -> Option<String> {
+    legend
+        .iter()
+        .find(|[keys, _]| keys_take(&familiar::plain(keys), chant) || aliases_take(keys, chant))
+        .map(|[_, deed]| (*deed).to_string())
+}
+
+// 🎮 whether one of a legend's button aliases (`H⟨host⟩`, `X⟨home|lb+b⟩`) makes `chant`: a button
+// of its own, like the host trigger's F2, makes a key the legend doesn't name
+fn aliases_take(keys: &str, chant: Chant) -> bool {
+    keys.split('⟨')
+        .skip(1)
+        .filter_map(|rest| rest.split_once('⟩').map(|(aliases, _)| aliases))
+        .flat_map(|aliases| aliases.split('|'))
+        .any(|alias| Gesture::press(alias) == Some(chant))
+}
+
+// 🔑 whether a legend's keys (`J↓/K↑`, `Y/Shift+Y`, `A-Z/0-9/_-`, `←/→/Home/End`, `/`) take `chant`
+fn keys_take(keys: &str, chant: Chant) -> bool {
+    if keys == "/" {
+        return chant == Chant::Char('/');
+    }
+    keys.split(['/', ' '])
+        // 🧩 `Tab/↓, Backtab/↑` separates its groups with a comma, which `,` alone is the key of
+        .map(|token| {
+            if token.len() > 1 {
+                token.trim_end_matches(',')
+            } else {
+                token
+            }
+        })
+        .filter(|token| !token.is_empty())
+        .any(|token| key_takes(token, chant))
+}
+
+// 🗝️ one legend key against `chant`
+fn key_takes(token: &str, chant: Chant) -> bool {
+    let named = match token {
+        "Enter" => Some(Chant::Enter),
+        "Esc" => Some(Chant::Esc),
+        "Tab" => Some(Chant::Tab),
+        "Backtab" | "Shift+Tab" => Some(Chant::BackTab),
+        "Space" => Some(Chant::Char(' ')),
+        "Home" => Some(Chant::Home),
+        "End" => Some(Chant::End),
+        "PgUp" | "PageUp" => Some(Chant::PageUp),
+        "PgDn" | "PageDown" => Some(Chant::PageDown),
+        "Delete" | "Del" => Some(Chant::Delete),
+        "Backspace" => Some(Chant::Backspace),
+        _ => None,
+    };
+    if let Some(named) = named {
+        return named == chant;
+    }
+    if let Some(number) = token.strip_prefix('F').and_then(|n| n.parse::<u8>().ok()) {
+        return chant == Chant::F(number);
+    }
+    if let Some(shifted) = token.strip_prefix("Shift+") {
+        return shifted.chars().count() == 1
+            && chant == Chant::Char(shifted.chars().next().unwrap().to_ascii_uppercase());
+    }
+    // 🔤 a range like A-Z or 0-9, or the two characters of `_-`
+    let chars: Vec<char> = token.chars().collect();
+    if let [from, '-', to] = chars[..]
+        && let Chant::Char(c) = chant
+    {
+        return (from.to_ascii_lowercase()..=to.to_ascii_lowercase())
+            .contains(&c.to_ascii_lowercase());
+    }
+    chars.iter().any(|&c| match c {
+        '↑' => chant == Chant::Up,
+        '↓' => chant == Chant::Down,
+        '←' => chant == Chant::Left,
+        '→' => chant == Chant::Right,
+        // 🔡 a legend's letter is the plain key; Shift+ marks the capital
+        c if c.is_ascii_alphabetic() => chant == Chant::Char(c.to_ascii_lowercase()),
+        c => chant == Chant::Char(c),
+    })
+}
+
+// 🖋️ a confession on the terminal: the press in the key color, the rest in the text color
+fn confession(line: &str) {
+    utter(
+        std::io::stdout(),
+        theme::worn().colors.text,
+        &format!("  {line}"),
+    );
+}
+
+impl Possession {
+    fn listen(&mut self, patience: std::time::Duration) -> Omen<bool> {
+        loop {
+            if !self.presses.is_empty() {
+                return Yass(true);
+            }
+            if let Some((began, until)) = self.until {
+                let now = std::time::Instant::now();
+                if now >= until {
+                    self.until = None;
+                    hush();
+                    continue;
+                }
+                if self.prayer.is_some() {
+                    planchette("waiting", began.elapsed());
+                }
+                std::thread::sleep(patience.min(until - now));
+                return Yass(false);
+            }
+            let (number, text) = match self.lines.recv_timeout(patience) {
+                Yass(line) => line,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => return Yass(false),
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(Curse::ScriptEnd);
+                }
+            };
+            let text = text.trim();
+            if text.is_empty() || text.starts_with('#') {
+                continue;
+            }
+            if let Some(how_long) = text.strip_prefix("wait") {
+                let how_long =
+                    duration(how_long).map_err(|problem| self.failed(number, &problem))?;
+                let now = std::time::Instant::now();
+                self.until = Some((now, now + how_long));
+                continue;
+            }
+            for label in text.split_whitespace() {
+                let portent = press(label).map_err(|problem| self.failed(number, &problem))?;
+                self.presses.push_back(Press {
+                    label: label.to_string(),
+                    portent,
+                });
+            }
+        }
+    }
+
+    // ✗ line `number` couldn't be read: the curse, written in the prayer too
+    fn failed(&mut self, number: usize, problem: &str) -> Curse {
+        let problem = format!("line {number}: {problem}");
+        if let Some((file, began)) = &mut self.prayer {
+            let _ = writeln!(
+                file,
+                "[{:8.3}s] failed: {problem}",
+                began.elapsed().as_secs_f64()
+            );
+        }
+        Curse::Script(problem)
+    }
+}
+
+// ⏳ a wait's time: `2s`, `500ms` or `2` (seconds)
+fn duration(text: &str) -> Result<std::time::Duration, String> {
+    let text = text.trim();
+    let (number, scale) = match (text.strip_suffix("ms"), text.strip_suffix('s')) {
+        (Some(number), _) => (number, 0.001),
+        (None, Some(number)) => (number, 1.0),
+        _ => (text, 1.0),
+    };
+    number
+        .parse::<f64>()
+        .ok()
+        .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+        .map(|seconds| std::time::Duration::from_secs_f64(seconds * scale))
+        .ok_or_else(|| format!("wait needs a time, like wait 2s or wait 500ms, not \"{text}\""))
+}
+
+// ⌨️ a press as the script writes it: a key (`j`, `enter`, `shift+b`, `ctrl+c`, `f1`, `space`), or
+// buttons the way the legends' aliases write them (`⟨a⟩`, `⟨lb+a⟩`, `⟨lb+rb+down⟩`, `⟨host⟩`;
+// `<lb+a>` for a keyboard without the angle brackets)
+fn press(label: &str) -> Result<Portent, String> {
+    use ratatui::crossterm::event::KeyEvent as Keystroke;
+    let aliases = label
+        .strip_prefix('⟨')
+        .and_then(|label| label.strip_suffix('⟩'))
+        .or_else(|| {
+            label
+                .strip_prefix('<')
+                .and_then(|label| label.strip_suffix('>'))
+        });
+    if let Some(aliases) = aliases {
+        return Gesture::press(&aliases.to_ascii_lowercase())
+            .map(|chant| Portent::Key(Keystroke::new(chant, Charm::NONE)))
+            .ok_or_else(|| {
+                format!(
+                    "{label} isn't buttons the way a legend writes them, like ⟨a⟩, ⟨lb+a⟩ or \
+                     ⟨lb+rb+down⟩ (a b x y lb rb lt rt l3 r3 home start select up down left right \
+                     host join)"
+                )
+            });
+    }
+    let mut parts: Vec<&str> = label.split('+').collect();
+    // ➕ `+` and `shift++` are the plus key itself
+    if label == "+" || label.ends_with("++") {
+        parts.retain(|part| !part.is_empty());
+        parts.push("+");
+    }
+    let last = parts.pop().unwrap_or_default();
+    let mut charms = Charm::NONE;
+    for part in parts {
+        charms |= match part.to_ascii_lowercase().as_str() {
+            "ctrl" | "control" => Charm::CONTROL,
+            "shift" => Charm::SHIFT,
+            "alt" => Charm::ALT,
+            _ => return Err(format!("{part} in {label} isn't ctrl, shift or alt")),
+        };
+    }
+    let chant = match last.to_ascii_lowercase().as_str() {
+        "enter" | "return" => Chant::Enter,
+        "esc" | "escape" => Chant::Esc,
+        "tab" if charms.contains(Charm::SHIFT) => Chant::BackTab,
+        "tab" => Chant::Tab,
+        "backtab" => Chant::BackTab,
+        "up" => Chant::Up,
+        "down" => Chant::Down,
+        "left" => Chant::Left,
+        "right" => Chant::Right,
+        "home" => Chant::Home,
+        "end" => Chant::End,
+        "pageup" | "pgup" => Chant::PageUp,
+        "pagedown" | "pgdn" => Chant::PageDown,
+        "delete" | "del" => Chant::Delete,
+        "backspace" => Chant::Backspace,
+        "insert" => Chant::Insert,
+        "space" => Chant::Char(' '),
+        f if f.len() > 1
+            && f.starts_with('f')
+            && let Yass(number) = f[1..].parse::<u8>() =>
+        {
+            Chant::F(number)
+        }
+        _ => {
+            let mut chars = last.chars();
+            match (chars.next(), chars.next()) {
+                // 🔠 a shifted letter comes as the capital, the way terminals send it
+                (Some(c), None) if charms.contains(Charm::SHIFT) => {
+                    Chant::Char(c.to_ascii_uppercase())
+                }
+                (Some(c), None) => Chant::Char(c),
+                _ => return Err(format!("{label} isn't a key or a button")),
+            }
+        }
+    };
+    Yass(Portent::Key(Keystroke::new(chant, charms)))
 }
 
 // 🩸 colors come from the theme now: a ritual only ever asks for a role, never for a hue

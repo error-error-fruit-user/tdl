@@ -64,8 +64,8 @@ pub fn summon(
                 log.draw(page, &lines);
             }
         })?;
-        // 📜 a script that moves on (to a command, or its end) stops the game first
-        let ready = match crate::script::poll(FRAME) {
+        // 👻 a spirit whose script runs out stops the game first
+        let ready = match crate::ritual::listen(FRAME) {
             Ok(ready) => ready,
             Err(error) => {
                 game.stop()?;
@@ -75,13 +75,36 @@ pub fn summon(
         if !ready {
             continue;
         }
-        let Event::Key(key) = crate::script::read()? else {
+        let Event::Key(key) = crate::ritual::hear()? else {
             continue;
         };
         if !key.is_press() {
             continue;
         }
-        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        let stopping =
+            key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL);
+        // 👻 what a spirit's press does here, owned up to before it is done
+        crate::ritual::confess(
+            "running",
+            match (&log, key.code) {
+                _ if stopping => Some("Stop UZDoom and tdl"),
+                (None, KeyCode::Char('l' | 'L')) => Some("Show UZDoom's log"),
+                (Some(_), KeyCode::Char('l' | 'L') | KeyCode::Esc) => Some("Close UZDoom's log"),
+                (
+                    Some(_),
+                    KeyCode::Up
+                    | KeyCode::Down
+                    | KeyCode::PageUp
+                    | KeyCode::PageDown
+                    | KeyCode::Home
+                    | KeyCode::End
+                    | KeyCode::Char('j' | 'k' | 'g' | 'G'),
+                ) => Some("Scroll UZDoom's log"),
+                _ => None,
+            }
+            .map(str::to_string),
+        );
+        if stopping {
             game.stop()?;
             return Err(Error::Interrupted);
         }

@@ -107,7 +107,7 @@ impl Game {
         if let Some(logger) = self.logger.take() {
             let _ = logger.join();
         }
-        while !crate::script::playing()
+        while !crate::ritual::possessed()
             && let Ok(true) = ratatui::crossterm::event::poll(Duration::ZERO)
         {
             let _ = ratatui::crossterm::event::read();
@@ -175,7 +175,10 @@ fn execute(
         // the log is best effort, but stdout must still be drained or the game blocks on a full pipe
         let log = File::create(data_subdir.join("uzdoom.log")).ok();
         // 📜 and into `tdl headless --log`'s uzdoom.log, if there is one
-        let logs = log.into_iter().chain(crate::script::uzdoom_log()).collect();
+        let logs = log
+            .into_iter()
+            .chain(crate::ritual::prayer_from_beyond())
+            .collect();
         let output = output.clone();
         thread::spawn(move || copy_output(stdout, logs, &output))
     });

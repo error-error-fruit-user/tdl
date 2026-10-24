@@ -1,36 +1,16 @@
-# The example profiles the README's screenshots are taken of, laid out on the screens by
-# `tdl headless` (demo_screenshot.sh runs it in /tmp/tdl-shots, where the paths below are):
-# brutal_doom is healthy; sigil_run has a wad that goes missing, one that changes and a volatile
-# one; test_build points at a UZDoom that doesn't exist.
-wait-for "[ launcher ]"
+# The example profiles the README's screenshots are taken of, pressed into the screens by
+# `tdl headless` (demo_screenshot.sh runs it in /tmp/tdl-shots, with screenshots.picks answering
+# the file dialogs through TDL_PICKS): brutal_doom is healthy; sigil_run has a wad that goes
+# missing, one that changes and a volatile one; test_build points at a UZDoom that doesn't exist.
 # 🌐 UZDoom and the base wad, the global ones
-press u
-pick uzdoom.sh
-press shift+b
-pick wads/DOOM2.WAD
-wait-for DOOM2.WAD
-press a
-type brutal_doom
-press tab shift+a
-pick wads/brutalv22.pk3 wads/brutal_extras.pk3 wads/hud_minimal.pk3
-wait-for hud_minimal.pk3
-press k enter
-wait-for "[ launcher ]"
-press a
-type sigil_run
-press tab shift+a
-pick wads/sigil_v1_21.wad wads/gone.pk3 wads/changed.wad wads/my_mod_wip.pk3
-wait-for my_mod_wip.pk3
+u
+shift+b
+a b r u t a l _ d o o m tab shift+a
+k enter
+a s i g i l _ r u n tab shift+a
 # the last wad, volatile
-press k v enter
-wait-for "[ launcher ]"
-press a
-type test_build
-press tab shift+a
-pick wads/hud_minimal.pk3
-wait-for hud_minimal.pk3
-press u
-pick no-such-uzdoom
-press k enter
-wait-for "[ launcher ]"
-expect test_build
+k v enter
+a t e s t _ b u i l d tab shift+a
+u
+k enter
+esc

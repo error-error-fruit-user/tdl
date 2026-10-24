@@ -240,6 +240,20 @@ impl Ritual for SettingsForm {
         matches!(self.focus, Self::ARGS | Self::QUIP)
     }
 
+    fn legend(&self) -> &[[&'static str; 2]] {
+        match self.focus {
+            Self::QUIP => Self::QUIP_LEGEND,
+            Self::ARGS => Self::ARGS_LEGEND,
+            Self::SONG => Self::SONG_LEGEND,
+            Self::THEME => Self::THEME_LEGEND,
+            Self::SPLASH_LOOK => Self::SPLASH_LEGEND,
+            Self::PRIDE_FLAGS => Self::PRIDE_LEGEND,
+            Self::INI => Self::INI_LEGEND,
+            Self::PLACE => Self::PLACE_LEGEND,
+            _ => Self::TOGGLE_LEGEND,
+        }
+    }
+
     fn render(&mut self, page: &mut Page) {
         let place = if self.own { "this loadout" } else { "global" };
         let splash = if self.settings.splash {

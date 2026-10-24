@@ -77,6 +77,10 @@ impl Ritual for TextPrompt<'_> {
         true
     }
 
+    fn legend(&self) -> &[[&'static str; 2]] {
+        Self::LEGEND
+    }
+
     fn render(&mut self, page: &mut Page) {
         let fields = [Field {
             label: self.label,

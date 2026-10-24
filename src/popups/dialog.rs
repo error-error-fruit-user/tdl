@@ -29,6 +29,18 @@ impl<'a> Dialog<'a> {
 impl Ritual for Dialog<'_> {
     type Return = bool;
 
+    fn deed(&self, chant: KeyCode) -> Option<String> {
+        match chant {
+            KeyCode::Char('y') => Some("Yes".into()),
+            KeyCode::Char('n') => Some("No".into()),
+            KeyCode::Enter if self.selected.is_some() => Some("Answer the selected one".into()),
+            KeyCode::Left | KeyCode::Right | KeyCode::Tab | KeyCode::BackTab => {
+                Some("Move between the answers".into())
+            }
+            _ => None,
+        }
+    }
+
     fn render(&mut self, page: &mut Page) {
         let lines: Vec<_> = popups::wrap(self.message, page.area())
             .into_iter()

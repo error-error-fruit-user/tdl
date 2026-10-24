@@ -152,6 +152,15 @@ impl Ritual for JoinAddressForm {
         self.focus < 3
     }
 
+    fn legend(&self) -> &[[&'static str; 2]] {
+        match self.focus {
+            0 => Self::IP_LEGEND,
+            1 => Self::PORT_LEGEND,
+            2 => Self::CODE_LEGEND,
+            _ => Self::INI_LEGEND,
+        }
+    }
+
     fn render(&mut self, page: &mut Page) {
         let default_port = net::DEFAULT_PORT.to_string();
         let fields = [

@@ -154,6 +154,14 @@ impl<F: Fn(&str) -> bool> Ritual for WadNamer<F> {
         true
     }
 
+    fn legend(&self) -> &[[&'static str; 2]] {
+        match self.naming {
+            Naming::Copy => Self::LEGEND,
+            Naming::Yours => Self::RENAMING_LEGEND,
+            Naming::Wad => Self::RENAMING_WAD_LEGEND,
+        }
+    }
+
     fn render(&mut self, page: &mut Page) {
         let fields = [Field {
             label: "name",

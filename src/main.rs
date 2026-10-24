@@ -33,7 +33,6 @@ mod popups;
 mod quips;
 mod ritual;
 mod screens;
-mod script;
 mod slayer;
 mod tag;
 mod tally;
@@ -158,17 +157,24 @@ fn main() {
         }
         return;
     }
-    // 📜 tdl headless plays a script on screens nobody sees; a line that fails is a failing exit
+    // 👻 tdl headless: a spirit presses the keys from a script, on pages nobody sees
     if let Some(play) = play {
-        let outcome = script::start(play.script.as_deref(), play.log.as_deref())
+        let outcome = ritual::possess(play.script.as_deref(), play.log.as_deref())
+            .and_then(|()| ritual::void_grimoire(100, 30))
             .map_err(|error| error.to_string())
-            .and_then(|()| {
-                ritual::void_grimoire(script::WIDTH, script::HEIGHT)
-                    .map_err(|error| error.to_string())
-            })
-            .and_then(|mut grimoire| Launcher::play(&mut grimoire, start));
-        // 🕯️ the séance says how it ended itself
-        script::finish(&outcome);
+            .and_then(|mut grimoire| {
+                let start = Start {
+                    splash: false,
+                    no_music: true,
+                    ..start
+                };
+                match Launcher::summon(&mut grimoire, start) {
+                    // 🚪 the launcher quit, the spirit's script ran out, or it pressed Ctrl+C
+                    Ok(()) | Err(Error::ScriptEnd | Error::Interrupted) => Ok(()),
+                    Err(error) => Err(error.to_string()),
+                }
+            });
+        ritual::exorcise(&outcome);
         if outcome.is_err() {
             std::process::exit(1);
         }
