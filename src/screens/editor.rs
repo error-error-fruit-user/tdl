@@ -117,8 +117,9 @@ impl<'a> Editor<'a> {
         ["Y/Shift+Y", "Copy Selected/All Wads"],
         ["X/P", "Cut/Paste Wads"],
         ["W/Shift+W⟨rb+y⟩", "Add Wads From the Wads/Files"],
-        ["A⟨lb+a⟩/Shift+A⟨lb+rb+down⟩", "Add Files/a Mod Folder"],
+        ["A⟨lb+a⟩/Shift+A", "Add Wads From the Wads/Files (As W)"],
         ["F⟨lb+rb+left⟩", "Import from Dir"],
+        ["Shift+F⟨lb+rb+down⟩", "Add a Mod Folder"],
         ["L", "Wads (Every Dir)"],
         [
             "B⟨rb+b⟩/Shift+B⟨rb+x⟩",
@@ -1054,7 +1055,9 @@ impl Ritual for Editor<'_> {
                 self.rename_wad(grimoire, index)?;
                 Ok(Phase::Render)
             }
-            KeyCode::Char('a') => {
+            // ➕ adding, like replacing and picking the base wad: the wads screen, or with Shift a
+            // file dialog
+            KeyCode::Char('A' | 'W') => {
                 let Some(mod_paths) =
                     picker::files(grimoire, Some(("wads", Wad::EXTENSIONS)), None)?
                 else {
@@ -1069,22 +1072,7 @@ impl Ritual for Editor<'_> {
                 self.insert_wads(wads);
                 Ok(Phase::Render)
             }
-            KeyCode::Char('W') => {
-                let Some(mod_paths) =
-                    picker::files(grimoire, Some(("wads", Wad::EXTENSIONS)), None)?
-                else {
-                    return Ok(Phase::Prompt);
-                };
-                if mod_paths.is_empty() {
-                    return Ok(Phase::Prompt);
-                }
-                let Some(wads) = hashing::wads(grimoire, &mod_paths)? else {
-                    return Ok(Phase::Render);
-                };
-                self.insert_wads(wads);
-                Ok(Phase::Render)
-            }
-            KeyCode::Char('A') => {
+            KeyCode::Char('F') => {
                 // 📁 a mod's folder, played as UZDoom plays a pk3, so it needs no packing
                 let Some(dir) = picker::dir(grimoire, None)? else {
                     return Ok(Phase::Prompt);
@@ -1174,7 +1162,7 @@ impl Ritual for Editor<'_> {
                 }
                 Ok(Phase::Prompt)
             }
-            KeyCode::Char('w') => {
+            KeyCode::Char('a' | 'w') => {
                 self.add_from_library(grimoire)?;
                 Ok(Phase::Render)
             }

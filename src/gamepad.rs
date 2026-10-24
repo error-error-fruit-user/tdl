@@ -691,7 +691,7 @@ pub fn chord(left: bool, right: bool, prompt: Prompt) -> Option<char> {
         (true, true, Prompt::Back) => 'n',
         (true, true, Prompt::Cut) => 'v',
         (true, true, Prompt::Up) => ' ',
-        (true, true, Prompt::Down) => 'A',
+        (true, true, Prompt::Down) => 'F',
         (true, true, Prompt::Left) => 'f',
         (true, true, Prompt::Right) => 't',
         _ => return None,
@@ -1356,7 +1356,7 @@ mod tests {
             (&[LeftTrigger, RightTrigger], East, Some('n')),
             (&[LeftTrigger, RightTrigger], North, Some('v')),
             (&[LeftTrigger, RightTrigger], DPadUp, Some(' ')),
-            (&[LeftTrigger, RightTrigger], DPadDown, Some('A')),
+            (&[LeftTrigger, RightTrigger], DPadDown, Some('F')),
             (&[LeftTrigger, RightTrigger], DPadLeft, Some('f')),
             (&[LeftTrigger, RightTrigger], DPadRight, Some('t')),
         ];
