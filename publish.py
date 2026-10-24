@@ -86,7 +86,19 @@ def third_party_licenses(target):
     return missing
 
 
+def rust_on_path():
+    """Puts rustup's folder ($CARGO_HOME/bin, else ~/.cargo/bin) on the PATH when cargo isn't on
+    it, as a shell that never ran rustup's profile line leaves it; everything this runs inherits it."""
+    if shutil.which("cargo"):
+        return
+    home = os.environ.get("CARGO_HOME") or os.path.join(os.path.expanduser("~"), ".cargo")
+    folder = os.path.join(home, "bin")
+    if any(os.path.isfile(os.path.join(folder, name)) for name in ("cargo", "cargo.exe")):
+        os.environ["PATH"] = folder + os.pathsep + os.environ.get("PATH", "")
+
+
 def main():
+    rust_on_path()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--no-appimages", action="store_true", help="don't build the AppImages")
     options = parser.parse_args()
