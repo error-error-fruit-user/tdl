@@ -1,0 +1,3 @@
+[submodule "installation-groans"]
+	path = installation-groans
+	url = ../installation-groans.git
