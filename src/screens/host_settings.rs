@@ -154,8 +154,8 @@ fn save_defaults(
 ) -> Result<bool> {
     let mut profile = loadout.profiles[index].clone();
     profile.host_defaults = defaults;
-    if loadout.replace(index, profile).is_err() {
-        Warning::save_failed(grimoire)?;
+    if let Err(error) = loadout.replace(index, profile) {
+        Warning::save_failed(grimoire, &error)?;
         return Ok(false);
     }
     Ok(true)

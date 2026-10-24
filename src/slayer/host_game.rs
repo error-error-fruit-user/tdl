@@ -29,8 +29,8 @@ pub fn summon(
     let remembered = (port != net::DEFAULT_PORT).then_some(port);
     if loadout.uac.host_port != remembered {
         loadout.uac.host_port = remembered;
-        if loadout.keep_uac().is_err() {
-            Warning::save_failed(grimoire)?;
+        if let Err(error) = loadout.keep_uac() {
+            Warning::save_failed(grimoire, &error)?;
         }
     }
     let profile = &loadout.profiles[index];

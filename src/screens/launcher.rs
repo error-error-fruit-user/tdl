@@ -896,8 +896,8 @@ impl Launcher {
                         format!("Stop opening {} by default?", Path::new(&kept).display());
                     if Dialog::summon(grimoire, &question)? {
                         self.loadout.uac.loadout = None;
-                        if self.loadout.keep_uac().is_err() {
-                            Warning::save_failed(grimoire)?;
+                        if let Err(error) = self.loadout.keep_uac() {
+                            Warning::save_failed(grimoire, &error)?;
                         }
                     }
                 }
@@ -916,8 +916,8 @@ impl Launcher {
             )?
         {
             self.loadout.uac.loadout = Some(passed.clone().into_os_string());
-            if self.loadout.keep_uac().is_err() {
-                Warning::save_failed(grimoire)?;
+            if let Err(error) = self.loadout.keep_uac() {
+                Warning::save_failed(grimoire, &error)?;
             }
         }
 
@@ -975,13 +975,12 @@ impl Launcher {
                         .config
                         .ignored_wad_dirs
                         .push(dir.into_os_string());
-                    if self
+                    if let Err(error) = self
                         .loadout
                         .config
                         .write(&self.loadout.config_dir, &self.loadout.profiles)
-                        .is_err()
                     {
-                        Warning::save_failed(grimoire)?;
+                        Warning::save_failed(grimoire, &error)?;
                     }
                     continue;
                 }
@@ -989,8 +988,8 @@ impl Launcher {
             };
             let mut shelf = self.loadout.shelf();
             shelf.add(dir, keep);
-            if self.loadout.restock(shelf).is_err() {
-                Warning::save_failed(grimoire)?;
+            if let Err(error) = self.loadout.restock(shelf) {
+                Warning::save_failed(grimoire, &error)?;
             }
         }
         Ok(())
@@ -1050,20 +1049,19 @@ impl Launcher {
         match ThreeWayDialog::summon(grimoire, &question, options)? {
             Some(1) if self.loadout.uac_writable => {
                 self.loadout.uac.wad_dirs = passed;
-                if self.loadout.keep_uac().is_err() {
-                    Warning::save_failed(grimoire)?;
+                if let Err(error) = self.loadout.keep_uac() {
+                    Warning::save_failed(grimoire, &error)?;
                 }
             }
             Some(1) => Warning::summon(grimoire, "The global settings are from a newer tdl")?,
             Some(2) => {
                 self.loadout.config.wad_dirs = passed;
-                if self
+                if let Err(error) = self
                     .loadout
                     .config
                     .write(&self.loadout.config_dir, &self.loadout.profiles)
-                    .is_err()
                 {
-                    Warning::save_failed(grimoire)?;
+                    Warning::save_failed(grimoire, &error)?;
                 }
             }
             // 🕯️ just for tonight: nothing is written
@@ -1139,8 +1137,8 @@ impl Launcher {
             self.loadout.uac.splash = Some(splash);
             kept = true;
         }
-        if kept && self.loadout.keep_uac().is_err() {
-            Warning::save_failed(grimoire)?;
+        if kept && let Err(error) = self.loadout.keep_uac() {
+            Warning::save_failed(grimoire, &error)?;
         }
         Ok(())
     }
@@ -1312,19 +1310,18 @@ impl Launcher {
             Warning::summon(grimoire, "The global settings are from a newer tdl")?;
         } else if global {
             self.loadout.uac.wad_dirs.clear();
-            if self.loadout.keep_uac().is_err() {
-                Warning::save_failed(grimoire)?;
+            if let Err(error) = self.loadout.keep_uac() {
+                Warning::save_failed(grimoire, &error)?;
             }
         }
         if loadout {
             self.loadout.config.wad_dirs.clear();
-            if self
+            if let Err(error) = self
                 .loadout
                 .config
                 .write(&self.loadout.config_dir, &self.loadout.profiles)
-                .is_err()
             {
-                Warning::save_failed(grimoire)?;
+                Warning::save_failed(grimoire, &error)?;
             }
         }
         Ok(())
@@ -1410,7 +1407,7 @@ impl Launcher {
                 grimoire,
                 "This loadout's own settings are from a newer tdl, so they can't be used",
             ),
-            Err(_) => Warning::save_failed(grimoire),
+            Err(error) => Warning::save_failed(grimoire, &error),
             Ok(()) => Ok(()),
         }
     }
@@ -1447,8 +1444,8 @@ impl Launcher {
         self.loadout.uac.take_shared(settings);
         self.follow_music(before, self.loadout.uac.music);
         quips::show(!self.no_quips && !self.loadout.uac.no_quips);
-        if self.loadout.keep_uac().is_err() {
-            Warning::save_failed(grimoire)?;
+        if let Err(error) = self.loadout.keep_uac() {
+            Warning::save_failed(grimoire, &error)?;
         }
         Ok(())
     }
@@ -1494,8 +1491,8 @@ impl Launcher {
         // 🪦 from the bottom up, so the rows still to go keep their places
         for &row in rows.iter().rev() {
             let mut at = row;
-            if self.loadout.remove(&mut at).is_err() {
-                Warning::save_failed(grimoire)?;
+            if let Err(error) = self.loadout.remove(&mut at) {
+                Warning::save_failed(grimoire, &error)?;
                 break;
             }
         }
@@ -1724,7 +1721,7 @@ impl Launcher {
                 ask_copy_name(grimoire, profiles, name, tagged)
             })?;
         if pasted.failed {
-            Warning::save_failed(grimoire)?;
+            Warning::save_failed(grimoire, &"a copy couldn't be written")?;
         }
         if let Some(first) = pasted.first {
             self.table_state.select(Some(first));
@@ -1737,8 +1734,8 @@ impl Launcher {
         if let Some(wad) = hashing::wad(grimoire, path)? {
             self.loadout.uac.base_wad = Some(wad);
             self.loadout.forget_lookup();
-            if self.loadout.keep_uac().is_err() {
-                Warning::save_failed(grimoire)?;
+            if let Err(error) = self.loadout.keep_uac() {
+                Warning::save_failed(grimoire, &error)?;
             }
         }
         Ok(())
@@ -1761,12 +1758,8 @@ impl Launcher {
         if let Some(name) = ProfileNamer::summon(grimoire, &self.loadout.profiles)? {
             let at = self.cursor();
             let mut index = at;
-            if self
-                .loadout
-                .insert(&mut index, Profile::new(name, wads))
-                .is_err()
-            {
-                Warning::save_failed(grimoire)?;
+            if let Err(error) = self.loadout.insert(&mut index, Profile::new(name, wads)) {
+                Warning::save_failed(grimoire, &error)?;
             } else {
                 self.table_state.select(Some(at));
             }
@@ -1795,8 +1788,8 @@ impl Launcher {
                 return Ok(());
             }
             profile.wads.extend(wads);
-            if self.loadout.replace(index, profile).is_err() {
-                Warning::save_failed(grimoire)?;
+            if let Err(error) = self.loadout.replace(index, profile) {
+                Warning::save_failed(grimoire, &error)?;
             }
         }
         Ok(())
@@ -2243,9 +2236,9 @@ impl Ritual for Launcher {
             KeyCode::Char('d') => {
                 if *index != self.loadout.profiles.len() {
                     if Dialog::should_delete(grimoire, &self.loadout.profiles[*index].name)?
-                        && self.loadout.remove(index).is_err()
+                        && let Err(error) = self.loadout.remove(index)
                     {
-                        Warning::save_failed(grimoire)?;
+                        Warning::save_failed(grimoire, &error)?;
                     }
                     Ok(Phase::Render)
                 } else {
@@ -2255,8 +2248,8 @@ impl Ritual for Launcher {
             KeyCode::Char('u') => {
                 if let Some(path) = picker::file(grimoire, None, None)? {
                     self.loadout.uac.uzdoom = Some(path.into());
-                    if self.loadout.keep_uac().is_err() {
-                        Warning::save_failed(grimoire)?;
+                    if let Err(error) = self.loadout.keep_uac() {
+                        Warning::save_failed(grimoire, &error)?;
                     }
                     return Ok(Phase::Render);
                 }
@@ -2272,8 +2265,8 @@ impl Ritual for Launcher {
                     &mut self.loadout.clipboard,
                     "base wad",
                 )?;
-                if self.loadout.restock(shelf).is_err() {
-                    Warning::save_failed(grimoire)?;
+                if let Err(error) = self.loadout.restock(shelf) {
+                    Warning::save_failed(grimoire, &error)?;
                 }
                 if let Some(path) = picked {
                     self.set_base_wad(grimoire, &path)?;
@@ -2293,8 +2286,8 @@ impl Ritual for Launcher {
             KeyCode::Char('l' | 'w') => {
                 let mut shelf = self.loadout.shelf();
                 Library::summon(grimoire, &mut shelf, &mut self.loadout.clipboard)?;
-                if self.loadout.restock(shelf).is_err() {
-                    Warning::save_failed(grimoire)?;
+                if let Err(error) = self.loadout.restock(shelf) {
+                    Warning::save_failed(grimoire, &error)?;
                 }
                 Ok(Phase::Render)
             }

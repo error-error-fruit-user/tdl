@@ -32,8 +32,10 @@ pub fn refresh(grimoire: &mut Grimoire, profile: &mut Profile) -> Result<bool> {
 /// [`refresh`] for the profile at `index` in `loadout`, saved if it changed.
 pub fn refresh_saved(grimoire: &mut Grimoire, loadout: &mut Loadout, index: usize) -> Result<()> {
     let mut profile = loadout.profiles[index].clone();
-    if refresh(grimoire, &mut profile)? && loadout.replace(index, profile).is_err() {
-        Warning::save_failed(grimoire)?;
+    if refresh(grimoire, &mut profile)?
+        && let Err(error) = loadout.replace(index, profile)
+    {
+        Warning::save_failed(grimoire, &error)?;
     }
     Ok(())
 }
@@ -88,8 +90,8 @@ pub fn create(grimoire: &mut Grimoire, loadout: &mut Loadout, index: &mut usize)
     };
     // ⏳ backing out of the hashing still makes the profile: the wads come in when it next looks
     refresh(grimoire, &mut profile)?;
-    if loadout.insert(index, profile).is_err() {
-        Warning::save_failed(grimoire)?;
+    if let Err(error) = loadout.insert(index, profile) {
+        Warning::save_failed(grimoire, &error)?;
     }
     Ok(())
 }

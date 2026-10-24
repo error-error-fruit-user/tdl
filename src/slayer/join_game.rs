@@ -297,8 +297,8 @@ fn upgrade_volatile(
         let path = PathBuf::from(&wad.path);
         if wad.hash == manifest.entries[entry].hash {
             // 🟰 it only looked different: the file has become the host's since it was hashed
-            if loadout.upgrade_wad(&path, &wad).is_err() {
-                Warning::save_failed(grimoire)?;
+            if let Err(error) = loadout.upgrade_wad(&path, &wad) {
+                Warning::save_failed(grimoire, &error)?;
             }
         } else {
             outdated.push(Outdated {
@@ -439,8 +439,8 @@ fn download_profile(
     let wads = fill_gaps(local, downloaded)
         .ok_or(Error::Download("Fewer wads arrived than were asked for"))?;
     let profile = Profile::new(profile_name, wads);
-    if loadout.insert(index, profile.clone()).is_err() {
-        Warning::save_failed(grimoire)?;
+    if let Err(error) = loadout.insert(index, profile.clone()) {
+        Warning::save_failed(grimoire, &error)?;
         return Ok(None);
     }
     Ok(Some(profile))

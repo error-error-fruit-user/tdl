@@ -47,8 +47,8 @@ pub fn seal(
         return Ok(());
     };
     let path = with_extension(path);
-    if scroll.save(&path).is_err() {
-        return Warning::save_failed(grimoire);
+    if let Err(error) = scroll.save(&path) {
+        return Warning::save_failed(grimoire, &error);
     }
     let what = match rows {
         [row] => format!("{} is", loadout.profiles[*row].name),
@@ -151,8 +151,8 @@ pub fn unseal_file(
             {
                 return Ok(None);
             }
-            if loadout.insert(index, Profile { name, ..profile }).is_err() {
-                Warning::save_failed(grimoire)?;
+            if let Err(error) = loadout.insert(index, Profile { name, ..profile }) {
+                Warning::save_failed(grimoire, &error)?;
                 return Ok(None);
             }
             1
@@ -168,7 +168,7 @@ pub fn unseal_file(
                 ask_copy_name(grimoire, profiles, name, tagged)
             })?;
             if inserted.failed {
-                Warning::save_failed(grimoire)?;
+                Warning::save_failed(grimoire, &"a copy couldn't be written")?;
             }
             inserted.count
         }
@@ -206,8 +206,8 @@ fn clear(
             return Ok(false);
         }
     }
-    if loadout.remove_all().is_err() {
-        Warning::save_failed(grimoire)?;
+    if let Err(error) = loadout.remove_all() {
+        Warning::save_failed(grimoire, &error)?;
         return Ok(false);
     }
     *index = 0;

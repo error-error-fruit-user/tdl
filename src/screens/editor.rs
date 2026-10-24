@@ -171,11 +171,11 @@ impl<'a> Editor<'a> {
             (Some(profile), None) => loadout.insert(index, profile),
             (None, _) => Ok(()),
         };
-        if saved.is_err() {
-            Warning::save_failed(grimoire)?;
+        if let Err(error) = saved {
+            Warning::save_failed(grimoire, &error)?;
         }
-        if loadout.restock(shelf).is_err() {
-            Warning::save_failed(grimoire)?;
+        if let Err(error) = loadout.restock(shelf) {
+            Warning::save_failed(grimoire, &error)?;
         }
         Ok(())
     }
@@ -211,13 +211,13 @@ impl<'a> Editor<'a> {
                     .map(|landed| *index = landed),
                 None => loadout.replace(edited, profile),
             };
-            if saved.is_err() {
-                Warning::save_failed(grimoire)?;
+            if let Err(error) = saved {
+                Warning::save_failed(grimoire, &error)?;
             }
         }
         // 🚚 after the edit is in, so a profile left unsaved still follows any file it moved
-        if loadout.restock(shelf).is_err() {
-            Warning::save_failed(grimoire)?;
+        if let Err(error) = loadout.restock(shelf) {
+            Warning::save_failed(grimoire, &error)?;
         }
         Ok(())
     }
@@ -302,7 +302,7 @@ impl<'a> Editor<'a> {
         }
         match new_ini(self.data_dir, &self.profile.name) {
             Ok(path) => self.profile.ini = Some(path.into()),
-            Err(_) => Warning::save_failed(grimoire)?,
+            Err(error) => Warning::save_failed(grimoire, &error)?,
         }
         Ok(())
     }

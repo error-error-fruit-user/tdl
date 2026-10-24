@@ -134,8 +134,9 @@ impl Warning {
         Self::summon(grimoire, "No dir found to open the file picker in!")
     }
 
-    pub fn save_failed(grimoire: &mut Grimoire) -> Result<()> {
-        Self::summon(grimoire, "Could not save, is the disk full?")
+    /// Something couldn't be written: says what went wrong, rather than guessing.
+    pub fn save_failed(grimoire: &mut Grimoire, error: &dyn std::fmt::Display) -> Result<()> {
+        Self::summon(grimoire, &format!("Could not save: {error}"))
     }
 
     pub fn files_too_new(grimoire: &mut Grimoire) -> Result<()> {
