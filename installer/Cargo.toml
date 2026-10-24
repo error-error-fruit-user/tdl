@@ -9,5 +9,6 @@ description = "Puts UZDoom and Freedoom 2 next to tdl"
 [dependencies]
 blake3 = "1.8.7"
 clap = { version = "4.5.41", features = ["derive", "wrap_help"] }
+toml = "1.1.8"
 ureq = "3.4.2"
 zip = { version = "2.6.1", default-features = false, features = ["deflate"] }

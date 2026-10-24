@@ -19,7 +19,8 @@
 //! already there is left alone.
 //!
 //! One thing happens outside those folders, and `--no-link` leaves it out: the UZDoom and the base
-//! wad are kept as tdl's global ones by running the `tdl` beside this program with `--setup`.
+//! wad are written in `setup.toml` beside tdl, and kept as tdl's global ones by running the `tdl`
+//! there with `setup` on it.
 
 #[macro_use]
 mod journal;
@@ -161,22 +162,22 @@ fn main() -> ExitCode {
         cli.no_freedoom,
         cli.no_link
     );
-    if mode == Mode::System {
-        if let Err(problem) = check_privileges() {
-            warn!("{problem}");
-            return ExitCode::FAILURE;
-        }
+    if mode == Mode::System
+        && let Err(problem) = check_privileges()
+    {
+        warn!("{problem}");
+        return ExitCode::FAILURE;
     }
     match mode {
         Mode::InPlace => say!("Installing next to tdl, in {}", dir.display()),
         Mode::User => say!("Installing tdl for you, in {}", dir.display()),
         Mode::System => say!("Installing tdl for everyone, in {}", dir.display()),
     }
-    if mode != Mode::InPlace {
-        if let Err(problem) = place_tdl(&here, &dir) {
-            warn!("tdl wasn't installed: {problem}");
-            return ExitCode::FAILURE;
-        }
+    if mode != Mode::InPlace
+        && let Err(problem) = place_tdl(&here, &dir)
+    {
+        warn!("tdl wasn't installed: {problem}");
+        return ExitCode::FAILURE;
     }
     let scratch = Scratch::new();
     let mut failed = false;
@@ -196,10 +197,20 @@ fn main() -> ExitCode {
     }
     if !cli.no_link {
         if mode == Mode::System {
-            // 🔒 --setup would keep them in root's tdl settings, which nobody else uses
-            say!(
-                "Each user points tdl at them in tdl (U and B), or runs: tdl --setup --keep-uzdoom FILE --keep-base-wad FILE"
-            );
+            // 🔒 tdl setup would keep them in root's tdl settings, which nobody else uses
+            match write_setup(
+                &dir,
+                uzdoom_in(&dir).as_deref(),
+                Some(dir.join("wads").join("base_wads").join(FREEDOOM_FILES[0].1))
+                    .filter(|path| path.is_file())
+                    .as_deref(),
+            ) {
+                Ok(setup) => say!(
+                    "Each user points tdl at them in tdl (U and B), or runs: tdl setup {}",
+                    setup.display()
+                ),
+                Err(problem) => warn!("{problem}"),
+            }
         } else {
             link(&dir);
         }
@@ -399,10 +410,12 @@ fn unix_path(mode: Mode, dir: &Path) -> Outcome<String> {
     let on_path = std::env::var_os("PATH")
         .map(|path| std::env::split_paths(&path).any(|entry| entry == bin))
         .unwrap_or(false);
-    if !on_path && mode == Mode::User {
-        if let Some(home) = home {
-            let profile = home.join(".profile");
-            match add_to_profile(&profile, &bin)? {
+    if !on_path
+        && mode == Mode::User
+        && let Some(home) = home
+    {
+        let profile = home.join(".profile");
+        match add_to_profile(&profile, &bin)? {
                 true => note.push_str(&format!(
                     "\n{} wasn't on your PATH, so a line adding it is now in {}. Open a new terminal (or run `. ~/.profile`) to use tdl anywhere.",
                     bin.display(),
@@ -414,7 +427,6 @@ fn unix_path(mode: Mode, dir: &Path) -> Outcome<String> {
                     profile.display()
                 )),
             }
-        }
     }
     Ok(note)
 }
@@ -517,21 +529,38 @@ fn uzdoom_in(dir: &Path) -> Option<PathBuf> {
     Some(dir.join("uzdoom").join(name)).filter(|path| path.is_file())
 }
 
-/// The arguments that make tdl keep `uzdoom` and `base_wad` as its global ones, without windows.
-fn setup_args(uzdoom: Option<&Path>, base_wad: Option<&Path>) -> Vec<std::ffi::OsString> {
-    let mut args = vec!["--setup".into()];
-    if let Some(uzdoom) = uzdoom {
-        args.extend(["--keep-uzdoom".into(), uzdoom.into()]);
+/// `setup.toml` in `dir` with `uzdoom` and `base_wad` set to the ones given, as paths relative to
+/// `dir`; whatever else a `setup.toml` already there says is kept. `Err` if one is there and isn't
+/// TOML, which is never written over.
+fn write_setup(dir: &Path, uzdoom: Option<&Path>, base_wad: Option<&Path>) -> Outcome<PathBuf> {
+    let path = dir.join("setup.toml");
+    let mut table = match fs::read_to_string(&path) {
+        Ok(text) => text.parse::<toml::Table>().map_err(|error| {
+            format!(
+                "{} is there and isn't TOML, so it is left alone: {error}",
+                path.display()
+            )
+        })?,
+        Err(_) => toml::Table::new(),
+    };
+    let relative = |file: &Path| file.strip_prefix(dir).unwrap_or(file).display().to_string();
+    for (key, file) in [("uzdoom", uzdoom), ("base_wad", base_wad)] {
+        if let Some(file) = file {
+            table.insert(key.into(), toml::Value::String(relative(file)));
+        }
     }
-    if let Some(base_wad) = base_wad {
-        args.extend(["--keep-base-wad".into(), base_wad.into()]);
-    }
-    args
+    let text = format!(
+        "# What tdl keeps, with no windows: `tdl setup` reads this (see tdl setup --help).\n# Paths are relative to this folder.\n{}",
+        toml::to_string(&table).map_err(|error| error.to_string())?
+    );
+    fs::write(&path, text).map_err(|error| format!("{}: {error}", path.display()))?;
+    note!("wrote {}: {}", path.display(), table);
+    Ok(path)
 }
 
-/// Points tdl at the UZDoom and the base wad in `dir`, by running the `tdl` there with `--setup`.
-/// Without a `tdl` there, or if it fails, says what to run instead. Nothing is an error: the files
-/// are in place, and tdl can pick them (`U` and `B`).
+/// Points tdl at the UZDoom and the base wad in `dir`: writes them in `dir/setup.toml` and runs the
+/// `tdl` there with `setup` on it. Without a `tdl` there, or if it fails, says what to run instead.
+/// Nothing is an error: the files are in place, and tdl can pick them (`U` and `B`).
 fn link(dir: &Path) {
     let uzdoom = uzdoom_in(dir);
     let base_wad = Some(dir.join("wads").join("base_wads").join(FREEDOOM_FILES[0].1))
@@ -539,12 +568,16 @@ fn link(dir: &Path) {
     if uzdoom.is_none() && base_wad.is_none() {
         return;
     }
-    let args = setup_args(uzdoom.as_deref(), base_wad.as_deref());
-    let tdl = tdl_in(dir).unwrap_or_else(|| dir.join("tdl"));
-    let manually = || {
-        let shown: Vec<_> = args.iter().map(|arg| arg.to_string_lossy()).collect();
-        say!("To point tdl at them, run: tdl {}", shown.join(" "));
+    let setup = match write_setup(dir, uzdoom.as_deref(), base_wad.as_deref()) {
+        Ok(setup) => setup,
+        Err(problem) => {
+            warn!("{problem}");
+            say!("Point tdl at them in tdl (U and B) instead.");
+            return;
+        }
     };
+    let tdl = tdl_in(dir).unwrap_or_else(|| dir.join("tdl"));
+    let manually = || say!("To point tdl at them, run: tdl setup {}", setup.display());
     if !tdl.is_file() {
         say!(
             "tdl isn't in {}, so it isn't linked to them yet.",
@@ -553,15 +586,12 @@ fn link(dir: &Path) {
         manually();
         return;
     }
-    note!(
-        "running {} {}",
-        tdl.display(),
-        args.iter()
-            .map(|arg| arg.to_string_lossy())
-            .collect::<Vec<_>>()
-            .join(" ")
-    );
-    match std::process::Command::new(&tdl).args(&args).status() {
+    note!("running {} setup {}", tdl.display(), setup.display());
+    match std::process::Command::new(&tdl)
+        .arg("setup")
+        .arg(&setup)
+        .status()
+    {
         Ok(status) if status.success() => {
             if uzdoom.is_some() {
                 say!("tdl now uses that UZDoom");
@@ -571,7 +601,7 @@ fn link(dir: &Path) {
             }
         }
         Ok(status) => {
-            warn!("tdl --setup failed ({status}), so it isn't linked to them yet.");
+            warn!("tdl setup failed ({status}), so it isn't linked to them yet.");
             manually();
         }
         Err(error) => {

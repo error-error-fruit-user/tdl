@@ -82,7 +82,7 @@ uzdoom/                    UZDoom's own folder: the Windows release unpacked, or
 wads/base_wads/            freedoom2.wad and Freedoom's license
 ```
 
-What is there already is left alone (`--no-uzdoom` and `--no-freedoom` leave either out). The downloads go through the system's temporary folder and are deleted afterwards. The UZDoom and the base wad are kept as tdl's global ones, by running the `tdl` beside the installer with `tdl --setup --keep-uzdoom FILE --keep-base-wad FILE` (`--setup` keeps what the `--keep-` flags give, with no windows, and closes; if there is no `tdl` there the installer prints that command; `--no-link` skips it). Next time tdl starts it offers `wads` and `wads/base_wads` as [wad pools](#the-wads-screen). There is no UZDoom release it can place on macOS or other systems, so there it installs Freedoom only and says so.
+What is there already is left alone (`--no-uzdoom` and `--no-freedoom` leave either out). The downloads go through the system's temporary folder and are deleted afterwards. The UZDoom and the base wad are written in `setup.toml` beside tdl (anything else already in it stays) and kept as tdl's global ones by running the `tdl` there with `tdl setup setup.toml` (if there is no `tdl` there the installer prints that command; `--no-link` skips it). Next time tdl starts it offers `wads` and `wads/base_wads` as [wad pools](#the-wads-screen). There is no UZDoom release it can place on macOS or other systems, so there it installs Freedoom only and says so.
 
 ## Usage
 
@@ -149,6 +149,13 @@ tdl join 10.0.0.2 --code abc234 --port 9000           # the join form, filled in
   ```
 
 - In the launcher, `` ` `` opens the command line: a line like the search's, with a `~` in front, that takes a `tdl cli` command (`~new e1 doom/e1.wad`, `~profiles`). Launching, hosting and joining go through the launcher's own windows; anything else is done on the open loadout, and what it says is shown in a window. `↑`/`↓` bring back earlier commands. `sh` and a shell command (`~sh ls ~/doom`) runs it the way bash would, from the dir tdl started in, with no input and for at most 30 seconds, showing what it prints. Guard rails keep it from running anything that needs root or administrator (`sudo`, `su`, `doas`, `pkexec`, `runas`...), anything that runs the system (disks, users, services, the firewall, the kernel), anything that hides what it runs (a shell inside the shell, `eval`, `python -c`, a command in a variable) and anything that reaches for everything at once (`rm -rf ~`, writing into `/etc` or onto a disk, a fork bomb); and tdl running as root runs none at all. They are rails, not a sandbox: they stop accidents and the obvious, not someone set on getting around them. A headless script's `` `sh ... `` runs one the same way, and the key itself is `backtick`.
+- `setup [TOML]` keeps what a TOML says, with no windows, and closes: `uzdoom`, `base_wad`, `ini`, `theme` and `splash` (a name or a file), `loadout` (opened every time) and `wads` (wad dirs kept for every loadout). Paths are relative to the TOML's folder (`~/` is your home); any other key is an error. Without a TOML named, it is `setup.toml` in the working folder, or else beside tdl. The installer writes one beside tdl.
+
+  ```toml
+  uzdoom = "uzdoom/uzdoom.AppImage"
+  base_wad = "wads/base_wads/freedoom2.wad"
+  theme = "dracula"
+  ```
 - `cli` does the launcher's work from the command line, with no windows, saying what it did in the theme's colors (`tdl cli --help`, and `--help` after any of its commands). A PROFILE is a profile's name (case doesn't matter if only one fits); a WAD in a profile is its number in the load order (from 1) or its file name:
   - profiles: `profiles` lists them, `show PROFILE`, `new NAME [WAD...]` (a folder is a [mod folder](#mod-folders)), `rename PROFILE NAME`, `copy PROFILE [NAME]` (tagged `brutal_2` without a name), `delete PROFILE [--yes]` (asks first)
   - a profile's wads: `wads add PROFILE WAD... [--at N]`, `wads remove PROFILE WAD...`, `wads move PROFILE WAD TO`, `wads replace PROFILE WAD FILE`, `wads volatile PROFILE WAD [--off]`

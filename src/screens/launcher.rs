@@ -644,9 +644,9 @@ impl Launcher {
         Ok(())
     }
 
-    /// `tdl --setup`: keeps what the `--keep-` flags give (this run's UZDoom, base wad, ini and
-    /// the rest, as [`Launcher::keep_unasked`] says) with no windows, and what couldn't be kept
-    /// is an error. Nothing is kept without a `--keep-` flag, since nothing can be asked.
+    /// `tdl setup`: keeps what the setup TOML gives, which comes in as `--keep-` flags would (this
+    /// run's UZDoom, base wad, ini and the rest, as [`Launcher::keep_unasked`] says), with no
+    /// windows; what couldn't be kept is an error.
     pub fn setup_plain(start: Start) -> std::result::Result<(), String> {
         let mut launcher = Self::open_plain(start)?;
         launcher.use_session_files();

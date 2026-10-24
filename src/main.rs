@@ -33,6 +33,7 @@ mod popups;
 mod quips;
 mod ritual;
 mod screens;
+mod setup;
 mod slayer;
 mod tag;
 mod tally;
@@ -46,7 +47,18 @@ fn main() {
         theme::wear(theme);
     }
     // 📖 clap answers --help and --version itself, and says what is wrong with anything else
-    let cli = Cli::parse(std::env::args().skip(1)).unwrap_or_else(|error| error.exit());
+    let mut cli = Cli::parse(std::env::args().skip(1)).unwrap_or_else(|error| error.exit());
+    // 🧰 tdl setup: the TOML's things, as if each came with its --keep- flag
+    let setup = cli
+        .setup
+        .take()
+        .map(|file| match setup::read(file, &mut cli) {
+            Ok(path) => path,
+            Err(problem) => {
+                eprintln!("{problem}");
+                std::process::exit(2);
+            }
+        });
     if cli.controller_test {
         if let Err(error) = gamepad::controller_test(&mut std::io::stdout()) {
             eprintln!("{error}");
@@ -114,7 +126,6 @@ fn main() {
     let play = cli.play;
     let rite = cli.rite;
     let seal = cli.seal;
-    let setup = cli.setup;
     let start = Start {
         loadout: cli.loadout,
         keep_loadout: cli.keep_loadout,
@@ -150,12 +161,13 @@ fn main() {
         }
         return;
     }
-    // 🧰 --setup keeps what the --keep- flags give, with no windows, and closes
-    if setup {
+    // 🧰 tdl setup keeps what its TOML gives, with no windows, and closes
+    if let Some(path) = setup {
         if let Err(message) = Launcher::setup_plain(start) {
             eprintln!("{message}");
             std::process::exit(1);
         }
+        ritual::murmur(format!("Kept what {} says", path.display()));
         return;
     }
     // 📜 tdl cli: one of the launcher's rites, from the command line, said through the séance

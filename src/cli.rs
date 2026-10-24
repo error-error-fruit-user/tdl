@@ -49,9 +49,9 @@ pub struct Cli {
     pub list_quips: bool,
     /// Says what a controller sends, with no windows, until Ctrl+C.
     pub controller_test: bool,
-    /// Keeps what the `--keep-` flags give (UZDoom, base wad, ini, theme, splash, wad dirs,
-    /// loadout) without any windows, and closes.
-    pub setup: bool,
+    /// `tdl setup [TOML]`: keeps what the TOML gives (see [`setup`](crate::setup)) without any
+    /// windows, and closes. The inner `None` is the default file.
+    pub setup: Option<Option<PathBuf>>,
     /// Plays the pride splash for this run.
     pub pride: bool,
     /// Skips the splash screen.
@@ -522,11 +522,6 @@ struct Args {
     #[arg(long, exclusive = true)]
     controller_test: bool,
 
-    /// Keep what the --keep- flags give, with no windows, and close: how the installer points tdl at
-    /// the UZDoom and base wad it put next to it
-    #[arg(long, conflicts_with = "seal")]
-    setup: bool,
-
     /// Play SONG (a wav, mp3, flac or ogg file) instead of the built-in track
     #[arg(
         long,
@@ -596,6 +591,13 @@ enum Commands {
         /// No form and no windows, only plain lines in the terminal (needs --code)
         #[arg(long, requires = "code")]
         headless: bool,
+    },
+    /// Keep what a TOML says (uzdoom, base_wad, ini, theme, splash, loadout, wads), with no
+    /// windows, and close: how the installer points tdl at the UZDoom and base wad it put beside it
+    Setup {
+        /// The TOML [default: setup.toml in the working dir, or else beside tdl]
+        #[arg(value_name = "TOML")]
+        file: Option<PathBuf>,
     },
     /// Use the launcher from the command line: profiles, their wads, playing, the settings, the
     /// wad pools and sharing, with no windows
@@ -978,15 +980,16 @@ impl Cli {
                 "--seal does its one thing, so it can't go with launch, host or join",
             ));
         }
-        if args.setup && args.command.is_some() {
+        if args.seal.is_some() && matches!(args.command, Some(Commands::Setup { .. })) {
             return Err(Args::command().error(
                 ErrorKind::ArgumentConflict,
-                "--setup does its one thing, so it can't go with launch, host or join",
+                "--seal and setup each do their one thing, so they can't go together",
             ));
         }
         let mut headless = false;
         let mut play = None;
         let mut rite = None;
+        let mut setup = None;
         let command = args.command.and_then(|command| match command {
             Commands::Headless { script, log } => {
                 play = Some(Play { script, log });
@@ -1017,6 +1020,10 @@ impl Cli {
             }
             Commands::Cli { rite: given } => {
                 rite = Some(given);
+                None
+            }
+            Commands::Setup { file } => {
+                setup = Some(file);
                 None
             }
         });
@@ -1065,7 +1072,7 @@ impl Cli {
             }),
             list_quips: args.list_quips,
             controller_test: args.controller_test,
-            setup: args.setup,
+            setup,
             pride: args.with_pride,
             no_splash: args.no_splash,
             keep_music: args.keep_music,

@@ -1195,8 +1195,7 @@ pub fn forbidden(command: &str) -> Option<String> {
         }
     }
     // ✂️ every command of a pipeline or a list, each looked at on its own
-    let segments =
-        lower.split([';', '|', '&', '\n', '`', '(', ')', '{', '}']);
+    let segments = lower.split([';', '|', '&', '\n', '`', '(', ')', '{', '}']);
     for segment in segments {
         let segment = segment.trim();
         let mut words = segment.split_whitespace().peekable();

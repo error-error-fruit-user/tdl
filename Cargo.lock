@@ -2550,6 +2550,7 @@ version = "1.0.0"
 dependencies = [
  "blake3",
  "clap",
+ "toml",
  "ureq",
  "zip",
 ]
