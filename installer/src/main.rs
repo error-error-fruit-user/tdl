@@ -26,17 +26,20 @@
 //! wad are written in `artifacts/setup.toml`, and kept as tdl's global ones by running the `tdl`
 //! there with `setup` on it.
 
+/// The journal and the voice: installation-groans' groans.rs, built in (see `build.rs`).
 #[macro_use]
-mod journal;
+mod journal {
+    include!(concat!(env!("OUT_DIR"), "/groans/groans.rs"));
+}
 
 use std::{
     fs,
-    io::{self, IsTerminal, Read, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     process::ExitCode,
 };
 
-use clap::{Parser, ValueEnum};
+use clap::{CommandFactory, Parser, ValueEnum};
 
 /// A file to download: where from, and what it must be.
 struct Download {
@@ -82,10 +85,12 @@ const APPIMAGE: &str = "uzdoom.AppImage";
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
-    /// Where tdl lives: in place (next to this program), for you, or for everyone. Asked if not
-    /// given (and in place if there is no terminal to ask on).
-    #[arg(long, value_enum)]
-    mode: Option<Mode>,
+    /// Goes ahead without asking, with the defaults for what isn't given (no shortcuts among them)
+    #[arg(long)]
+    accept: bool,
+    /// Where tdl lives: in place (next to this program), for you, or for everyone.
+    #[arg(long, value_enum, default_value = "in-place")]
+    mode: Mode,
     /// The folder tdl is in. Defaults to the one this program is in (in place) or the mode's own
     /// folder.
     #[arg(long, value_name = "DIR")]
@@ -104,6 +109,12 @@ struct Cli {
     /// Doesn't point tdl at the UZDoom and the base wad.
     #[arg(long)]
     no_link: bool,
+    /// Makes a shortcut to tdl on the desktop, with the system's lock icon
+    #[arg(long)]
+    desktop_shortcut: bool,
+    /// Makes an entry for tdl in the app menu (the Start menu on Windows), with the system's lock icon
+    #[arg(long)]
+    menu_entry: bool,
     /// Says what it does plainly and formally, rather than as a descent through hell
     #[arg(long)]
     computer_speak: bool,
@@ -146,44 +157,42 @@ fn program_dir() -> Option<PathBuf> {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    journal::speak_in(if cli.computer_speak {
-        COMPUTER_SPEAK
-    } else {
-        TOILING_THROUGH_HELL
-    });
+    let mut cli = Cli::parse();
+    journal::speak_in(TOILING_THROUGH_HELL, COMPUTER_SPEAK, cli.computer_speak);
     let Some(here) = program_dir() else {
         warn!("Couldn't tell where this program is");
         return ExitCode::FAILURE;
     };
-    let mode = cli.mode.unwrap_or_else(|| {
-        if io::stdin().is_terminal() {
-            ask_mode(&here)
-        } else {
-            Mode::InPlace
-        }
-    });
-    let dir = match cli
-        .dir
-        .clone()
-        .map(|dir| std::path::absolute(&dir).unwrap_or(dir))
-    {
-        Some(dir) => dir,
-        None => match install_dir(mode, &here) {
-            Ok(dir) => dir,
-            Err(problem) => {
-                warn!("{problem}");
-                return ExitCode::FAILURE;
-            }
-        },
-    };
-    if mode == Mode::InPlace && !dir.is_dir() {
-        warn!("{} isn't a folder", dir.display());
+    let Some((mut dir, mut art)) = places(&cli, &here) else {
         return ExitCode::FAILURE;
+    };
+    // ❓ the one question, after what saying yes does; flags given with the y win
+    journal::warning(&plan(&cli, &dir, &art));
+    let flags: Vec<String> = Cli::command()
+        .get_arguments()
+        .filter_map(|argument| argument.get_long())
+        .filter(|long| *long != "accept")
+        .map(|long| format!("--{long}"))
+        .collect();
+    let flags: Vec<&str> = flags.iter().map(String::as_str).collect();
+    match journal::confirm(cli.accept, &flags) {
+        None => {
+            journal::declined();
+            return ExitCode::FAILURE;
+        }
+        Some(added) if !added.is_empty() => {
+            note!("with the flags given at the question: {}", added.join(" "));
+            cli = Cli::parse_from(std::env::args_os().chain(added.into_iter().map(Into::into)));
+            let Some(again) = places(&cli, &here) else {
+                return ExitCode::FAILURE;
+            };
+            (dir, art) = again;
+        }
+        Some(_) => {}
     }
-    let art = artifacts_dir(cli.artifacts.as_deref(), &dir, &here);
+    let mode = cli.mode;
     // 📓 from here on the journal is kept with the artifacts
-    let journal = journal::open(&art, "tdl-install.log");
+    journal::open(&art, "install.log");
     note!("this program is in {}", here.display());
     note!(
         "mode {mode:?}, installing in {}, artifacts in {}",
@@ -202,22 +211,13 @@ fn main() -> ExitCode {
         warn!("{problem}");
         return ExitCode::FAILURE;
     }
-    match mode {
-        Mode::InPlace => journal::tell(
-            "begin",
-            &[("what", "tdl"), ("place", &dir.display().to_string())],
-            &format!("Installing next to tdl, in {}", dir.display()),
-        ),
-        Mode::User => journal::tell(
-            "begin",
-            &[("what", "tdl"), ("place", &dir.display().to_string())],
-            &format!("Installing tdl for you, in {}", dir.display()),
-        ),
-        Mode::System => journal::tell(
-            "begin",
-            &[("what", "tdl"), ("place", &dir.display().to_string())],
-            &format!("Installing tdl for everyone, in {}", dir.display()),
-        ),
+    journal::tell(
+        "begin",
+        &[("what", "tdl"), ("place", &dir.display().to_string())],
+        &format!("Installing tdl in {}", dir.display()),
+    );
+    if mode != Mode::InPlace {
+        journal::section("install");
     }
     if mode != Mode::InPlace
         && let Err(problem) = place_tdl(&here, &dir)
@@ -235,6 +235,9 @@ fn main() -> ExitCode {
             failed = true;
         }
     };
+    if !(cli.no_uzdoom && cli.no_freedoom) {
+        journal::section("download");
+    }
     if !cli.no_uzdoom {
         report("UZDoom", install_uzdoom(&art, &scratch));
     }
@@ -251,10 +254,13 @@ fn main() -> ExitCode {
                     .filter(|path| path.is_file())
                     .as_deref(),
             ) {
-                Ok(setup) => say!(
-                    "Each user points tdl at them in tdl (U and B), or runs: tdl setup {}",
-                    setup.display()
-                ),
+                Ok(setup) => {
+                    journal::section("setup");
+                    say!(
+                        "Each user points tdl at them in tdl (U and B), or runs: tdl setup {}",
+                        setup.display()
+                    )
+                }
                 Err(problem) => warn!("{problem}"),
             }
         } else {
@@ -270,79 +276,102 @@ fn main() -> ExitCode {
             }
         }
     }
-    if let Some(journal) = &journal {
-        journal::tell(
-            "journal",
-            &[("place", &journal.display().to_string())],
-            &format!("Everything this install did is in {}", journal.display()),
-        );
-    }
+    let tdl = dir.join(if cfg!(windows) { "tdl.exe" } else { "tdl" });
+    journal::shortcut(
+        "tdl",
+        "tdl",
+        &[tdl.display().to_string()],
+        "Terminal launcher for UZDoom",
+        cli.desktop_shortcut,
+        cli.menu_entry,
+    );
     if failed {
+        journal::finish("tdl");
         return ExitCode::FAILURE;
     }
-    journal::tell(
-        "done",
-        &[("what", "tdl")],
-        "Done. tdl offers the wads folders as wad pools when it starts.",
-    );
+    say!("tdl offers the wads folders as wad pools when it starts.");
+    journal::finish("tdl");
     ExitCode::SUCCESS
 }
 
-/// Asks where tdl should live. Enter takes in place; input that ends takes it too.
-fn ask_mode(here: &Path) -> Mode {
-    say!("Where should tdl be installed?");
-    say!(
-        "  1) In place: in {}, nothing else changes (default)",
-        here.display()
-    );
-    for (number, mode, who) in [
-        (2, Mode::User, "for you"),
-        (3, Mode::System, "for everyone"),
-    ] {
-        let folder = install_dir(mode, here)
-            .map(|dir| dir.display().to_string())
-            .unwrap_or_else(|_| "?".into());
-        let note = if mode == Mode::System {
-            "; needs root"
-        } else {
-            ""
-        };
-        say!(
-            "  {number}) {}: in {folder}, with the tdl command on your PATH{note}",
-            capital(who)
+/// Where tdl goes and where its artifacts go, as `cli` says; `None` (said) if that can't be.
+fn places(cli: &Cli, here: &Path) -> Option<(PathBuf, PathBuf)> {
+    let dir = match cli
+        .dir
+        .clone()
+        .map(|dir| std::path::absolute(&dir).unwrap_or(dir))
+    {
+        Some(dir) => dir,
+        None => match install_dir(cli.mode, here) {
+            Ok(dir) => dir,
+            Err(problem) => {
+                warn!("{problem}");
+                return None;
+            }
+        },
+    };
+    if cli.mode == Mode::InPlace && !dir.is_dir() {
+        warn!("{} isn't a folder", dir.display());
+        return None;
+    }
+    let art = artifacts_dir(cli.artifacts.as_deref(), &dir, here);
+    Some((dir, art))
+}
+
+/// What saying yes does, step by step: the warning before the one question.
+fn plan(cli: &Cli, dir: &Path, art: &Path) -> Vec<String> {
+    let mut lines = vec!["Saying yes will:".to_string()];
+    lines.push(match cli.mode {
+        Mode::InPlace => format!(
+            "  - leave tdl where it is, in {}, and add no command",
+            dir.display()
+        ),
+        Mode::User => format!(
+            "  - copy tdl to {} and put the tdl command on your PATH ({})",
+            dir.display(),
+            bin_dir(cli.mode, dir)
+        ),
+        Mode::System => format!(
+            "  - copy tdl to {} and put the tdl command on everyone's PATH ({}); needs root",
+            dir.display(),
+            bin_dir(cli.mode, dir)
+        ),
+    });
+    lines.push(format!(
+        "  - put everything but tdl itself, its artifacts, in {}: its log among them",
+        art.display()
+    ));
+    if !cli.no_uzdoom {
+        lines.push(
+            "  - download UZDoom 5.0.3 into uzdoom/ in the artifacts, checked against its pinned size and hash"
+                .into(),
         );
     }
-    loop {
-        print!("Choice [1]: ");
-        let _ = io::stdout().flush();
-        let mut line = String::new();
-        if io::stdin().read_line(&mut line).unwrap_or(0) == 0 {
-            say!("");
-            return Mode::InPlace;
-        }
-        match parse_choice(&line) {
-            Some(mode) => return mode,
-            None => say!("Type 1, 2 or 3."),
-        }
+    if !cli.no_freedoom {
+        lines.push(
+            "  - download Freedoom 0.13.0 and put freedoom2.wad in wads/base_wads/ in the artifacts".into(),
+        );
     }
-}
-
-fn capital(text: &str) -> String {
-    let mut chars = text.chars();
-    chars
-        .next()
-        .map(|first| first.to_uppercase().chain(chars).collect())
-        .unwrap_or_default()
-}
-
-/// What the user typed at the question, if it is an answer. Nothing at all is in place.
-fn parse_choice(line: &str) -> Option<Mode> {
-    match line.trim().to_lowercase().as_str() {
-        "" | "1" | "in place" | "in-place" | "i" => Some(Mode::InPlace),
-        "2" | "user" | "u" | "you" | "for you" => Some(Mode::User),
-        "3" | "system" | "s" | "everyone" | "for everyone" => Some(Mode::System),
-        _ => None,
+    if !cli.no_link && !(cli.no_uzdoom && cli.no_freedoom) {
+        lines.push("  - keep them as tdl's global UZDoom and base wad (tdl setup), with a Freedoom profile".into());
     }
+    if cli.desktop_shortcut {
+        lines
+            .push("  - make a shortcut to tdl on your desktop, with the system's lock icon".into());
+    }
+    if cli.menu_entry {
+        lines
+            .push("  - make an entry for tdl in your app menu, with the system's lock icon".into());
+    }
+    lines.push("  - leave alone what is there already".into());
+    lines.push(String::new());
+    lines.push(
+        "To change that, here or after the y: --mode in-place|user|system, --dir and --artifacts say \
+         where, --no-uzdoom, --no-freedoom and --no-link leave those out, --desktop-shortcut and \
+         --menu-entry make shortcuts, and --computer-speak speaks plainly."
+            .into(),
+    );
+    lines
 }
 
 /// The folder tdl is installed to in `mode`; `here` is where this program is.
@@ -678,6 +707,7 @@ fn link(art: &Path, dir: &Path) {
     if uzdoom.is_none() && base_wad.is_none() {
         return;
     }
+    journal::section("setup");
     let setup = match write_setup(art, uzdoom.as_deref(), base_wad.as_deref()) {
         Ok(setup) => setup,
         Err(problem) => {
@@ -697,16 +727,10 @@ fn link(art: &Path, dir: &Path) {
         return;
     }
     let command = format!("tdl setup {}", setup.display());
-    journal::tell(
-        "run",
-        &[("command", &command)],
-        &format!("running {}", command),
-    );
-    match std::process::Command::new(&tdl)
-        .arg("setup")
-        .arg(&setup)
-        .status()
-    {
+    match journal::run(
+        std::process::Command::new(&tdl).arg("setup").arg(&setup),
+        &command,
+    ) {
         Ok(status) if status.success() => {
             if uzdoom.is_some() {
                 journal::tell(

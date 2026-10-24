@@ -22,6 +22,39 @@ import shutil
 import subprocess
 import sys
 
+GROANS_GITHUB = "https://raw.githubusercontent.com/error-error-fruit-user/installation-groans/main/"
+
+
+def load_groans():
+    """installation-groans' groans.py, which these scripts speak through: the project's
+    installation-groans submodule, else the workspace's checkout beside the project, else a copy
+    fetched from its GitHub into published/artifacts/groans/."""
+    project = os.path.dirname(os.path.abspath(__file__))
+    places = [os.path.join(project, "installation-groans"),
+              os.path.join(os.path.dirname(project), "installation-groans"),
+              os.path.join(project, "published", "artifacts", "groans")]
+    folder = next((place for place in places if os.path.isfile(os.path.join(place, "groans.py"))), None)
+    if folder is None:
+        folder = places[-1]
+        try:
+            import urllib.request
+            os.makedirs(folder, exist_ok=True)
+            for name in ("groans.py", "toiling-through-hell.toml", "computer-speak.toml"):
+                with urllib.request.urlopen(GROANS_GITHUB + name, timeout=10) as answer:
+                    with open(os.path.join(folder, name), "wb") as out:
+                        out.write(answer.read())
+        except Exception as error:
+            sys.exit(f"installation-groans isn't beside {os.path.basename(project)}, and couldn't be "
+                     f"fetched ({error}): clone it beside it.")
+    if folder not in sys.path:
+        sys.path.insert(0, folder)
+    import groans
+    return groans
+
+
+groans = load_groans()
+
+
 import appimage
 
 TARGET = "x86_64-pc-windows-gnu"
@@ -35,10 +68,11 @@ SCRIPTS = ["upgrade_legacy.py"]
 LICENSE_PREFIXES = ("LICENSE", "LICENCE", "COPYING", "UNLICENSE", "NOTICE")
 
 
-def cargo(*args, **kwargs):
-    shown = " ".join(["cargo", *args])
-    tell("run", f"+ {shown}", command=shown)
-    return subprocess.run(["cargo", *args], check=True, **kwargs)
+def cargo(*args, capture=False):
+    """Runs cargo, in the voice; with `capture`, returns what it prints (its JSON)."""
+    if capture:
+        return groans.capture(["cargo", *args])
+    groans.run(["cargo", *args])
 
 
 def kept_license(name):
@@ -57,9 +91,9 @@ def third_party_licenses(target):
     cargo-license picks the crates (no build or dev dependencies, only those used by the target),
     cargo metadata says where each one's files are. Returns the crates that had no text."""
     licensed = cargo("license", "--json", "--avoid-build-deps", "--avoid-dev-deps",
-                     "--filter-platform", TARGET, stdout=subprocess.PIPE).stdout
+                     "--filter-platform", TARGET, capture=True)
     metadata = cargo("metadata", "--format-version", "1", "--filter-platform", TARGET,
-                     stdout=subprocess.PIPE).stdout
+                     capture=True)
     crates = [c for c in json.loads(licensed) if c["name"] not in PROGRAMS]
     manifests = {(p["name"], p["version"]): p["manifest_path"]
                  for p in json.loads(metadata)["packages"]}
@@ -114,68 +148,6 @@ def clear(folder):
     os.makedirs(folder)
 
 
-# The voice it speaks in, from installation-groans: the workspace's checkout beside this project,
-# else GitHub. Toiling Through Hell unless told --computer-speak; without one (or Python older than
-# 3.11, which can't read TOML), plain lines.
-GROANS = "https://raw.githubusercontent.com/error-error-fruit-user/installation-groans/main/"
-VOICE = {}
-
-
-def speak_in(name):
-    """Speaks in the installation-groans voice `name` (a file name) from now on, if it is found."""
-    global VOICE
-    try:
-        import tomllib
-    except ImportError:
-        return
-    here = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(os.path.dirname(here), "installation-groans", name)
-    try:
-        if os.path.isfile(path):
-            with open(path, encoding="utf-8") as source:
-                text = source.read()
-        else:
-            import urllib.request
-            with urllib.request.urlopen(GROANS + name, timeout=5) as answer:
-                text = answer.read().decode()
-        VOICE = tomllib.loads(text)
-    except Exception:
-        VOICE = {}
-
-
-def tell(event, plain, **fills):
-    """Says `event` as one of the voice's phrases for it, picked at random and filled from `fills`,
-    or `plain` without one (a problem says `plain` too, if its phrase leaves the problem out). Now
-    and then the voice interjects (its [interjection])."""
-    import random
-    phrases = VOICE.get("phrases", {}).get(event) or []
-    out = sys.stderr if event == "problem" else sys.stdout
-    if not phrases:
-        print(plain, file=out, flush=True)
-        return
-    said = random.choice(phrases)
-    for name, value in fills.items():
-        said = said.replace("{" + name + "}", str(value))
-    print(said[:1].upper() + said[1:], file=out, flush=True)
-    if event == "problem" and str(fills.get("problem", plain)) not in said:
-        print(plain, file=out, flush=True)
-    interjection = VOICE.get("interjection", {})
-    if interjection.get("phrases") and random.random() < float(interjection.get("chance", 0)):
-        colors = {"yellow": 33, "green": 32, "blue": 34, "magenta": 35, "cyan": 36, "white": 37}
-        code = colors.get(interjection.get("color", "red"), 31)
-        shout = random.choice(interjection["phrases"])
-        tty = sys.stdout.isatty() and "NO_COLOR" not in os.environ
-        print(f"\033[1;{code}m{shout}\033[0m" if tty else shout, flush=True)
-
-
-def built(target, count=None):
-    """Says a file of the release is made: `target`, with how many files went into it."""
-    size = os.path.getsize(target) / (1024 * 1024)
-    inside = f"{count} files, " if count is not None else ""
-    tell("copy", f"{target}: {inside}{size:.1f} MB",
-         what=f"{os.path.basename(target)} ({inside}{size:.1f} MB)", place=os.path.dirname(target) or ".")
-
-
 def main():
     rust_on_path()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -184,8 +156,9 @@ def main():
                         help="say what it does plainly and formally, rather than as a descent "
                              "through hell")
     options = parser.parse_args()
-    speak_in("computer-speak.toml" if options.computer_speak else "toiling-through-hell.toml")
-    tell("begin", "Publishing tdl", what="tdl", place=os.path.join("published", "releases"))
+    groans.start(None, options.computer_speak)
+    groans.say("begin", "Publishing tdl", what="tdl", place=os.path.join("published", "releases"))
+    groans.section("build")
 
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     if shutil.which("cargo-license") is None:
@@ -209,20 +182,21 @@ def main():
         sys.exit(error.returncode)
 
     if missing:
-        print("These crates ship no license file and have none in licenses/, so the release is "
-              "missing their text:", file=sys.stderr)
-        for crate in missing:
-            print("  " + crate, file=sys.stderr)
-        sys.exit(1)
+        sys.exit("These crates ship no license file and have none in licenses/, so the release is "
+                 "missing their text: " + ", ".join(missing))
 
 
 if __name__ == "__main__":
     try:
         main()
-        tell("done", "Published.", what="tdl")
+    except subprocess.CalledProcessError as error:
+        groans.finish("tdl", ok=False,
+                      error=f"{' '.join(map(str, error.cmd))} ended with code {error.returncode}")
+        sys.exit(1)
     except SystemExit as stop:
         # 🗣️ a reason to stop is said in the voice too
         if isinstance(stop.code, str):
-            tell("problem", stop.code, problem=stop.code)
+            groans.say("problem", stop.code, problem=stop.code)
             sys.exit(1)
         raise
+    groans.finish("tdl")
