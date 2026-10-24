@@ -8,7 +8,13 @@
 //! theme = "dracula"            # a name, or a theme.toml
 //! splash = "my_splash.toml"    # a name, or a splash.toml
 //! loadout = "~/doom/loadout"   # the loadout to open every time
+//! remember_loadout = false     # ...or only to set up now, leaving the one tdl opens alone
 //! wads = ["wads", "~/doom"]    # wad dirs, kept for every loadout
+//!
+//! [[profiles]]                 # made in the loadout, or, if it is there, its wads taken again
+//! name = "Freedoom"
+//! wads = []                    # files or mod folders, in load order
+//! base_wad = "wads/base_wads/freedoom2.wad"   # and uzdoom, ini and args, each its own
 //! ```
 //!
 //! Every key may be left out, and no other key is allowed. Paths are relative to the TOML's own
@@ -24,10 +30,26 @@ use crate::{
     theme,
 };
 
+/// A profile a setup TOML makes (or takes the wads of again), with paths made whole.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Profile {
+    pub name: String,
+    #[serde(default)]
+    pub wads: Vec<String>,
+    pub base_wad: Option<String>,
+    pub uzdoom: Option<String>,
+    pub ini: Option<String>,
+    pub args: Option<String>,
+}
+
 /// What a setup TOML holds.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Setup {
+    #[serde(default)]
+    profiles: Vec<Profile>,
+    remember_loadout: Option<bool>,
     uzdoom: Option<String>,
     base_wad: Option<String>,
     ini: Option<String>,
@@ -68,8 +90,10 @@ fn whole(path: &str, dir: &Path) -> String {
 }
 
 /// Reads the setup TOML (`given`, or the default one) into `cli`, as if each thing in it had been
-/// given with its `--keep-` flag. Returns where the TOML was. `Err` says what is wrong with it.
-pub fn read(given: Option<PathBuf>, cli: &mut Cli) -> Result<PathBuf, String> {
+/// given with its `--keep-` flag (the loadout only for this run with `remember_loadout = false`).
+/// Returns where the TOML was, and the profiles it makes, their paths made whole. `Err` says what
+/// is wrong with it.
+pub fn read(given: Option<PathBuf>, cli: &mut Cli) -> Result<(PathBuf, Vec<Profile>), String> {
     let path = find(given)?;
     let text = std::fs::read_to_string(&path)
         .map_err(|error| format!("Could not read {}: {error}", path.display()))?;
@@ -94,6 +118,9 @@ pub fn read(given: Option<PathBuf>, cli: &mut Cli) -> Result<PathBuf, String> {
     keep(setup.base_wad, &mut cli.base_wad, &mut cli.keep_base_wad);
     keep(setup.ini, &mut cli.ini, &mut cli.keep_ini);
     keep(setup.loadout, &mut cli.loadout, &mut cli.keep_loadout);
+    if setup.remember_loadout == Some(false) {
+        cli.keep_loadout = Keep::Session;
+    }
     // 👗 a theme or a splash may be a name instead of a file
     let dressing = |value: String| {
         if theme::dressing::is_name(&value) {
@@ -118,5 +145,16 @@ pub fn read(given: Option<PathBuf>, cli: &mut Cli) -> Result<PathBuf, String> {
             .collect();
         cli.keep_wads = Keep::Global;
     }
-    Ok(path)
+    let profiles = setup
+        .profiles
+        .into_iter()
+        .map(|profile| Profile {
+            wads: profile.wads.iter().map(|wad| whole(wad, &dir)).collect(),
+            base_wad: profile.base_wad.map(|wad| whole(&wad, &dir)),
+            uzdoom: profile.uzdoom.map(|uzdoom| whole(&uzdoom, &dir)),
+            ini: profile.ini.map(|ini| whole(&ini, &dir)),
+            ..profile
+        })
+        .collect();
+    Ok((path, profiles))
 }

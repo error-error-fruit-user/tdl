@@ -53,7 +53,7 @@ fn main() {
         .setup
         .take()
         .map(|file| match setup::read(file, &mut cli) {
-            Ok(path) => path,
+            Ok(read) => read,
             Err(problem) => {
                 eprintln!("{problem}");
                 std::process::exit(2);
@@ -162,8 +162,8 @@ fn main() {
         return;
     }
     // 🧰 tdl setup keeps what its TOML gives, with no windows, and closes
-    if let Some(path) = setup {
-        if let Err(message) = Launcher::setup_plain(start) {
+    if let Some((path, profiles)) = setup {
+        if let Err(message) = Launcher::setup_plain(start, &profiles) {
             eprintln!("{message}");
             std::process::exit(1);
         }

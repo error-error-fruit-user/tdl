@@ -530,7 +530,8 @@ fn uzdoom_in(dir: &Path) -> Option<PathBuf> {
 }
 
 /// `setup.toml` in `dir` with `uzdoom` and `base_wad` set to the ones given, as paths relative to
-/// `dir`; whatever else a `setup.toml` already there says is kept. `Err` if one is there and isn't
+/// `dir`, and a Freedoom profile that plays the base wad; whatever else a `setup.toml` already
+/// there says is kept. `Err` if one is there and isn't
 /// TOML, which is never written over.
 fn write_setup(dir: &Path, uzdoom: Option<&Path>, base_wad: Option<&Path>) -> Outcome<PathBuf> {
     let path = dir.join("setup.toml");
@@ -547,6 +548,23 @@ fn write_setup(dir: &Path, uzdoom: Option<&Path>, base_wad: Option<&Path>) -> Ou
     for (key, file) in [("uzdoom", uzdoom), ("base_wad", base_wad)] {
         if let Some(file) = file {
             table.insert(key.into(), toml::Value::String(relative(file)));
+        }
+    }
+    // 🎮 Freedoom as a profile of its own, ready to play, unless the TOML has one by that name
+    if let Some(freedoom) = base_wad {
+        let profiles = table
+            .entry("profiles")
+            .or_insert_with(|| toml::Value::Array(Vec::new()));
+        if let Some(profiles) = profiles.as_array_mut()
+            && !profiles.iter().any(|profile| {
+                profile.get("name").and_then(toml::Value::as_str) == Some("Freedoom")
+            })
+        {
+            let mut profile = toml::Table::new();
+            profile.insert("name".into(), "Freedoom".into());
+            profile.insert("wads".into(), toml::Value::Array(Vec::new()));
+            profile.insert("base_wad".into(), relative(freedoom).into());
+            profiles.push(toml::Value::Table(profile));
         }
     }
     let text = format!(

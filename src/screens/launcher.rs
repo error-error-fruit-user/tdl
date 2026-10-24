@@ -647,7 +647,10 @@ impl Launcher {
     /// `tdl setup`: keeps what the setup TOML gives, which comes in as `--keep-` flags would (this
     /// run's UZDoom, base wad, ini and the rest, as [`Launcher::keep_unasked`] says), with no
     /// windows; what couldn't be kept is an error.
-    pub fn setup_plain(start: Start) -> std::result::Result<(), String> {
+    pub fn setup_plain(
+        start: Start,
+        profiles: &[crate::setup::Profile],
+    ) -> std::result::Result<(), String> {
         let mut launcher = Self::open_plain(start)?;
         launcher.use_session_files();
         if let Some(path) = launcher.session_base_wad.take() {
@@ -657,10 +660,69 @@ impl Launcher {
             launcher.loadout.forget_lookup();
         }
         let problems = launcher.keep_unasked();
-        if problems.is_empty() {
-            return Ok(());
+        if !problems.is_empty() {
+            return Err(problems.join("\n"));
         }
-        Err(problems.join("\n"))
+        for profile in profiles {
+            launcher.set_up_profile(profile)?;
+        }
+        Ok(())
+    }
+
+    /// Makes the profile a setup TOML describes, or, if one with its name is there, takes its wads
+    /// (and the rest it gives) again, so a rebuilt pk3 is never one that changed.
+    fn set_up_profile(&mut self, given: &crate::setup::Profile) -> std::result::Result<(), String> {
+        let wad = |path: &str| -> std::result::Result<Wad, String> {
+            let path = Path::new(path);
+            if path.is_dir() {
+                return Ok(Wad::folder(path));
+            }
+            Wad::hashed(path, &mut ()).map_err(|error| format!("{}: {error}", path.display()))
+        };
+        let name = crate::loadout::profile::clean_name(&given.name)
+            .ok_or_else(|| format!("'{}' can't be a profile's name", given.name))?;
+        let wads = given
+            .wads
+            .iter()
+            .map(|path| wad(path))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let found = find_profile(&self.loadout.profiles, &name);
+        let mut profile = match found {
+            Some(index) => Profile {
+                wads,
+                ..self.loadout.profiles[index].clone()
+            },
+            None => Profile::new(name.clone(), wads),
+        };
+        if let Some(base_wad) = &given.base_wad {
+            profile.base_wad = Some(wad(base_wad)?);
+        }
+        if let Some(uzdoom) = &given.uzdoom {
+            profile.uzdoom = Some(uzdoom.into());
+        }
+        if let Some(ini) = &given.ini {
+            profile.ini = Some(ini.into());
+        }
+        if let Some(args) = &given.args {
+            profile.uzdoom_args = Some(args.clone()).filter(|args| !args.trim().is_empty());
+        }
+        let saved = match found {
+            Some(index) => self.loadout.replace(index, profile),
+            None => {
+                let mut index = self.loadout.profiles.len();
+                self.loadout.insert(&mut index, profile)
+            }
+        };
+        saved.map_err(|error| format!("Could not save {name}: {error}"))?;
+        ritual::murmur(format!(
+            "{} the profile {name}",
+            if found.is_some() {
+                "Took again the wads of"
+            } else {
+                "Made"
+            }
+        ));
+        Ok(())
     }
 
     /// Does a command from the command line. Whatever happens (the game ends, it couldn't start,
