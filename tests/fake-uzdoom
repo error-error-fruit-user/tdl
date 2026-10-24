@@ -1,0 +1,7 @@
+#!/bin/sh
+# A stand-in UZDoom for tdl's script tests: says what it was given, as UZDoom's startup would,
+# stays up for $FAKE_UZDOOM_SECONDS (1 unless given), and quits.
+echo "W_Init: Init WADfiles."
+echo "fake uzdoom args: $*"
+sleep "${FAKE_UZDOOM_SECONDS:-1}"
+echo "I_Quit"

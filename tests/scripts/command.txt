@@ -1,0 +1,9 @@
+# A profile made on the screens, then launched by a command with the screens closed, then the
+# screens again.
+wait-for "[ launcher ]"
+press a
+type e1
+press enter
+launch e1
+wait-for "[ launcher ]"
+expect e1

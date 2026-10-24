@@ -1,6 +1,7 @@
 //! The command line, read by clap: `tdl [options] [dir]` opens the launcher, `tdl launch`,
-//! `tdl host` and `tdl join` do one thing and close, and `tdl --seal` and `tdl --list-quips` do
-//! theirs without any windows. `tdl --help` lists it all, in the theme's colors.
+//! `tdl host` and `tdl join` do one thing and close, `tdl headless` plays a script (see
+//! [`script`](crate::script)), and `tdl --seal` and `tdl --list-quips` do theirs without any
+//! windows. `tdl --help` lists it all, in the theme's colors.
 
 use std::path::PathBuf;
 
@@ -85,6 +86,16 @@ pub struct Cli {
     /// `--headless`: launch, host or join with no forms or windows, only plain lines in the
     /// terminal.
     pub headless: bool,
+    /// `tdl headless`: a script to play, with no splash and no terminal.
+    pub play: Option<Play>,
+}
+
+/// `tdl headless`: the script to play (stdin if there is none), and where `--log` writes
+/// `tdl.log` and `uzdoom.log`, if it was given.
+#[derive(Debug, PartialEq)]
+pub struct Play {
+    pub script: Option<PathBuf>,
+    pub log: Option<PathBuf>,
 }
 
 /// `--seal`: the scroll to write the whole loadout to, and whether the global settings go in too
@@ -163,7 +174,7 @@ pub enum Ask {
 
 /// What `tdl launch`, `tdl host` and `tdl join` ask for. Each is done without the launcher, and
 /// then tdl closes.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Command {
     /// Play the profile with this name.
     Launch { profile: String },
@@ -186,7 +197,7 @@ pub enum Command {
 }
 
 /// The host settings `tdl host` was given, each over the profile's own default.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct HostOverrides {
     pub players: Option<u8>,
     pub deathmatch: Option<bool>,
@@ -612,6 +623,18 @@ enum Commands {
         #[arg(long, requires = "code")]
         headless: bool,
     },
+    /// Play a script with no splash and no terminal: keys for the screens (press, type, wait,
+    /// expect, wait-for, pick) and commands (launch, host, join), one a line, from SCRIPT or else
+    /// typed on stdin
+    Headless {
+        /// The script, a text file; without it the lines are read from stdin
+        #[arg(long, value_name = "SCRIPT")]
+        script: Option<PathBuf>,
+        /// Record the run in DIR (or the working directory): tdl.log, with every line played and
+        /// every screen it led to, and uzdoom.log, with everything UZDoom printed
+        #[arg(long, value_name = "DIR", num_args = 0..=1, default_missing_value = ".")]
+        log: Option<PathBuf>,
+    },
 }
 
 /// Where a game is found: on both `host` and `join`.
@@ -721,13 +744,18 @@ impl Cli {
             ));
         }
         let mut headless = false;
-        let command = args.command.map(|command| match command {
+        let mut play = None;
+        let command = args.command.and_then(|command| match command {
+            Commands::Headless { script, log } => {
+                play = Some(Play { script, log });
+                None
+            }
             Commands::Launch {
                 profile,
                 headless: plain,
             } => {
                 headless = plain;
-                Command::Launch { profile }
+                Some(Command::Launch { profile })
             }
             Commands::Host {
                 profile,
@@ -741,7 +769,7 @@ impl Cli {
                 headless: plain,
             } => {
                 headless = plain;
-                Command::Host {
+                Some(Command::Host {
                     profile,
                     overrides: HostOverrides {
                         players,
@@ -751,7 +779,7 @@ impl Cli {
                         code: connection.code,
                         share_ini: (share_ini || no_share_ini).then_some(share_ini),
                     },
-                }
+                })
             }
             Commands::Join {
                 host,
@@ -762,7 +790,7 @@ impl Cli {
                 headless: plain,
             } => {
                 headless = plain;
-                Command::Join {
+                Some(Command::Join {
                     host,
                     port: connection.port,
                     code: connection.code,
@@ -772,7 +800,7 @@ impl Cli {
                         (true, false) => HostIni::Settings,
                         (false, false) => HostIni::Yours,
                     },
-                }
+                })
             }
         });
         let session = args.session;
@@ -840,769 +868,7 @@ impl Cli {
             keep_splash,
             command,
             headless,
+            play,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn parse(args: &[&str]) -> Result<Cli, String> {
-        Cli::parse(args.iter().map(|arg| arg.to_string())).map_err(|error| error.to_string())
-    }
-
-    fn loadout(dir: &str) -> Result<Cli, String> {
-        Ok(Cli {
-            loadout: Some(dir.to_string()),
-            ..Cli::default()
-        })
-    }
-
-    #[test]
-    fn no_arguments_uses_the_standard_dirs() {
-        assert_eq!(parse(&[]), Ok(Cli::default()));
-    }
-
-    #[test]
-    fn the_loadout_flag_takes_the_next_argument() {
-        assert_eq!(parse(&["--loadout", "/tmp/v"]), loadout("/tmp/v"));
-    }
-
-    #[test]
-    fn the_loadout_flag_accepts_an_equals_sign() {
-        assert_eq!(parse(&["--loadout=/tmp/v"]), loadout("/tmp/v"));
-    }
-
-    #[test]
-    fn keeping_the_music_is_off_unless_asked_for() {
-        assert!(!parse(&[]).unwrap().keep_music);
-        assert!(parse(&["--keep-music"]).unwrap().keep_music);
-        assert!(
-            parse(&["--keep-music", "--loadout", "/tmp/v"])
-                .unwrap()
-                .keep_music
-        );
-    }
-
-    #[test]
-    fn no_music_is_its_own_flag_and_cannot_go_with_any_music() {
-        assert!(parse(&["--no-music"]).unwrap().no_music);
-        assert!(!parse(&[]).unwrap().no_music);
-        assert!(parse(&["--no-music", "--no-splash"]).unwrap().no_music);
-        assert!(parse(&["--no-music", "--keep-music"]).is_err());
-        assert!(parse(&["--music", "a.wav", "--no-music"]).is_err());
-    }
-
-    #[test]
-    fn a_song_of_your_own_is_given_with_music() {
-        let cli = parse(&["--music", "/songs/e1m1.mp3", "--keep-music"]).unwrap();
-        assert_eq!(cli.music.as_deref(), Some("/songs/e1m1.mp3"));
-        assert!(cli.keep_music);
-        assert_eq!(
-            parse(&["--music=/songs/e1m1.ogg"])
-                .unwrap()
-                .music
-                .as_deref(),
-            Some("/songs/e1m1.ogg")
-        );
-        // the song alone doesn't keep it playing past the splash
-        assert!(!parse(&["--music", "a.wav"]).unwrap().keep_music);
-        assert!(parse(&["--music"]).is_err());
-        assert!(parse(&["--music="]).is_err());
-        assert!(parse(&["--music", "a.wav", "--music", "b.wav"]).is_err());
-        // the song is not mistaken for a loadout dir
-        assert_eq!(parse(&["--music", "a.wav"]).unwrap().loadout, None);
-    }
-
-    #[test]
-    fn the_dir_alone_still_works() {
-        assert_eq!(parse(&["/tmp/v"]), loadout("/tmp/v"));
-    }
-
-    #[test]
-    fn a_missing_dir_is_an_error() {
-        assert!(parse(&["--loadout"]).is_err());
-    }
-
-    #[test]
-    fn unknown_options_are_errors() {
-        assert!(parse(&["--nope"]).is_err());
-    }
-
-    #[test]
-    fn giving_the_loadout_twice_is_an_error() {
-        assert!(parse(&["--loadout", "a", "--loadout", "b"]).is_err());
-        assert!(parse(&["a", "--loadout", "b"]).is_err());
-        assert!(parse(&["a", "b"]).is_err());
-    }
-
-    #[test]
-    fn no_splash_works_alone_and_beside_the_loadout() {
-        let alone = Cli {
-            no_splash: true,
-            ..Cli::default()
-        };
-        assert_eq!(parse(&["--no-splash"]), Ok(alone));
-        let both = Cli {
-            loadout: Some("/tmp/v".into()),
-            no_splash: true,
-            ..Cli::default()
-        };
-        assert_eq!(parse(&["--loadout", "/tmp/v", "--no-splash"]), Ok(both));
-        assert_eq!(
-            parse(&["--no-splash", "/tmp/v"]).unwrap().loadout,
-            Some("/tmp/v".into())
-        );
-    }
-
-    #[test]
-    fn wad_dirs_can_be_given_several_times_in_order() {
-        let cli = parse(&[
-            "--wads",
-            "/a",
-            "--wads=/b",
-            "--loadout",
-            "/v",
-            "--wads",
-            "/c",
-        ])
-        .unwrap();
-        assert_eq!(cli.wads, ["/a", "/b", "/c"]);
-        assert_eq!(cli.loadout, Some("/v".into()));
-        assert!(parse(&["--wads"]).is_err());
-        assert!(parse(&[]).unwrap().wads.is_empty());
-    }
-
-    #[test]
-    fn forgetting_the_loadout_is_its_own_flag_and_cannot_go_with_one() {
-        assert_eq!(
-            parse(&["--forget-loadout"]).unwrap().forget_loadout,
-            Forget::Asking
-        );
-        assert_eq!(parse(&[]).unwrap().forget_loadout, Forget::Nothing);
-        assert!(parse(&["--forget-loadout", "--loadout", "/v"]).is_err());
-        assert!(parse(&["/v", "--forget-loadout"]).is_err());
-    }
-
-    #[test]
-    fn forgetting_the_loadout_with_session_asks_nothing_and_goes_with_no_other_loadout_flag() {
-        let once = parse(&["--forget-loadout", "--session"]).unwrap();
-        assert_eq!(once.forget_loadout, Forget::Once);
-        assert_eq!(once.loadout, None);
-        assert_eq!(
-            parse(&["--keep-forget-loadout"]).unwrap().forget_loadout,
-            Forget::ForGood
-        );
-        // --session doesn't stop a --keep- flag
-        assert_eq!(
-            parse(&["--session", "--keep-forget-loadout"])
-                .unwrap()
-                .forget_loadout,
-            Forget::ForGood
-        );
-        for flag in ["--forget-loadout", "--keep-forget-loadout"] {
-            assert!(parse(&[flag, "--loadout", "/v"]).is_err());
-            assert!(parse(&[flag, "--keep-loadout", "/v"]).is_err());
-            assert!(parse(&["/v", flag]).is_err());
-        }
-        assert!(parse(&["--forget-loadout", "--keep-forget-loadout"]).is_err());
-        // the old flags are gone
-        assert!(parse(&["--forget-loadout-once"]).is_err());
-        assert!(parse(&["--forget-vault"]).is_err());
-    }
-
-    #[test]
-    fn wad_dirs_are_asked_about_kept_without_asking_or_just_for_the_session() {
-        let asked = parse(&["--wads", "/a", "--wads=/b"]).unwrap();
-        assert_eq!(asked.wads, ["/a", "/b"]);
-        assert_eq!(asked.keep_wads, Keep::Ask);
-        let session = parse(&["--wads", "/a", "--session"]).unwrap();
-        assert_eq!(
-            (session.wads, session.keep_wads),
-            (vec!["/a".into()], Keep::Session)
-        );
-        let global = parse(&["--keep-wads", "/a", "--keep-wads", "/b", "--session"]).unwrap();
-        assert_eq!(
-            (global.wads, global.keep_wads),
-            (vec!["/a".into(), "/b".into()], Keep::Global)
-        );
-        let here = parse(&["--keep-loadout-wads", "/a"]).unwrap();
-        assert_eq!(
-            (here.wads, here.keep_wads),
-            (vec!["/a".into()], Keep::Loadout)
-        );
-        assert!(parse(&["--keep-wads"]).is_err());
-        assert!(parse(&["--keep-wads", "/a", "--wads", "/b"]).is_err());
-        assert!(parse(&["--keep-wads", "/a", "--keep-loadout-wads", "/b"]).is_err());
-        assert!(parse(&["--wads-once", "/a"]).is_err());
-    }
-
-    #[test]
-    fn forgetting_the_wads_goes_with_no_wads_given() {
-        assert_eq!(
-            parse(&["--forget-wads"]).unwrap().forget_wads,
-            Forget::Asking
-        );
-        assert_eq!(
-            parse(&["--forget-wads", "--session"]).unwrap().forget_wads,
-            Forget::Once
-        );
-        assert_eq!(
-            parse(&["--keep-forget-wads"]).unwrap().forget_wads,
-            Forget::ForGood
-        );
-        assert_eq!(parse(&[]).unwrap().forget_wads, Forget::Nothing);
-        assert_eq!(parse(&["--session"]).unwrap().forget_wads, Forget::Nothing);
-        for flag in ["--forget-wads", "--keep-forget-wads"] {
-            assert!(parse(&[flag, "--wads", "/a"]).is_err());
-            assert!(parse(&[flag, "--keep-wads", "/a"]).is_err());
-            assert!(parse(&[flag, "--keep-loadout-wads", "/a"]).is_err());
-        }
-        assert!(parse(&["--forget-wads", "--keep-forget-wads"]).is_err());
-        // the wads and the loadout are forgotten apart
-        let both = parse(&["--forget-wads", "--keep-forget-loadout"]).unwrap();
-        assert_eq!(
-            (both.forget_wads, both.forget_loadout),
-            (Forget::Asking, Forget::ForGood)
-        );
-    }
-
-    #[test]
-    fn a_loadout_is_asked_about_kept_without_asking_or_just_for_the_session() {
-        assert_eq!(parse(&["--loadout", "/v"]).unwrap().keep_loadout, Keep::Ask);
-        let session = parse(&["--session", "--loadout", "/v"]).unwrap();
-        assert_eq!(session.loadout, Some("/v".into()));
-        assert_eq!(session.keep_loadout, Keep::Session);
-        let kept = parse(&["--keep-loadout=/v", "--session"]).unwrap();
-        assert_eq!(kept.loadout, Some("/v".into()));
-        assert_eq!(kept.keep_loadout, Keep::Global);
-        // the dir on its own is --loadout
-        assert_eq!(
-            parse(&["/v", "--session"]).unwrap().keep_loadout,
-            Keep::Session
-        );
-        assert!(parse(&["--keep-loadout"]).is_err());
-        // still only one loadout, and still not with forgetting
-        assert!(parse(&["--keep-loadout", "a", "--loadout", "b"]).is_err());
-        assert!(parse(&["--keep-loadout", "a", "--forget-loadout"]).is_err());
-        assert!(parse(&["a", "--keep-loadout", "b"]).is_err());
-        assert!(parse(&["--loadout-once", "a"]).is_err());
-        assert!(parse(&["--vault", "a"]).is_err());
-    }
-
-    #[test]
-    fn session_makes_everything_given_just_for_this_run_but_a_keep_flag_wins() {
-        let cli = parse(&[
-            "--session",
-            "--uzdoom",
-            "/opt/uzdoom",
-            "--keep-base-wad",
-            "/iwads/DOOM2.WAD",
-            "--ini=/inis/mine.ini",
-            "--keep-theme",
-            "/themes/blue.toml",
-        ])
-        .unwrap();
-        assert_eq!(
-            (cli.uzdoom.as_deref(), cli.keep_uzdoom),
-            (Some("/opt/uzdoom"), Keep::Session)
-        );
-        assert_eq!(
-            (cli.base_wad.as_deref(), cli.keep_base_wad),
-            (Some("/iwads/DOOM2.WAD"), Keep::Global)
-        );
-        assert_eq!(
-            (cli.ini.as_deref(), cli.keep_ini),
-            (Some("/inis/mine.ini"), Keep::Session)
-        );
-        assert_eq!(
-            (cli.theme.as_deref(), cli.keep_theme),
-            (Some("/themes/blue.toml"), Keep::Global)
-        );
-        // without --session, the plain flags ask
-        let asked = parse(&[
-            "--uzdoom",
-            "a",
-            "--base-wad",
-            "b",
-            "--ini",
-            "c",
-            "--theme",
-            "d",
-        ])
-        .unwrap();
-        assert_eq!(
-            [
-                asked.keep_uzdoom,
-                asked.keep_base_wad,
-                asked.keep_ini,
-                asked.keep_theme
-            ],
-            [Keep::Ask; 4]
-        );
-        // --session on its own changes nothing that was given
-        assert_eq!(
-            parse(&["--session"]),
-            Ok(Cli {
-                keep_loadout: Keep::Session,
-                keep_wads: Keep::Session,
-                keep_uzdoom: Keep::Session,
-                keep_base_wad: Keep::Session,
-                keep_ini: Keep::Session,
-                keep_theme: Keep::Session,
-                keep_splash: Keep::Session,
-                ..Cli::default()
-            })
-        );
-    }
-
-    #[test]
-    fn a_splash_look_is_asked_about_kept_or_just_for_the_session() {
-        let asked = parse(&["--splash", "/looks/blue.toml"]).unwrap();
-        assert_eq!(
-            (asked.splash.as_deref(), asked.keep_splash),
-            (Some("/looks/blue.toml"), Keep::Ask)
-        );
-        let session = parse(&["--session", "--splash=a.toml"]).unwrap();
-        assert_eq!(session.keep_splash, Keep::Session);
-        let kept = parse(&["--session", "--keep-splash", "a.toml"]).unwrap();
-        assert_eq!(kept.keep_splash, Keep::Global);
-        // its look is not whether it plays
-        assert!(!kept.no_splash);
-        assert!(parse(&["--keep-splash", "a.toml", "--no-splash"]).is_ok());
-    }
-
-    #[test]
-    fn a_file_and_its_keep_flag_go_one_at_a_time() {
-        for flag in ["uzdoom", "base-wad", "ini", "theme", "splash"] {
-            let plain = format!("--{flag}");
-            let keep = format!("--keep-{flag}");
-            assert!(parse(&[&plain, "a", &keep, "b"]).is_err(), "{flag}");
-            assert!(parse(&[&keep, "a", &keep, "b"]).is_err(), "{flag}");
-            assert!(parse(&[&keep]).is_err(), "{flag}");
-            assert!(parse(&[&format!("{keep}=")]).is_err(), "{flag}");
-            assert_eq!(
-                parse(&[&keep, "a"]).unwrap().loadout,
-                None,
-                "{flag} is not taken for the loadout"
-            );
-        }
-    }
-
-    #[test]
-    fn a_splash_quip_is_shown_as_given() {
-        let cli = parse(&["--splash-quip", "Rip and tear, Tyler!", "--loadout", "/v"]).unwrap();
-        assert_eq!(cli.quip.as_deref(), Some("Rip and tear, Tyler!"));
-        assert_eq!(cli.loadout, Some("/v".into()));
-        assert_eq!(
-            parse(&["--splash-quip=Hi"]).unwrap().quip.as_deref(),
-            Some("Hi")
-        );
-        // a quip that looks like a flag is still the quip
-        let flaggy = parse(&["--splash-quip", "--keep-music"]).unwrap();
-        assert_eq!(flaggy.quip.as_deref(), Some("--keep-music"));
-        assert!(!flaggy.keep_music);
-        assert_eq!(parse(&[]).unwrap().quip, None);
-    }
-
-    #[test]
-    fn every_number_in_a_splash_quip_is_replaced_by_its_quip() {
-        let first = quips::QUIPS[0];
-        let picked = parse(&["--splash-quip", "#1"]).unwrap();
-        assert_eq!(picked.quip.as_deref(), Some(first));
-        let added = parse(&["--splash-quip=#1message"]).unwrap();
-        assert_eq!(added.quip, Some(format!("{first}message")));
-        let last = quips::QUIPS.len();
-        assert_eq!(
-            parse(&["--splash-quip", &format!("#{last}")])
-                .unwrap()
-                .quip
-                .as_deref(),
-            quips::QUIPS.last().copied()
-        );
-        for wrong in ["#0", &format!("#{}", last + 1), "ok #0"] {
-            assert!(parse(&["--splash-quip", wrong]).is_err(), "{wrong:?}");
-        }
-    }
-
-    #[test]
-    fn only_one_quip_and_never_without_the_splash() {
-        assert!(parse(&["--splash-quip"]).is_err());
-        assert!(parse(&["--splash-quip", "  "]).is_err());
-        assert!(parse(&["--splash-quip", "a", "--splash-quip", "b"]).is_err());
-        assert!(parse(&["--splash-quip", "a", "--no-splash"]).is_err());
-        assert!(parse(&["--no-splash", "--splash-quip", "#2"]).is_err());
-        // the old flags are gone
-        assert!(parse(&["--quip", "a"]).is_err());
-        assert!(parse(&["--pick-quip", "2"]).is_err());
-    }
-
-    #[test]
-    fn no_quips_is_its_own_flag_and_cannot_go_with_a_quip() {
-        assert!(parse(&["--no-quips"]).unwrap().no_quips);
-        assert!(!parse(&[]).unwrap().no_quips);
-        // the splash can still be skipped too
-        assert!(parse(&["--no-quips", "--no-splash"]).unwrap().no_quips);
-        assert!(parse(&["--no-quips", "--splash-quip", "hi"]).is_err());
-        assert!(parse(&["--splash-quip", "#2", "--no-quips"]).is_err());
-    }
-
-    #[test]
-    fn a_uzdoom_and_a_base_wad_can_be_given_for_the_run() {
-        let cli = parse(&[
-            "--uzdoom",
-            "/opt/uzdoom-dev",
-            "--base-wad=/iwads/freedoom2.wad",
-        ])
-        .unwrap();
-        assert_eq!(cli.uzdoom.as_deref(), Some("/opt/uzdoom-dev"));
-        assert_eq!(cli.base_wad.as_deref(), Some("/iwads/freedoom2.wad"));
-        // neither is mistaken for the loadout dir
-        assert_eq!(cli.loadout, None);
-        assert!(parse(&["--uzdoom"]).is_err());
-        assert!(parse(&["--base-wad="]).is_err());
-        assert!(parse(&["--uzdoom", "a", "--uzdoom", "b"]).is_err());
-        assert!(parse(&["--base-wad", "a", "--base-wad=b"]).is_err());
-        // a flag that only starts the same is still unknown
-        assert!(parse(&["--uzdoomx"]).is_err());
-        assert_eq!(parse(&[]).unwrap().uzdoom, None);
-    }
-
-    #[test]
-    fn launch_names_a_profile_and_takes_the_other_options_too() {
-        let cli = parse(&[
-            "launch",
-            "brutal_doom",
-            "--no-splash",
-            "--uzdoom",
-            "/opt/uzdoom-dev",
-        ])
-        .unwrap();
-        assert_eq!(
-            cli.command,
-            Some(Command::Launch {
-                profile: "brutal_doom".into()
-            })
-        );
-        assert_eq!(cli.uzdoom.as_deref(), Some("/opt/uzdoom-dev"));
-        // the profile isn't taken for a loadout dir
-        assert_eq!(cli.loadout, None);
-        assert!(parse(&["launch"]).is_err());
-        assert!(parse(&["launch", "--no-splash"]).is_err());
-    }
-
-    #[test]
-    fn host_takes_its_settings_over_the_profiles_defaults() {
-        let cli = parse(&[
-            "host",
-            "brutal_doom",
-            "--players",
-            "4",
-            "--coop",
-            "--map=MAP07",
-            "--port",
-            "9000",
-            "--code",
-            "Doom2",
-        ])
-        .unwrap();
-        let Some(Command::Host { profile, overrides }) = cli.command else {
-            panic!("expected host");
-        };
-        assert_eq!(profile, "brutal_doom");
-        let settings = overrides.apply(HostSettings::new(None));
-        assert_eq!(settings.player_count, "4");
-        assert!(!settings.is_deathmatch);
-        assert_eq!(settings.map, "MAP07");
-        assert_eq!(settings.port, "9000");
-        assert_eq!(settings.code, "doom2", "codes are lowercase");
-        // with nothing given, the defaults stand
-        let defaults = HostSettings {
-            map: "E1M1".into(),
-            ..HostSettings::new(Some(7000))
-        };
-        assert_eq!(HostOverrides::default().apply(defaults.clone()), defaults);
-    }
-
-    #[test]
-    fn host_shares_its_ini_or_keeps_it_over_the_profiles_defaults() {
-        let overrides = |args: &[&str]| match parse(args).unwrap().command {
-            Some(Command::Host { overrides, .. }) => overrides,
-            _ => panic!("expected host"),
-        };
-        let sharing = HostSettings {
-            share_ini: true,
-            ..HostSettings::new(None)
-        };
-        assert!(
-            overrides(&["host", "p", "--share-ini"])
-                .apply(HostSettings::new(None))
-                .share_ini
-        );
-        assert!(
-            !overrides(&["host", "p", "--no-share-ini"])
-                .apply(sharing.clone())
-                .share_ini
-        );
-        assert!(overrides(&["host", "p"]).apply(sharing).share_ini);
-        assert!(parse(&["host", "p", "--share-ini", "--no-share-ini"]).is_err());
-        // --keep-ini is tdl's own, which keeps an ini as the global one
-        let kept = parse(&["host", "p", "--keep-ini", "/inis/mine.ini"]).unwrap();
-        assert_eq!(kept.ini.as_deref(), Some("/inis/mine.ini"));
-        assert_eq!(kept.keep_ini, Keep::Global);
-    }
-
-    #[test]
-    fn host_settings_that_could_not_be_typed_in_the_form_are_refused() {
-        for wrong in [
-            &["host", "p", "--players", "9"][..],
-            &["host", "p", "--players", "one"],
-            &["host", "p", "--coop", "--deathmatch"],
-            &["host", "p", "--map", "../x"],
-            &["host", "p", "--port", "0"],
-            &["host", "p", "--port", "70000"],
-            &["host", "p", "--code", "no spaces"],
-        ] {
-            assert!(parse(wrong).is_err(), "{wrong:?}");
-        }
-    }
-
-    #[test]
-    fn join_takes_the_host_and_maybe_a_port_and_code_for_the_form() {
-        let cli = parse(&["join", "10.0.0.2", "--code", "abc234"]).unwrap();
-        assert_eq!(
-            cli.command,
-            Some(Command::Join {
-                host: "10.0.0.2".into(),
-                port: None,
-                code: Some("abc234".into()),
-                always_download: false,
-                host_ini: HostIni::Yours,
-            })
-        );
-        let with_port = parse(&["join", "10.0.0.2", "--port=9000", "--code=abc234"]).unwrap();
-        assert!(matches!(
-            with_port.command,
-            Some(Command::Join {
-                port: Some(9000),
-                ..
-            })
-        ));
-        // the form asks for the code if it isn't given, but headless has no form to ask with
-        assert!(parse(&["join", "10.0.0.2"]).is_ok());
-        assert!(parse(&["join", "10.0.0.2", "--headless"]).is_err());
-        assert!(parse(&["join"]).is_err());
-        assert!(parse(&["join", "10.0.0.2", "--code", "abc", "--map", "MAP01"]).is_err());
-    }
-
-    #[test]
-    fn a_join_address_has_the_default_port_and_needs_a_code() {
-        let address = Command::address("10.0.0.2", None, Some("abc234")).unwrap();
-        assert_eq!(address.port, net::DEFAULT_PORT);
-        assert_eq!(
-            Command::address("10.0.0.2", Some(9000), Some("x"))
-                .unwrap()
-                .port,
-            9000
-        );
-        assert_eq!(Command::address("10.0.0.2", None, None), None);
-    }
-
-    #[test]
-    fn always_download_goes_with_join_only() {
-        let cli = parse(&["join", "10.0.0.2", "--code", "abc", "--always-download"]).unwrap();
-        assert!(matches!(
-            cli.command,
-            Some(Command::Join {
-                always_download: true,
-                ..
-            })
-        ));
-        assert!(parse(&["host", "p", "--always-download"]).is_err());
-        assert!(parse(&["--always-download"]).is_err());
-    }
-
-    #[test]
-    fn the_hosts_ini_is_asked_for_on_join_and_shared_on_host() {
-        let host_ini = |args: &[&str]| match parse(args).unwrap().command {
-            Some(Command::Join { host_ini, .. }) => host_ini,
-            _ => panic!("expected join"),
-        };
-        assert_eq!(host_ini(&["join", "10.0.0.2"]), HostIni::Yours);
-        assert_eq!(
-            host_ini(&["join", "10.0.0.2", "--host-ini"]),
-            HostIni::Settings
-        );
-        assert_eq!(
-            host_ini(&["join", "10.0.0.2", "--host-ini-with-keys"]),
-            HostIni::WithKeys
-        );
-        assert_eq!(
-            host_ini(&["join", "10.0.0.2", "--host-ini", "--host-ini-with-keys"]),
-            HostIni::WithKeys
-        );
-        assert!(parse(&["host", "p", "--host-ini-with-keys"]).is_err());
-        assert!(parse(&["host", "p", "--host-ini"]).is_err());
-        assert!(parse(&["join", "10.0.0.2", "--share-ini"]).is_err());
-    }
-
-    #[test]
-    fn headless_goes_with_launch_host_and_join_only() {
-        assert!(parse(&["launch", "p", "--headless"]).unwrap().headless);
-        assert!(parse(&["host", "p", "--headless"]).unwrap().headless);
-        assert!(
-            parse(&["join", "10.0.0.2", "--code", "abc", "--headless"])
-                .unwrap()
-                .headless
-        );
-        assert!(!parse(&["host", "p"]).unwrap().headless);
-        assert!(!parse(&["launch", "p"]).unwrap().headless);
-        assert!(parse(&["--headless"]).is_err());
-    }
-
-    #[test]
-    fn host_and_join_flags_only_go_with_their_commands() {
-        assert!(parse(&["--players", "4"]).is_err());
-        assert!(parse(&["--code", "abc"]).is_err());
-        assert!(parse(&["launch", "p", "--port", "9000"]).is_err());
-        assert_eq!(parse(&["/tmp/v"]).unwrap().command, None);
-    }
-
-    #[test]
-    fn a_command_can_come_after_the_options_and_beside_a_loadout_dir() {
-        let cli = parse(&[
-            "--loadout",
-            "/tmp/v",
-            "--session",
-            "--no-music",
-            "launch",
-            "brutal_doom",
-        ])
-        .unwrap();
-        assert_eq!(
-            cli.command,
-            Some(Command::Launch {
-                profile: "brutal_doom".into()
-            })
-        );
-        assert_eq!(cli.loadout, Some("/tmp/v".into()));
-        // the old-style loadout dir on its own still works next to a command
-        let both = parse(&["/tmp/v", "host", "p", "--coop"]).unwrap();
-        assert_eq!(both.loadout, Some("/tmp/v".into()));
-        assert!(matches!(both.command, Some(Command::Host { .. })));
-        // tdl's own options can come after the command too
-        let after = parse(&["host", "p", "--keep-loadout", "/tmp/v", "--no-music"]).unwrap();
-        assert_eq!(after.loadout, Some("/tmp/v".into()));
-        assert!(after.no_music);
-    }
-
-    #[test]
-    fn seal_takes_a_scroll_and_maybe_the_settings() {
-        let cli = parse(&["--seal", "all.scroll", "--loadout", "/v"]).unwrap();
-        assert_eq!(
-            cli.seal,
-            Some(Seal {
-                scroll: "all.scroll".into(),
-                with_settings: false,
-            })
-        );
-        assert!(matches!(
-            parse(&["--seal", "a", "--with-settings"]).unwrap().seal,
-            Some(Seal {
-                with_settings: true,
-                ..
-            })
-        ));
-        assert!(
-            parse(&["--with-settings"]).is_err(),
-            "with-settings needs seal"
-        );
-        assert_eq!(cli.loadout, Some("/v".into()));
-        // deleting the loadout went over to unsealing
-        assert!(parse(&["--seal", "a", "--delete"]).is_err());
-        assert!(parse(&["--seal", "a", "--force"]).is_err());
-        assert!(parse(&["--seal"]).is_err());
-        assert!(parse(&["--seal", "a", "--unseal", "b"]).is_err());
-        assert!(parse(&["--seal", "a", "--unseal-delete", "b"]).is_err());
-        assert!(parse(&["--seal", "a", "--unseal-delete-force", "b"]).is_err());
-        assert!(parse(&["--seal", "a", "launch", "p"]).is_err());
-    }
-
-    #[test]
-    fn unsealing_in_place_of_the_loadout_takes_its_own_scroll() {
-        let asked = parse(&["--unseal-delete", "all.scroll"]).unwrap();
-        assert_eq!(asked.unseal.as_deref(), Some("all.scroll"));
-        assert_eq!(asked.unseal_delete, Some(Ask::First));
-        let forced = parse(&["--unseal-delete-force=all.scroll"]).unwrap();
-        assert_eq!(forced.unseal.as_deref(), Some("all.scroll"));
-        assert_eq!(forced.unseal_delete, Some(Ask::Never));
-        assert_eq!(parse(&["--unseal", "a"]).unwrap().unseal_delete, None);
-        assert!(parse(&["--unseal-delete"]).is_err());
-        assert!(parse(&["--unseal-delete", "a", "--unseal", "b"]).is_err());
-        assert!(parse(&["--unseal-delete-force", "a", "--unseal", "b"]).is_err());
-        assert!(parse(&["--unseal-delete-force", "a", "--unseal-delete", "b"]).is_err());
-    }
-
-    #[test]
-    fn pride_can_be_worn_with_anything() {
-        assert!(parse(&["--with-pride"]).unwrap().pride);
-        assert!(!parse(&[]).unwrap().pride);
-        assert!(parse(&["launch", "p", "--with-pride"]).unwrap().pride);
-    }
-
-    #[test]
-    fn the_controller_test_goes_alone() {
-        assert!(parse(&["--controller-test"]).unwrap().controller_test);
-        assert!(parse(&["--controller-test", "--no-splash"]).is_err());
-        assert!(!parse(&[]).unwrap().controller_test);
-    }
-
-    #[test]
-    fn listing_the_quips_goes_alone() {
-        assert!(parse(&["--list-quips"]).unwrap().list_quips);
-        assert!(parse(&["--list-quips", "--no-splash"]).is_err());
-    }
-
-    #[test]
-    fn setup_keeps_files_alone_and_goes_with_no_command() {
-        let cli = parse(&["--setup", "--keep-uzdoom", "Cargo.toml"]).unwrap();
-        assert!(cli.setup);
-        assert!(!parse(&[]).unwrap().setup);
-        assert!(parse(&["--setup", "launch", "p"]).is_err());
-        assert!(parse(&["--setup", "--seal", "s.scroll"]).is_err());
-    }
-
-    #[test]
-    fn help_and_version_are_answered_by_clap() {
-        for (flag, kind) in [
-            ("--help", ErrorKind::DisplayHelp),
-            ("-h", ErrorKind::DisplayHelp),
-            ("--version", ErrorKind::DisplayVersion),
-            ("-V", ErrorKind::DisplayVersion),
-        ] {
-            let error = Cli::parse([flag.to_string()]).unwrap_err();
-            assert_eq!(error.kind(), kind, "{flag}");
-        }
-    }
-
-    #[test]
-    fn the_command_line_is_put_together_soundly() {
-        Args::command().debug_assert();
-    }
-
-    #[test]
-    fn a_scroll_to_unseal_goes_with_the_wad_dirs() {
-        let cli = parse(&["--unseal", "shared.scroll", "--wads", "/w"]).unwrap();
-        assert_eq!(cli.unseal, Some("shared.scroll".into()));
-        assert_eq!(cli.wads, ["/w"]);
-        assert_eq!(
-            parse(&["--unseal=shared.scroll"]).unwrap().unseal,
-            Some("shared.scroll".into())
-        );
-        assert!(parse(&["--unseal"]).is_err());
-        assert!(parse(&["--unseal", "a.scroll", "--unseal", "b.scroll"]).is_err());
-        // the scroll is not mistaken for a loadout dir
-        assert_eq!(parse(&["--unseal", "a.scroll"]).unwrap().loadout, None);
     }
 }

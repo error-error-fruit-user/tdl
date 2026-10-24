@@ -20,6 +20,10 @@ impl CancelHandler {
     /// button) is [`Error::Cancelled`] and Ctrl+C is [`Error::Interrupted`]; any other key is
     /// thrown away, so it isn't replayed on the next screen.
     pub fn check() -> Result<()> {
+        // 📜 a script's keys are for the screens, never thrown away here
+        if crate::script::playing() {
+            return Ok(());
+        }
         while let Some(key_code) = gamepad::chant() {
             if key_code == KeyCode::Esc {
                 return Err(Error::Cancelled);

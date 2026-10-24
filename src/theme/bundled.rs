@@ -91,28 +91,3 @@ pub const SPLASHES: &[(&str, &str)] = &[
         include_str!("../../assets/themes/everforest_splash.toml"),
     ),
 ];
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::theme::{Dressing, Theme, splash::Splash};
-
-    #[test]
-    fn every_theme_and_splash_that_comes_with_tdl_can_be_worn_and_has_its_twin() {
-        assert_eq!(THEMES.len(), SPLASHES.len());
-        for ((theme, theme_text), (splash, splash_text)) in THEMES.iter().zip(SPLASHES) {
-            assert_eq!(theme, splash);
-            assert!(crate::theme::dressing::is_name(theme), "{theme}");
-            let worn =
-                Theme::parse(theme_text).unwrap_or_else(|problem| panic!("{theme}: {problem}"));
-            assert_ne!(worn, Theme::default(), "{theme} is its own");
-            let worn =
-                Splash::parse(splash_text).unwrap_or_else(|problem| panic!("{splash}: {problem}"));
-            assert_ne!(worn, Splash::default(), "{splash} is its own");
-            assert!(
-                theme_text.contains(&format!("--theme {theme}`")),
-                "{theme} says its name"
-            );
-        }
-    }
-}

@@ -1,0 +1,36 @@
+# The example profiles the README's screenshots are taken of, laid out on the screens by
+# `tdl headless` (demo_screenshot.sh runs it in /tmp/tdl-shots, where the paths below are):
+# brutal_doom is healthy; sigil_run has a wad that goes missing, one that changes and a volatile
+# one; test_build points at a UZDoom that doesn't exist.
+wait-for "[ launcher ]"
+# 🌐 UZDoom and the base wad, the global ones
+press u
+pick uzdoom.sh
+press shift+b
+pick wads/DOOM2.WAD
+wait-for DOOM2.WAD
+press a
+type brutal_doom
+press tab shift+a
+pick wads/brutalv22.pk3 wads/brutal_extras.pk3 wads/hud_minimal.pk3
+wait-for hud_minimal.pk3
+press k enter
+wait-for "[ launcher ]"
+press a
+type sigil_run
+press tab shift+a
+pick wads/sigil_v1_21.wad wads/gone.pk3 wads/changed.wad wads/my_mod_wip.pk3
+wait-for my_mod_wip.pk3
+# the last wad, volatile
+press k v enter
+wait-for "[ launcher ]"
+press a
+type test_build
+press tab shift+a
+pick wads/hud_minimal.pk3
+wait-for hud_minimal.pk3
+press u
+pick no-such-uzdoom
+press k enter
+wait-for "[ launcher ]"
+expect test_build

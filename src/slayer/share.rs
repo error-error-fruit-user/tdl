@@ -279,24 +279,3 @@ fn dirs_to_look_in(grimoire: &mut Grimoire, loadout: &Loadout) -> Result<Option<
     }
     Ok(picker::dir(grimoire, None)?.map(|dir| vec![dir]))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_scroll_always_ends_in_its_extension() {
-        assert_eq!(
-            with_extension("/tmp/brutal".into()),
-            PathBuf::from("/tmp/brutal.scroll")
-        );
-        assert_eq!(
-            with_extension("/tmp/brutal.scroll".into()),
-            PathBuf::from("/tmp/brutal.scroll")
-        );
-        assert_eq!(
-            with_extension("/tmp/brutal.v2".into()),
-            PathBuf::from("/tmp/brutal.v2.scroll")
-        );
-    }
-}

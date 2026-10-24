@@ -1,0 +1,6 @@
+# A profile hosted by a command: its wads served, UZDoom started as the host.
+wait-for "[ launcher ]"
+press a
+type e1
+press enter
+host e1 --port 18763 --code abc234 --coop

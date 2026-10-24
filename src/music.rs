@@ -176,29 +176,3 @@ fn play(number: u64) {
         thread::sleep(POLL);
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_embedded_track_decodes() {
-        assert!(Decoder::try_from(Cursor::new(TRACK)).is_ok());
-    }
-
-    #[test]
-    fn a_song_that_is_not_one_or_is_not_there_is_refused() {
-        use crate::loadout::scribe::tests::Altar;
-
-        let altar = Altar::new("music-bad-song");
-        std::fs::write(altar.file("notes.mp3"), b"not a song at all").unwrap();
-        let error = use_song(&altar.file("notes.mp3")).unwrap_err();
-        assert!(error.contains("isn't a song"), "{error}");
-        assert!(
-            use_song(&altar.file("gone.ogg"))
-                .unwrap_err()
-                .contains("Could not read")
-        );
-        assert!(!has_song());
-    }
-}

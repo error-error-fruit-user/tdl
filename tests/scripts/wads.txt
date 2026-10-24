@@ -1,0 +1,14 @@
+# Wads added to a profile from a file dialog (Shift+A), answered by pick.
+wait-for "[ launcher ]"
+press a
+type e1
+press tab
+press shift+a
+pick tests/fixtures/e1m1.wad
+wait-for e1m1.wad
+# off the add row, where Enter would add more, then save
+press k enter
+wait-for "[ launcher ]"
+press home
+expect e1
+expect 1

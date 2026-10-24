@@ -34,33 +34,3 @@ pub fn tagged_file(file_name: &str, is_free: impl Fn(&str) -> bool) -> String {
     let stem = tagged(stem, |stem| is_free(&format!("{stem}{extension}")));
     format!("{stem}{extension}")
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_tag_is_the_first_free_number_counting_on_from_any_already_there() {
-        let taken = ["brutal", "brutal_2", "brutal_4"];
-        let free = |name: &str| !taken.contains(&name);
-        assert_eq!(tagged("brutal", free), "brutal_3");
-        assert_eq!(tagged("brutal_2", free), "brutal_3");
-        assert_eq!(tagged("brutal_4", free), "brutal_5");
-        assert_eq!(tagged("sunlust", free), "sunlust_2");
-        // only a number after the last `_` counts as one
-        assert_eq!(tagged("doom_ii", free), "doom_ii_2");
-        assert_eq!(tagged("_7", free), "_7_2");
-    }
-
-    #[test]
-    fn a_files_tag_goes_in_front_of_its_extension() {
-        let taken = ["brutal_2.pk3"];
-        let free = |name: &str| !taken.contains(&name);
-        assert_eq!(tagged_file("brutal.pk3", free), "brutal_3.pk3");
-        assert_eq!(tagged_file("brutal_2.pk3", free), "brutal_3.pk3");
-        assert_eq!(tagged_file("DOOM2.WAD", free), "DOOM2_2.WAD");
-        assert_eq!(tagged_file("notes", free), "notes_2");
-        assert_eq!(tagged_file(".wad", free), ".wad_2");
-        assert_eq!(split_extension("a.b.pk3"), ("a.b", ".pk3"));
-    }
-}

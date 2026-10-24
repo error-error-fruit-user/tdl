@@ -1,0 +1,4 @@
+# A line that looks for what isn't on the screen fails the script.
+wait-for "[ launcher ]"
+expect this is not on the screen
+press a

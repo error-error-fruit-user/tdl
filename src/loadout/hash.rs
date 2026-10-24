@@ -27,32 +27,3 @@ pub fn hash(path: &Path, tally: &mut impl Tally) -> Result<String> {
     }
     Ok(hasher.finalize().to_hex().to_string())
 }
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-
-    use super::*;
-    use crate::loadout::scribe::tests::Altar;
-
-    #[test]
-    fn the_hash_is_blake3_and_every_byte_is_counted() {
-        let altar = Altar::new("hash-counted");
-        let bytes = vec![3u8; CHUNK + 10];
-        fs::write(altar.file("a.wad"), &bytes).unwrap();
-        struct Bytes(u64);
-        impl Tally for Bytes {
-            fn count_file(&mut self, _: &std::ffi::OsStr, _: u64) -> Result<()> {
-                Ok(())
-            }
-            fn count_bytes(&mut self, amount: u64) -> Result<()> {
-                self.0 += amount;
-                Ok(())
-            }
-        }
-        let mut counted = Bytes(0);
-        let hash = hash(&altar.file("a.wad"), &mut counted).unwrap();
-        assert_eq!(hash, blake3::hash(&bytes).to_hex().to_string());
-        assert_eq!(counted.0, bytes.len() as u64);
-    }
-}

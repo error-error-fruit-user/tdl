@@ -123,7 +123,7 @@ pub struct Launcher {
 }
 
 /// What the command line asked the launcher for.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Start {
     pub loadout: Option<String>,
     /// Whether to open the passed loadout every time: asked, not, or without asking.
@@ -519,6 +519,42 @@ impl Launcher {
         Ok(())
     }
 
+    /// `tdl headless`: plays the script that [`script::start`](crate::script::start) began, in
+    /// turns: a command is done the plain way ([`Launcher::summon_plain`]), and key lines go to the
+    /// launcher, drawn on `grimoire` with no splash and no music, until the script moves on to a
+    /// command (the launcher closes, and opens again for the next key line) or ends. `Err` says
+    /// what stopped it.
+    pub fn play(grimoire: &mut Grimoire, start: Start) -> std::result::Result<(), String> {
+        use crate::script::{self, Turn};
+        loop {
+            match script::turn().map_err(|error| error.to_string())? {
+                Turn::End => return Ok(()),
+                Turn::Command(command) => {
+                    let start = Start {
+                        command: Some(command),
+                        ..start.clone()
+                    };
+                    Self::summon_plain(start)?;
+                    script::note("the command is done");
+                }
+                Turn::Screens => {
+                    let start = Start {
+                        command: None,
+                        splash: false,
+                        no_music: true,
+                        ..start.clone()
+                    };
+                    match Self::summon(grimoire, start) {
+                        // 🚪 quit, or Ctrl+C: a key line after it opens the launcher again
+                        Ok(()) | Err(Error::Interrupted) => script::note("the launcher closed"),
+                        Err(Error::ScriptCommand | Error::ScriptEnd) => {}
+                        Err(error) => return Err(error.to_string()),
+                    }
+                }
+            }
+        }
+    }
+
     /// `tdl host --headless` and `tdl join --headless`: set up like [`Launcher::prepare`], but with no
     /// windows at all. What would be a notice is a line on stderr, and anything that would need a
     /// question (a file to upgrade) is an error instead; then the command runs (see
@@ -542,7 +578,7 @@ impl Launcher {
         }
         // 🗝️ with no windows nothing can be asked, so only the --keep- flags keep anything
         for problem in launcher.keep_unasked() {
-            eprintln!("{problem}");
+            crate::ritual::wail(problem);
         }
         let loadout = &mut launcher.loadout;
         match command {
@@ -587,7 +623,7 @@ impl Launcher {
             return Err(advice.join("\n"));
         }
         for notice in std::mem::take(&mut loadout.notices) {
-            eprintln!("{notice}");
+            crate::ritual::wail(notice);
         }
         if loadout.is_outdated() {
             return Err(
@@ -2087,607 +2123,5 @@ impl Ritual for Launcher {
             }
             _ => Ok(Phase::Prompt),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-
-    use insta::assert_snapshot;
-
-    use super::*;
-
-    #[test]
-    fn select_and_home_are_shown_as_the_wads_and_the_settings_on_the_launcher() {
-        use crate::gamepad::{Family, relabel};
-        let key = |text: &str| {
-            Launcher::LEGEND
-                .iter()
-                .find(|[_, said]| said.starts_with(text))
-                .map(|[key, _]| relabel(key, Family::Xbox))
-        };
-        assert_eq!(key("Wads").as_deref(), Some("(View)/L"));
-        assert_eq!(key("Settings").as_deref(), Some("(Xbox)"));
-        // the buttons make the keys that open them
-        let key_of = |button| crate::gamepad::Prompt::of(button, Family::Xbox).map(|p| p.chant());
-        assert_eq!(key_of(gilrs::Button::Select), Some(KeyCode::Char('w')));
-        assert_eq!(key_of(gilrs::Button::Mode), Some(KeyCode::Char('o')));
-    }
-
-    #[test]
-    fn the_legends_name_the_chords_that_make_their_keys() {
-        crate::gamepad::assert_chords_match(Launcher::LEGEND);
-    }
-    use crate::{
-        loadout::InsertedCopies, loadout::config::Config, loadout::scribe::tests::Altar, testing,
-    };
-
-    #[test]
-    fn snapshot_the_keyboard_over_the_launchers_search() {
-        let altar = Altar::new("snap-launcher-keyboard");
-        let mut launcher = launcher(&altar, 0);
-        launcher.search = Some(Search::default());
-        insta::assert_snapshot!(crate::keyboard::over(|page| launcher.render(page)));
-    }
-
-    #[test]
-    fn a_profile_with_spaces_and_dashes_is_found_by_name_whatever_the_case() {
-        let profiles = [
-            Profile::new("my profile".into(), vec![]),
-            Profile::new("sigil-run".into(), vec![]),
-        ];
-        assert_eq!(find_profile(&profiles, "my profile"), Some(0));
-        assert_eq!(find_profile(&profiles, "My Profile"), Some(0));
-        assert_eq!(find_profile(&profiles, "SIGIL-RUN"), Some(1));
-        assert_eq!(find_profile(&profiles, "my_profile"), None);
-    }
-
-    fn launcher(altar: &Altar, row: usize) -> Launcher {
-        let loadout = testing::example_loadout(altar);
-        let start = Start {
-            loadout: Some(loadout.to_string_lossy().into_owned()),
-            ..Start::default()
-        };
-        let mut launcher = Launcher::new(start, &altar.file("standard"), &altar.file("standard"));
-        launcher.table_state.select(Some(row));
-        launcher
-    }
-
-    #[test]
-    fn on_a_healthy_profile() {
-        let altar = Altar::new("snap-launcher-healthy");
-        let mut launcher = launcher(&altar, 0);
-        assert_snapshot!(testing::draw(90, 28, |page| launcher.render(page)));
-    }
-
-    #[test]
-    fn on_a_broken_profile() {
-        let altar = Altar::new("snap-launcher-broken");
-        let mut launcher = launcher(&altar, 1);
-        assert_snapshot!(testing::draw(90, 28, |page| launcher.render(page)));
-    }
-
-    #[test]
-    fn on_the_new_profile_row() {
-        let altar = Altar::new("snap-launcher-new");
-        let mut launcher = launcher(&altar, 3);
-        assert_snapshot!(testing::draw(90, 28, |page| launcher.render(page)));
-    }
-
-    #[test]
-    fn on_the_smallest_terminal() {
-        let altar = Altar::new("snap-launcher-small");
-        let mut launcher = launcher(&altar, 1);
-        assert_snapshot!(testing::draw(40, 20, |page| launcher.render(page)));
-    }
-
-    // 🔎 searching and copying profiles
-
-    fn names(profiles: &[Profile]) -> Vec<&str> {
-        profiles.iter().map(|p| p.name.as_str()).collect()
-    }
-
-    #[test]
-    fn a_search_is_of_profile_names_unless_it_starts_with_a_star() {
-        let wad = |name: &str| Wad::new(format!("/wads/{name}").into(), String::new(), 1);
-        let profile = Profile::new(
-            "nightmare".into(),
-            vec![wad("brutalv22.pk3"), wad("brutal.wad")],
-        );
-        assert!(profile_score(&profile, "night").is_some());
-        assert_eq!(profile_score(&profile, "brutal"), None);
-        // with a star, the best of its wads counts: here the exact `brutal.wad`
-        assert_eq!(
-            profile_score(&profile, "*brutal"),
-            search::score("brutal.wad", "brutal")
-        );
-        assert_eq!(profile_score(&profile, "*night"), None);
-        assert_eq!(profile_score(&profile, "*"), None);
-    }
-
-    #[test]
-    fn enter_takes_the_cursor_to_the_best_profile_and_esc_leaves_it() {
-        let altar = Altar::new("launcher-search");
-        let mut launcher = launcher(&altar, 0);
-        let all = launcher.loadout.profiles.clone();
-        let last = all.len() - 1;
-        launcher.search = Some(Search::default());
-        for c in all[last].name.chars() {
-            assert!(launcher.search_key(KeyCode::Char(c)) == Phase::Render);
-        }
-        assert_eq!(
-            launcher.table_state.selected(),
-            Some(0),
-            "nothing moves while typing"
-        );
-        let _ = launcher.search_key(KeyCode::Enter);
-        assert_eq!(launcher.table_state.selected(), Some(last));
-
-        launcher.search = Some(Search::default());
-        let _ = launcher.search_key(KeyCode::Char('x'));
-        let _ = launcher.search_key(KeyCode::Esc);
-        assert!(launcher.search.is_none());
-        assert_eq!(launcher.table_state.selected(), Some(last));
-    }
-
-    #[test]
-    fn pasted_profiles_go_in_front_of_the_cursor_tagged_named_or_skipped() {
-        let altar = Altar::new("launcher-paste-profiles");
-        let mut launcher = launcher(&altar, 0);
-        let all = launcher.loadout.profiles.clone();
-        let copies = vec![all[0].clone(), all[1].clone(), all[2].clone()];
-        let mut answers = vec![
-            Some(format!("{}_2", all[0].name)),
-            None,
-            Some("my_copy".to_string()),
-        ]
-        .into_iter();
-        let mut asked = Vec::new();
-        let mut at = 1;
-        let pasted = launcher
-            .loadout
-            .insert_copies(&mut at, copies, |_, name, tagged| {
-                asked.push((name.to_string(), tagged.to_string()));
-                Ok(answers.next().unwrap())
-            })
-            .unwrap();
-        // every original is still here, so each name was asked about, with its tag
-        assert_eq!(
-            asked[0],
-            (all[0].name.clone(), format!("{}_2", all[0].name))
-        );
-        assert_eq!(asked.len(), 3);
-        assert_eq!(
-            pasted,
-            InsertedCopies {
-                first: Some(1),
-                count: 2,
-                failed: false
-            }
-        );
-        let names: Vec<_> = launcher
-            .loadout
-            .profiles
-            .iter()
-            .map(|p| p.name.clone())
-            .collect();
-        let first_copy = format!("{}_2", all[0].name);
-        assert_eq!(
-            names,
-            [
-                all[0].name.as_str(),
-                &first_copy,
-                "my_copy",
-                &all[1].name,
-                &all[2].name
-            ]
-        );
-        // a copy has the original's wads, and is saved
-        assert_eq!(launcher.loadout.profiles[2].wads, all[2].wads);
-        assert!(Profile::path(&launcher.loadout.config_dir, "my_copy").exists());
-        assert_eq!(at, 3);
-    }
-
-    #[test]
-    fn pasting_on_the_new_profile_row_adds_at_the_end_and_a_free_name_is_kept() {
-        let altar = Altar::new("launcher-paste-end");
-        let mut launcher = launcher(&altar, 0);
-        let count = launcher.loadout.profiles.len();
-        let fresh = Profile {
-            name: "fresh".into(),
-            ..launcher.loadout.profiles[0].clone()
-        };
-        let mut at = count;
-        let pasted = launcher
-            .loadout
-            .insert_copies(&mut at, vec![fresh], |_, _, _| {
-                panic!("a free name isn't asked about")
-            })
-            .unwrap();
-        assert_eq!(pasted.first, Some(count));
-        assert_eq!(launcher.loadout.profiles[count].name, "fresh");
-        assert_eq!(at, count + 1, "the cursor stays on the new-profile row");
-    }
-
-    #[test]
-    fn a_name_given_for_a_copy_that_is_taken_after_all_leaves_it_out() {
-        let altar = Altar::new("launcher-paste-taken");
-        let mut launcher = launcher(&altar, 0);
-        let all = launcher.loadout.profiles.clone();
-        let mut at = 0;
-        let pasted = launcher
-            .loadout
-            .insert_copies(&mut at, vec![all[0].clone()], |_, _, _| {
-                Ok(Some(all[1].name.clone()))
-            })
-            .unwrap();
-        assert_eq!(
-            pasted,
-            InsertedCopies {
-                first: None,
-                count: 0,
-                failed: true
-            }
-        );
-        assert_eq!(launcher.loadout.profiles, all);
-    }
-
-    #[test]
-    fn a_profile_is_found_by_its_name_or_the_only_one_that_matches_but_for_case() {
-        let named = |names: &[&str]| -> Vec<Profile> {
-            names
-                .iter()
-                .map(|name| Profile::new(name.to_string(), Vec::new()))
-                .collect()
-        };
-        let profiles = named(&["brutal_doom", "Sigil", "sigil_run"]);
-        assert_eq!(find_profile(&profiles, "brutal_doom"), Some(0));
-        assert_eq!(find_profile(&profiles, "BRUTAL_DOOM"), Some(0));
-        assert_eq!(find_profile(&profiles, "sigil"), Some(1));
-        assert_eq!(find_profile(&profiles, "nope"), None);
-        // two that differ only by case: only the exact one is taken, never a guess
-        let twins = named(&["Doom", "doom"]);
-        assert_eq!(find_profile(&twins, "doom"), Some(1));
-        assert_eq!(find_profile(&twins, "DOOM"), None);
-    }
-
-    #[test]
-    fn cut_profiles_stay_until_pasted_and_then_move_in_front_of_the_cursor() {
-        let altar = Altar::new("launcher-cut");
-        let mut launcher = launcher(&altar, 0);
-        let all = launcher.loadout.profiles.clone();
-        let order = [
-            all[2].name.clone(),
-            all[0].name.clone(),
-            all[1].name.clone(),
-        ];
-        let names = |launcher: &Launcher| -> Vec<String> {
-            launcher
-                .loadout
-                .profiles
-                .iter()
-                .map(|p| p.name.clone())
-                .collect()
-        };
-        launcher.selection.toggle_mark(0, all.len());
-        launcher.selection.toggle_mark(1, all.len());
-        assert!(launcher.cut_profiles());
-        assert_eq!(launcher.loadout.profiles, all, "nothing moves on the cut");
-        assert_eq!(
-            launcher.loadout.clipboard.note().as_deref(),
-            Some("2 profiles cut")
-        );
-        assert!(!launcher.selection.is_active());
-
-        // pasted on the new-profile row, they go to the end in the order they were cut
-        launcher.table_state.select(Some(all.len()));
-        let Clipboard::CutProfiles(cut) = launcher.loadout.clipboard.clone() else {
-            panic!("the profiles should be cut");
-        };
-        launcher.move_profiles(&cut);
-        assert_eq!(names(&launcher), order);
-        assert_eq!(launcher.table_state.selected(), Some(1));
-        assert_eq!(
-            launcher.loadout.clipboard,
-            Clipboard::Empty,
-            "a cut pastes once"
-        );
-        // moved, not copied: every profile is still there once, and nothing was written
-        assert_eq!(launcher.loadout.profiles.len(), all.len());
-
-        // one cut and pasted on itself stays where it is
-        launcher.table_state.select(Some(0));
-        assert!(launcher.cut_profiles());
-        launcher.move_profiles(&[all[2].clone()]);
-        assert_eq!(names(&launcher), order);
-        // one deleted since its cut is left out
-        launcher.move_profiles(&[Profile::new("gone".into(), Vec::new())]);
-        assert_eq!(launcher.loadout.profiles.len(), all.len());
-    }
-
-    #[test]
-    fn a_selection_of_profiles_moves_together() {
-        let altar = Altar::new("launcher-shift");
-        let mut launcher = launcher(&altar, 0);
-        let all = launcher.loadout.profiles.clone();
-        launcher.selection.toggle_mark(0, all.len());
-        launcher.selection.toggle_mark(1, all.len());
-        assert!(launcher.shift_selection(true) == Phase::Render);
-        let names: Vec<_> = launcher.loadout.profiles.iter().map(|p| &p.name).collect();
-        assert_eq!(names, [&all[2].name, &all[0].name, &all[1].name]);
-        assert_eq!(
-            launcher.table_state.selected(),
-            Some(1),
-            "the cursor went along"
-        );
-        assert!(
-            launcher.shift_selection(true) == Phase::Prompt,
-            "already at the bottom"
-        );
-        assert!(launcher.shift_selection(false) == Phase::Render);
-        assert_eq!(launcher.loadout.profiles, all);
-    }
-
-    #[test]
-    fn copying_picked_profiles_puts_them_on_the_clipboard_in_list_order() {
-        let altar = Altar::new("launcher-copy");
-        let mut launcher = launcher(&altar, 2);
-        let all = launcher.loadout.profiles.clone();
-        launcher.selection.toggle_mark(2, all.len());
-        launcher.selection.toggle_mark(0, all.len());
-        assert!(launcher.copy_profiles(false));
-        match &launcher.loadout.clipboard {
-            Clipboard::Profiles(copied) => assert_eq!(names(copied), [&all[0].name, &all[2].name]),
-            other => panic!("expected profiles, found {other:?}"),
-        }
-        assert!(!launcher.selection.is_active());
-        // the new-profile row alone has nothing to copy, and leaves the clipboard be
-        launcher.table_state.select(Some(all.len()));
-        assert!(!launcher.copy_profiles(false));
-        assert!(launcher.copy_profiles(true));
-        assert_eq!(launcher.loadout.clipboard, Clipboard::Profiles(all));
-    }
-
-    // 🚪 what the command line opens, and what is kept from it
-
-    #[test]
-    fn kept_dirs_are_the_loadouts_then_the_global_ones_each_once() {
-        let dirs = remembered_dirs(
-            &["/v1".into(), "/both".into()],
-            &["/both".into(), "/g1".into()],
-        );
-        let dirs: Vec<_> = dirs.iter().map(|f| f.to_str().unwrap()).collect();
-        assert_eq!(dirs, ["/v1", "/both", "/g1"]);
-    }
-
-    #[test]
-    fn passed_dirs_are_made_absolute_and_replace_the_kept_ones() {
-        let altar = Altar::new("launcher-passed-wads");
-        let standard = altar.file("standard");
-        Uac {
-            wad_dirs: vec!["/kept".into()],
-            ..Uac::default()
-        }
-        .keep(&Uac::path(&standard))
-        .unwrap();
-
-        let kept = Launcher::new(Start::default(), &standard, &standard);
-        assert_eq!(kept.loadout.wad_dirs, [PathBuf::from("/kept")]);
-
-        let start = Start {
-            wads: vec!["relative/wads".into()],
-            ..Start::default()
-        };
-        let passed = Launcher::new(start, &standard, &standard);
-        let dir = &passed.loadout.wad_dirs[0];
-        assert!(dir.is_absolute());
-        assert!(dir.ends_with("relative/wads"));
-        assert_eq!(passed.loadout.wad_dirs.len(), 1);
-    }
-
-    #[test]
-    fn the_kept_loadout_opens_unless_another_is_passed() {
-        let altar = Altar::new("launcher-kept-loadout");
-        let standard = altar.file("standard");
-        let kept = altar.file("kept");
-        fs::create_dir_all(&kept).unwrap();
-        Uac {
-            loadout: Some(kept.clone().into_os_string()),
-            ..Uac::default()
-        }
-        .keep(&Uac::path(&standard))
-        .unwrap();
-
-        let opened = Launcher::new(Start::default(), &standard, &standard);
-        assert_eq!(opened.loadout.config_dir, kept.join("config"));
-
-        let other = altar.file("other");
-        let start = Start {
-            loadout: Some(other.to_string_lossy().into_owned()),
-            ..Start::default()
-        };
-        let passed = Launcher::new(start, &standard, &standard);
-        assert_eq!(passed.loadout.config_dir, other.join("config"));
-        assert_eq!(passed.passed_loadout, Some(other));
-    }
-
-    #[test]
-    fn a_kept_loadout_that_is_gone_falls_back_to_the_standard_one_and_says_so() {
-        let altar = Altar::new("launcher-gone-loadout");
-        let standard = altar.file("standard");
-        Uac {
-            loadout: Some(altar.file("gone").into_os_string()),
-            ..Uac::default()
-        }
-        .keep(&Uac::path(&standard))
-        .unwrap();
-        let opened = Launcher::new(Start::default(), &standard, &standard);
-        assert_eq!(opened.loadout.config_dir, standard);
-        assert!(
-            opened
-                .loadout
-                .notices
-                .iter()
-                .any(|n| n.contains("is missing"))
-        );
-    }
-
-    #[test]
-    fn forgetting_the_wads_leaves_out_the_kept_dirs_this_run_but_keeps_them_saved() {
-        let altar = Altar::new("launcher-forget-wads");
-        let standard = altar.file("standard");
-        Uac {
-            wad_dirs: vec!["/kept".into()],
-            ..Uac::default()
-        }
-        .keep(&Uac::path(&standard))
-        .unwrap();
-        for forget in [Forget::Once, Forget::Asking] {
-            let start = Start {
-                forget_wads: forget,
-                ..Start::default()
-            };
-            let opened = Launcher::new(start, &standard, &standard);
-            assert!(opened.loadout.wad_dirs.is_empty(), "{forget:?}");
-            assert_eq!(opened.loadout.uac.wad_dirs, [OsString::from("/kept")]);
-        }
-    }
-
-    #[test]
-    fn forgetting_opens_the_standard_loadout_even_with_one_kept() {
-        let altar = Altar::new("launcher-forget-loadout");
-        let standard = altar.file("standard");
-        let kept = altar.file("kept");
-        fs::create_dir_all(&kept).unwrap();
-        Uac {
-            loadout: Some(kept.into_os_string()),
-            ..Uac::default()
-        }
-        .keep(&Uac::path(&standard))
-        .unwrap();
-        let start = Start {
-            forget_loadout: Forget::Asking,
-            ..Start::default()
-        };
-        let opened = Launcher::new(start, &standard, &standard);
-        assert_eq!(opened.loadout.config_dir, standard);
-        // nothing is forgotten yet: that waits for the question
-        assert!(opened.loadout.uac.loadout.is_some());
-        assert!(opened.loadout.notices.is_empty());
-    }
-
-    #[test]
-    fn the_keep_flags_keep_without_asking_and_session_keeps_nothing() {
-        let altar = Altar::new("launcher-keep-unasked");
-        let standard = altar.file("standard");
-        let other = altar.file("other");
-        let start = |keep| Start {
-            loadout: Some(other.to_string_lossy().into_owned()),
-            keep_loadout: keep,
-            wads: vec!["/wads".into()],
-            keep_wads: keep,
-            uzdoom: Some("/opt/uzdoom".into()),
-            keep_uzdoom: keep,
-            ini: Some("/inis/mine.ini".into()),
-            keep_ini: keep,
-            theme: Some("/themes/blue.toml".into()),
-            keep_theme: keep,
-            ..Start::default()
-        };
-        for keep in [Keep::Ask, Keep::Session] {
-            let mut launcher = Launcher::new(start(keep), &standard, &standard);
-            launcher.use_session_files();
-            assert!(launcher.keep_unasked().is_empty());
-            // used this run, but nothing is saved
-            assert_eq!(
-                launcher.loadout.uac.session_uzdoom,
-                Some("/opt/uzdoom".into())
-            );
-            assert_eq!(
-                launcher.loadout.uac.session_ini,
-                Some("/inis/mine.ini".into())
-            );
-            assert_eq!(Uac::open(&Uac::path(&standard)), None, "{keep:?}");
-        }
-        let mut launcher = Launcher::new(start(Keep::Global), &standard, &standard);
-        launcher.use_session_files();
-        assert!(launcher.keep_unasked().is_empty());
-        let kept = Uac::open(&Uac::path(&standard)).unwrap();
-        assert_eq!(kept.loadout, Some(other.clone().into_os_string()));
-        assert_eq!(kept.wad_dirs, [OsString::from("/wads")]);
-        assert_eq!(kept.uzdoom, Some("/opt/uzdoom".into()));
-        assert_eq!(kept.ini, Some("/inis/mine.ini".into()));
-        assert_eq!(kept.theme, Some("/themes/blue.toml".into()));
-        // the wad dirs can go to the loadout instead
-        let start = Start {
-            wads: vec!["/mods".into()],
-            keep_wads: Keep::Loadout,
-            ..Start::default()
-        };
-        let mut launcher = Launcher::new(start, &standard, &standard);
-        assert!(launcher.keep_unasked().is_empty());
-        let reopened = Launcher::new(Start::default(), &standard, &standard);
-        assert_eq!(reopened.loadout.config.wad_dirs, [OsString::from("/mods")]);
-        assert_eq!(reopened.loadout.uac.wad_dirs, [OsString::from("/wads")]);
-    }
-
-    #[test]
-    fn forgetting_for_good_forgets_the_kept_loadout_and_every_kept_wad_dir() {
-        let altar = Altar::new("launcher-forget-for-good");
-        let standard = altar.file("standard");
-        let kept = altar.file("kept");
-        fs::create_dir_all(&kept).unwrap();
-        Uac {
-            loadout: Some(kept.into_os_string()),
-            wad_dirs: vec!["/kept".into()],
-            ..Uac::default()
-        }
-        .keep(&Uac::path(&standard))
-        .unwrap();
-        // the standard loadout, opened once forgetting, keeps wad dirs of its own
-        Config {
-            wad_dirs: vec!["/kept-here".into()],
-            ..Config::default()
-        }
-        .write(&standard, &[])
-        .unwrap();
-        let start = Start {
-            forget_loadout: Forget::ForGood,
-            forget_wads: Forget::ForGood,
-            ..Start::default()
-        };
-        let mut launcher = Launcher::new(start, &standard, &standard);
-        assert!(launcher.loadout.wad_dirs.is_empty());
-        assert_eq!(
-            launcher.loadout.config.wad_dirs,
-            [OsString::from("/kept-here")]
-        );
-        assert!(launcher.keep_unasked().is_empty());
-        let reopened = Launcher::new(Start::default(), &standard, &standard);
-        assert_eq!(reopened.loadout.uac.loadout, None);
-        assert!(reopened.loadout.uac.wad_dirs.is_empty());
-        assert!(reopened.loadout.config.wad_dirs.is_empty());
-    }
-
-    #[test]
-    fn legacy_files_are_found_before_the_loadout_is_opened_and_left_as_they_are() {
-        let altar = Altar::new("launcher-legacy");
-        let standard = altar.file("standard");
-        fs::create_dir_all(standard.join("profiles")).unwrap();
-        let old = rmp_serde::to_vec(&("brutal", Vec::<()>::new())).unwrap();
-        fs::write(standard.join("profiles/brutal.doom"), &old).unwrap();
-        fs::write(standard.join("global.rite"), b"old").unwrap();
-        let launcher = Launcher::new(Start::default(), &standard, &standard);
-        assert_eq!(
-            launcher.legacy,
-            [standard.join("global.rite"), standard.join("profiles")]
-        );
-        assert!(!launcher.loadout.uac_writable, "nothing is saved over them");
-        assert_eq!(
-            fs::read(standard.join("profiles/brutal.doom")).unwrap(),
-            old
-        );
-        assert_eq!(fs::read(standard.join("global.rite")).unwrap(), b"old");
     }
 }

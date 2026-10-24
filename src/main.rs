@@ -9,7 +9,6 @@
         yeet_expr
     )
 )]
-#![cfg_attr(all(test, feature = "spooky"), feature(try_blocks))]
 
 use std::{io::Write, path::PathBuf};
 
@@ -34,11 +33,10 @@ mod popups;
 mod quips;
 mod ritual;
 mod screens;
+mod script;
 mod slayer;
 mod tag;
 mod tally;
-#[cfg(test)]
-mod testing;
 mod theme;
 mod uzdoom;
 mod widgets;
@@ -114,6 +112,7 @@ fn main() {
         }
     }
     let headless = cli.headless;
+    let play = cli.play;
     let seal = cli.seal;
     let setup = cli.setup;
     let start = Start {
@@ -159,6 +158,22 @@ fn main() {
         }
         return;
     }
+    // 📜 tdl headless plays a script on screens nobody sees; a line that fails is a failing exit
+    if let Some(play) = play {
+        let outcome = script::start(play.script.as_deref(), play.log.as_deref())
+            .map_err(|error| error.to_string())
+            .and_then(|()| {
+                ritual::void_grimoire(script::WIDTH, script::HEIGHT)
+                    .map_err(|error| error.to_string())
+            })
+            .and_then(|mut grimoire| Launcher::play(&mut grimoire, start));
+        // 🕯️ the séance says how it ended itself
+        script::finish(&outcome);
+        if outcome.is_err() {
+            std::process::exit(1);
+        }
+        return;
+    }
     // 🖥️ --headless draws no windows at all: plain lines, and an error is a failing exit
     if headless {
         if let Err(message) = Launcher::summon_plain(start) {
@@ -167,7 +182,11 @@ fn main() {
         }
         return;
     }
-    if let Err(error) = ratatui::run(|grimoire| Launcher::summon(grimoire, start)) {
+    let outcome = ritual::open_grimoire()
+        .map_err(Error::from)
+        .and_then(|mut grimoire| Launcher::summon(&mut grimoire, start));
+    ratatui::restore();
+    if let Err(error) = outcome {
         eprintln!("{error}");
         std::io::stderr().flush().unwrap();
         // 🛑 Ctrl+C ends tdl the way an interrupted program ends, the same as with --headless

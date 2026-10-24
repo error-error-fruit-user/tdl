@@ -30,7 +30,7 @@ Beware the code -- a programmer's rite!
 - **Search** with `/`: profiles by name (or by their wads with `*`), and wads by file name in the editor
 - **Copy, cut and paste** profiles and wads, one or many at a time, with `Shift+V`/`M` to select, `Y`, `X` and `P`
 - **Wads screen** (`L`): every wad in every wad dir and the downloads, by dir or all in one list, to copy or move between dirs or paste into a profile
-- **Per-profile saves** and a `session.log` of UZDoom's output, which `L` shows live while UZDoom runs (launching, hosting or joining)
+- **Per-profile saves** and a `uzdoom.log` of UZDoom's output, which `L` shows live while UZDoom runs (launching, hosting or joining)
 - **Status at a glance**: a panel under the launcher shows what the selected profile would run with (UZDoom, base wad, ini, wads) and whether anything is broken, with the global settings (UZDoom, base wad, ini, UZDoom arguments) beside it
 - **Themes**: every color, border and glyph comes from a `theme.toml` you can change, or the built-in hellfire one, and the splash screen dresses up in its own `splash.toml` (logo, words, and a fire that can cycle through any colors) and `pride.toml` (pride flags, one picked at random each time)
 - **Placeholders, not surprises**: a wad that moved is shown in the editor with what's wrong, and only that profile is held back from launching
@@ -136,6 +136,19 @@ tdl join 10.0.0.2 --code abc234 --port 9000           # the join form, filled in
 - `host` opens the host form for the profile, filled in from its saved host defaults and changed by `--players` (2–8), `--coop` or `--deathmatch`, `--map`, `--port`, `--code`, and `--share-ini` or `--no-share-ini` (whether joiners can play with your ini, see Multiplayer); `Enter` starts the game.
 - `join` opens the join form, filled in with the IP, `--code` and `--port` (8080 if not given), then finds or downloads a profile. With `--always-download` the wads you don't have are downloaded without asking first, with `--host-ini` you play with the host's ini, if it shares it, and with `--host-ini-with-keys` its key bindings too (see Multiplayer).
 - `--headless`, with `launch`, `host` or `join`, shows no forms and no windows at all: just plain lines in the terminal, so `join` needs `--code`. Joining still asks `[Y/N]` before downloading wads that aren't installed (no answer, or no terminal to ask on, is no), unless `--always-download` is given, and asks `[r/n/S]` about a wad of yours that isn't the host's version (see Multiplayer; no answer is skip, and `--always-download` replaces it without asking); a profile made for it is named after the host (`joined_10_0_0_2`). Anything that stops the game ends tdl with an error code, and `Ctrl+C` stops a game or a download cleanly, leaving any finished downloads for next time.
+- `headless` plays a script instead of a person: no splash, no music, and the screens drawn where nobody sees them (only when the script is about to look), with what it does said line by line in the terminal, a spinner while it waits, and a ✓ or ✗ at the end (with the last screen, if a line failed). The script is a text file given with `--script FILE`, or else typed on stdin, a line at a time. `--log [DIR]` records the run in DIR (or the working directory): `tdl.log`, every line played and every screen it led to, and `uzdoom.log`, everything UZDoom printed. A line that fails ends tdl with an error code. Its lines (`#` starts a comment):
+  - `press KEY...`: keys for the screens, like `press j j enter`, `press shift+b` or `press ctrl+c` (`enter`, `esc`, `tab`, the arrows, `home`, `end`, `pageup`, `pagedown`, `backspace`, `delete`, `space`, `f1`... or a character)
+  - `type TEXT`: the text, a key at a time
+  - `wait 2s` (or `500ms`)
+  - `expect TEXT`: TEXT is on the screen now, or the script fails
+  - `wait-for TEXT [TIME]`: TEXT comes on the screen within TIME (10s unless given; quote a TEXT that ends in a time)
+  - `pick PATH...`: the answer to the file dialog the last key opened (`pick` alone cancels it)
+  - `launch PROFILE`, `host PROFILE [options]`, `join IP --code CODE [options]`: done as `--headless` does them, with the options of `tdl host` and `tdl join`; the screens close for them and open again for the next key line
+  - `quit`, or the end of the script, ends tdl
+
+  ```sh
+  printf 'wait-for "[ launcher ]"\nlaunch brutal_doom\n' | tdl headless --log
+  ```
 
 | Key | Action |
 | --- | --- |

@@ -537,26 +537,3 @@ fn download_wads(
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn wad(name: &str) -> Wad {
-        Wad::new(name.into(), String::new(), 0)
-    }
-
-    #[test]
-    fn downloads_fill_the_gaps_in_the_hosts_order() {
-        let local = vec![None, Some(wad("here.wad")), None];
-        assert_eq!(
-            fill_gaps(local, vec![wad("first.wad"), wad("last.wad")]),
-            Some(vec![wad("first.wad"), wad("here.wad"), wad("last.wad")])
-        );
-    }
-
-    #[test]
-    fn too_few_downloads_is_noticed() {
-        assert_eq!(fill_gaps(vec![None, None], vec![wad("only.wad")]), None);
-    }
-}

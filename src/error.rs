@@ -48,6 +48,22 @@ pub enum Error {
     #[error("{0}")]
     Legacy(String),
 
+    /// A line of a `tdl headless` script failed: which, and why.
+    #[error("{0}")]
+    Script(String),
+
+    /// The script's next line is a command, so the screens close for it. Not a failure.
+    #[error("The script runs a command")]
+    ScriptCommand,
+
+    /// The script is over (`quit`, or its end). Not a failure.
+    #[error("The script is over")]
+    ScriptEnd,
+
+    /// The script's next line hasn't come yet. Never leaves [`crate::script`].
+    #[error("Waiting for the script")]
+    ScriptWaiting,
+
     /// `uac.rite` is from a newer tdl, so it is never written over.
     #[error("The global settings are from a newer tdl!")]
     UacTooNew,

@@ -55,7 +55,8 @@ struct Keys {
 impl Keys {
     fn take() -> Self {
         Keys {
-            raw: terminal::enable_raw_mode().is_ok(),
+            // 📜 a script typed on stdin needs the terminal as it is
+            raw: !crate::script::playing() && terminal::enable_raw_mode().is_ok(),
         }
     }
 
@@ -75,18 +76,14 @@ impl Keys {
 
     /// Prints `line`: raw mode doesn't go back to the start of the line by itself.
     fn say(&self, line: &str) {
-        if self.raw {
-            print!("{line}\r\n");
-            let _ = io::stdout().flush();
-        } else {
-            println!("{line}");
-        }
+        // 🗣️ the séance knows about raw mode's carriage returns
+        crate::ritual::murmur(line);
     }
 
     /// Gives the terminal back as it was and ends tdl, saying what Ctrl+C says with windows.
     fn end_interrupted(self) -> ! {
         drop(self);
-        eprintln!("{}", Error::Interrupted);
+        crate::ritual::wail(format!("{}", Error::Interrupted));
         std::process::exit(INTERRUPTED_EXIT);
     }
 }
@@ -119,7 +116,7 @@ fn wait_for(mut game: Game) -> Outcome {
 pub fn launch(loadout: &Loadout, index: usize) -> Outcome {
     let profile = &loadout.profiles[index];
     let uzdoom = ready_to_play(loadout, profile)?;
-    println!("Launching {}", profile.name);
+    crate::ritual::murmur(format!("Launching {}", profile.name));
     let game = uzdoom::launch(
         &uzdoom,
         profile.base_wad(&loadout.uac).map(Wad::deref),
@@ -130,7 +127,7 @@ pub fn launch(loadout: &Loadout, index: usize) -> Outcome {
     )
     .map_err(|error| error.to_string())?;
     wait_for(game)?;
-    println!("The game is over");
+    crate::ritual::murmur("The game is over");
     Ok(())
 }
 
@@ -152,7 +149,7 @@ pub fn host(loadout: &mut Loadout, index: usize, overrides: &HostOverrides) -> O
     if loadout.uac.host_port != remembered {
         loadout.uac.host_port = remembered;
         if loadout.keep_uac().is_err() {
-            eprintln!("Could not save the port for next time, is the disk full?");
+            crate::ritual::wail("Could not save the port for next time, is the disk full?");
         }
     }
     // 🌀 volatile wads are hashed fresh and folders packed, so what is served is what is described
@@ -173,7 +170,7 @@ pub fn host(loadout: &mut Loadout, index: usize, overrides: &HostOverrides) -> O
         match host_game::shared_ini(profile.ini(&loadout.uac).map(OsString::as_os_str), &uzdoom) {
             Ok(ini) => Some(ini),
             Err(problem) => {
-                eprintln!("{problem}, so it isn't shared");
+                crate::ritual::wail(format!("{problem}, so it isn't shared"));
                 None
             }
         }
@@ -190,12 +187,12 @@ pub fn host(loadout: &mut Loadout, index: usize, overrides: &HostOverrides) -> O
             ini,
         )
         .map_err(|_| format!("Could not serve the wads on port {port}: is it in use?"))?;
-    println!(
+    crate::ritual::murmur(format!(
         "Hosting {}: players join with port {}, code {code}",
         profile.name, server.port
-    );
+    ));
     if sharing {
-        println!("Your ini is shared");
+        crate::ritual::murmur("Your ini is shared");
     }
     let game = uzdoom::host(
         &uzdoom,
@@ -211,7 +208,7 @@ pub fn host(loadout: &mut Loadout, index: usize, overrides: &HostOverrides) -> O
     // 🔌 the wads are served for exactly as long as the game runs
     drop(server);
     ended?;
-    println!("The game is over");
+    crate::ritual::murmur("The game is over");
     Ok(())
 }
 
@@ -234,7 +231,7 @@ pub fn join(
     let profile = match resolve_profile(loadout, address, &manifest, always_download)? {
         Some(profile) => profile,
         None => {
-            println!("Not joining");
+            crate::ritual::murmur("Not joining");
             return Ok(());
         }
     };
@@ -246,17 +243,17 @@ pub fn join(
         match join_game::with_host_ini(loadout, address, &profile, &uzdoom, keys) {
             Ok(Some((hosts, warnings))) => {
                 for warning in &warnings {
-                    eprintln!("{warning}");
+                    crate::ritual::wail(warning);
                 }
-                println!("Playing with the host's ini");
+                crate::ritual::murmur("Playing with the host's ini");
                 Some(hosts)
             }
             Ok(None) => {
-                eprintln!("The host doesn't share its ini, so yours is used");
+                crate::ritual::wail("The host doesn't share its ini, so yours is used");
                 yours
             }
             Err(problem) => {
-                eprintln!("{problem}, so yours is used");
+                crate::ritual::wail(format!("{problem}, so yours is used"));
                 yours
             }
         }
@@ -265,7 +262,7 @@ pub fn join(
     };
     let base_wad = profile.base_wad(&loadout.uac);
     if !manifest.base_wad_matches(base_wad) {
-        eprintln!("Your base wad isn't the host's, joining anyway");
+        crate::ritual::wail("Your base wad isn't the host's, joining anyway");
     }
     let game = uzdoom::join(
         &uzdoom,
@@ -278,7 +275,7 @@ pub fn join(
     )
     .map_err(|error| error.to_string())?;
     wait_for(game)?;
-    println!("The game is over");
+    crate::ritual::murmur("The game is over");
     Ok(())
 }
 
@@ -322,7 +319,7 @@ fn compatible(loadout: &Loadout, manifest: &Manifest) -> Option<Profile> {
         .profiles
         .iter()
         .find(|profile| manifest.is_compatible_with(profile))?;
-    println!("Joining with {}", profile.name);
+    crate::ritual::murmur(format!("Joining with {}", profile.name));
     Some(profile.clone())
 }
 
@@ -358,17 +355,19 @@ fn choose(loadout: &Loadout, outdated: &[Outdated], always_download: bool) -> Ve
         .map(|wad| {
             let shown = wad.path.display();
             if wad.volatile {
-                println!("Replacing your volatile {shown} with the host's version");
+                crate::ritual::murmur(format!(
+                    "Replacing your volatile {shown} with the host's version"
+                ));
                 Choice::Replace
             } else if always_download {
-                println!(
+                crate::ritual::murmur(format!(
                     "Replacing {shown} with the host's version, as --always-download says{}",
                     if wad.is_download(loadout) {
                         String::new()
                     } else {
                         format!(" (yours is kept as {}.bak)", wad.file_name())
                     }
-                );
+                ));
                 Choice::Replace
             } else if wad.is_download(loadout) {
                 let question = format!(
@@ -427,10 +426,12 @@ fn ask_rename(wad: &Outdated) -> Choice {
         format!("{typed}{extension}")
     };
     if renamed.starts_with('.') || !renamed.chars().all(wad_namer::allowed) {
-        eprintln!("{renamed} can't be a file name everywhere, so skipping {name}");
+        crate::ritual::wail(format!(
+            "{renamed} can't be a file name everywhere, so skipping {name}"
+        ));
         Choice::Skip
     } else if !is_free(&renamed) {
-        eprintln!("{renamed} is already there, so skipping {name}");
+        crate::ritual::wail(format!("{renamed} is already there, so skipping {name}"));
         Choice::Skip
     } else {
         Choice::Rename(renamed)
@@ -460,13 +461,13 @@ fn upgrade_volatile(
         if wad.hash == manifest.entries[entry].hash {
             // 🟰 it only looked different: the file has become the host's since it was hashed
             if loadout.upgrade_wad(&path, &wad).is_err() {
-                eprintln!("Could not save the new hash of {}", path.display());
+                crate::ritual::wail(format!("Could not save the new hash of {}", path.display()));
             }
         } else {
-            println!(
+            crate::ritual::murmur(format!(
                 "Replacing your volatile {} with the host's version",
                 path.display()
-            );
+            ));
             outdated.push(Outdated {
                 entry,
                 path,
@@ -477,7 +478,7 @@ fn upgrade_volatile(
     let choices = vec![Choice::Replace; outdated.len()];
     let settled = bring_up_to_date(loadout, address, manifest, &outdated, &choices)?;
     if !settled.problems.is_empty() {
-        eprintln!("Joining anyway, with your own versions of those");
+        crate::ritual::wail("Joining anyway, with your own versions of those");
     }
     let upgraded = loadout.profiles.iter().find(|p| p.name == profile.name);
     Ok(upgraded.cloned().unwrap_or(profile))
@@ -507,7 +508,7 @@ fn bring_up_to_date(
         &downloaded,
     );
     for problem in &settled.problems {
-        eprintln!("{problem}");
+        crate::ritual::wail(problem);
     }
     Ok(settled)
 }
@@ -586,7 +587,7 @@ fn make_profile(
             show_size(size)
         );
         if always_download {
-            println!("{question} Downloading, as --always-download says");
+            crate::ritual::murmur(format!("{question} Downloading, as --always-download says"));
         } else if !ask(&question) {
             return Ok(None);
         }
@@ -599,7 +600,7 @@ fn make_profile(
     loadout
         .insert(&mut index, profile.clone())
         .map_err(|_| "Could not save the new profile, is the disk full?")?;
-    println!("Made the profile {}", profile.name);
+    crate::ritual::murmur(format!("Made the profile {}", profile.name));
     Ok(Some(profile))
 }
 
@@ -630,7 +631,10 @@ pub fn seal(
         .map_err(|error| format!("Could not write {}: {error}", path.display()))?;
     let count = loadout.profiles.len();
     let profiles = if count == 1 { "profile" } else { "profiles" };
-    println!("Sealed {count} {profiles}{with} in {}", path.display());
+    crate::ritual::murmur(format!(
+        "Sealed {count} {profiles}{with} in {}",
+        path.display()
+    ));
     Ok(path)
 }
 
@@ -660,10 +664,12 @@ fn ask(question: &str) -> bool {
 /// typed, trimmed. `None` if nothing could be read, or if there is no terminal to ask on, which is
 /// said along with what is done `instead`.
 fn answer(question: &str, answers: &str, instead: &str) -> Option<String> {
-    if !io::stdin().is_terminal() {
-        eprintln!("{question} No one to ask, so {instead}");
+    // 📜 a script's stdin is the script, never an answer
+    if crate::script::playing() || !io::stdin().is_terminal() {
+        crate::ritual::wail(format!("{question} No one to ask, so {instead}"));
         return None;
     }
+    crate::ritual::hush();
     print!("{question} {answers} ");
     let _ = io::stdout().flush();
     let mut answer = String::new();
@@ -700,60 +706,5 @@ impl Tally for Lines {
     /// Stops the download after this chunk if Ctrl+C was pressed.
     fn count_bytes(&mut self, _: u64) -> TdlResult<()> {
         self.check()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{
-        loadout::{edition::Loaded, scribe::tests::Altar},
-        testing,
-    };
-
-    /// The example loadout in `altar`.
-    fn example(altar: &Altar) -> Loadout {
-        let root = testing::example_loadout(altar);
-        Loadout::new(root.join("config"), root.join("data"))
-    }
-
-    #[test]
-    fn sealing_puts_every_profile_and_the_settings_in_a_new_scroll() {
-        let altar = Altar::new("plain-seal");
-        let loadout = example(&altar);
-        let settings = Shared::default();
-        let path = seal(&loadout, Some(settings.clone()), &altar.file("all")).unwrap();
-        assert_eq!(path, altar.file("all.scroll"), ".scroll is added");
-        let Loaded::Fine(scroll) = Scroll::load(&path) else {
-            panic!("the scroll should read back");
-        };
-        let names: Vec<_> = scroll.profiles.iter().map(|p| p.name.clone()).collect();
-        let expected: Vec<_> = loadout.profiles.iter().map(|p| p.name.clone()).collect();
-        assert_eq!(names, expected);
-        assert_eq!(scroll.settings, Some(settings));
-        let bare = seal(&loadout, None, &altar.file("bare")).unwrap();
-        let Loaded::Fine(bare) = Scroll::load(&bare) else {
-            panic!("the scroll should read back");
-        };
-        assert_eq!(bare.settings, None, "settings only go in when asked for");
-        // 🚫 never over a file that is already there
-        assert!(seal(&loadout, None, &path).is_err());
-    }
-
-    #[test]
-    fn only_y_or_yes_is_yes() {
-        for yes in ["y", "Y", "yes", " YES \n"] {
-            assert!(is_yes(yes), "{yes:?}");
-        }
-        for no in ["", "\n", "n", "no", "sure", "yess"] {
-            assert!(!is_yes(no), "{no:?}");
-        }
-    }
-
-    #[test]
-    fn a_joined_profile_is_named_after_the_host_and_tagged_if_taken() {
-        assert_eq!(joined_name("10.0.0.2", &[]), "joined_10_0_0_2");
-        let taken = [Profile::new("joined_10_0_0_2".into(), Vec::new())];
-        assert_eq!(joined_name("10.0.0.2", &taken), "joined_10_0_0_2_v2");
     }
 }

@@ -1,8 +1,5 @@
-# The README's screenshots, taken from the example profiles (the same ones the tests use).
-# Run from the project root, after `cargo build --release`:
-#
-#   TDL_SCREENSHOT_DIR=/tmp/tdl-shots cargo test screenshot_loadout -- --ignored
-#   vhs screenshots.tape
+# The README's screenshots, taken from the example profiles that screenshots.txt lays out.
+# Run by demo_screenshot.sh, which lays them out in /tmp/tdl-shots first.
 #
 # vhs saves a screenshot a moment after asking for it, so each one is followed by a second's wait,
 # or the next key gets there first and the picture shows the screen after it (or halfway to it).

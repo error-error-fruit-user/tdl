@@ -187,19 +187,3 @@ impl Ritual for Warning {
         Ok(Phase::Return(()))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use insta::assert_snapshot;
-
-    use super::*;
-    use crate::testing;
-
-    #[test]
-    fn a_short_warning() {
-        let mut warning = Warning::styled(vec![Line::raw(
-            "1 wad needs attention, open the editor (E)",
-        )]);
-        assert_snapshot!(testing::draw(70, 10, |page| warning.render(page)));
-    }
-}

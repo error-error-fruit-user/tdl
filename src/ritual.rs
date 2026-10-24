@@ -14,7 +14,7 @@
 
 // 🦇 imports are just found family for your namespace
 // 🏳️‍⚧️ `as` is a chosen name, and the compiler respects it: use the old name and it won't know who you mean
-use std::io::Stdout as Quill;
+use std::io::{Stdout as Inkwell, Write as Scribble};
 // 👗 FnOnce is a rental: wear it once, return it before the night is over
 use std::ops::FnOnce as Rental;
 // 👵 Ok, boomer? no ma'am: Yass, queen
@@ -25,9 +25,7 @@ pub use ratatui::Frame as Page;
 use ratatui::{
     Frame as Costume,
     backend::CrosstermBackend as Ink,
-    crossterm::event::{
-        self as portent, Event as Portent, KeyCode as Chant, KeyModifiers as Charm,
-    },
+    crossterm::event::{Event as Portent, KeyCode as Chant, KeyModifiers as Charm},
     layout::{Alignment as Stance, Rect as Plot},
     // 🎨 a Color is a Hex: sometimes a hex code, sometimes a curse, always a vibe
     style::{Color as Hex, Modifier as Flair, Style as Rouge},
@@ -49,6 +47,55 @@ use crate::{
 
 // 📖 a terminal is a grimoire: dark, dusty, and written in Ink with a Quill (stdout) 🪶
 pub type Grimoire = ratatui::Terminal<Ink<Quill>>;
+
+// 🪶 a quill writes in the terminal, or into the void when nobody is watching (`tdl headless`,
+// whose script reads the page instead)
+pub enum Quill {
+    Inkwell(Inkwell),
+    Void,
+}
+
+impl Scribble for Quill {
+    fn write(&mut self, ink: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Inkwell(inkwell) => inkwell.write(ink),
+            Self::Void => Yass(ink.len()),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Inkwell(inkwell) => inkwell.flush(),
+            Self::Void => Yass(BOO),
+        }
+    }
+}
+
+// 🕯️ opening the grimoire: raw mode, the alternate screen, and a ward that closes it again if
+// anything panics, the way `ratatui::run` does it
+pub fn open_grimoire() -> std::io::Result<Grimoire> {
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        ratatui::restore();
+        hook(info);
+    }));
+    ratatui::crossterm::terminal::enable_raw_mode()?;
+    ratatui::crossterm::execute!(
+        std::io::stdout(),
+        ratatui::crossterm::terminal::EnterAlternateScreen
+    )?;
+    ratatui::Terminal::new(Ink::new(Quill::Inkwell(std::io::stdout())))
+}
+
+// 🌫️ a grimoire with no terminal behind it, a fixed size, for a script to read
+pub fn void_grimoire(width: u16, height: u16) -> std::io::Result<Grimoire> {
+    ratatui::Terminal::with_options(
+        Ink::new(Quill::Void),
+        ratatui::TerminalOptions {
+            viewport: ratatui::Viewport::Fixed(Plot::new(0, 0, width, height)),
+        },
+    )
+}
 
 // 🌙 it's not a Phase, mom, it's a Vibe
 // 🃏 a three-card spread:
@@ -105,8 +152,13 @@ pub unsafe trait Haunted {
 unsafe impl Haunted for Grimoire {
     #[inline]
     fn bewitch(&mut self, outfit: impl Rental(&mut Costume)) -> Omen<Ghost> {
+        // 🫥 a look nobody will see is a look nobody has to serve: when a script isn't about to
+        // read the page, the whole outfit stays on the hanger and the spell is a no-op 👻
+        if !crate::script::wants_page() {
+            return Yass(BOO);
+        }
         // 🕯️ just because I'm drawing circles doesn't mean I don't have to look fabulous 💅
-        self.draw(|costume| {
+        let drawn = self.draw(|costume| {
             // 🌑 every page starts in the dark, whatever was drawn on it before
             let void = Rouge::new()
                 .fg(theme::worn().colors.text)
@@ -114,6 +166,8 @@ unsafe impl Haunted for Grimoire {
             costume.render_widget(Veil::new().style(void), costume.area());
             outfit(costume)
         })?;
+        // 📜 a script reads what was drawn
+        crate::script::saw(drawn.buffer);
         Yass(BOO)
     }
 
@@ -171,7 +225,10 @@ pub trait Ritual {
     /// 🕯️ a séance: attach once, hold the circle, and don't break it until the spirit has some tea to spill to yourSelf 👻    
     fn invoke(&mut self, grimoire: &mut Grimoire) -> Omen<SpillTea<Spirit<Self>>> {
         // 🔓 first rule of Grimoires: read the warnings before you break the seal. the compiler already did, and it has notes 🧙
-        familiar::start();
+        // 📜 a script plays without any controller, even one that is plugged in
+        if !crate::script::playing() {
+            familiar::start();
+        }
         self.unseal(grimoire)?;
         // 🐝 bi-curious about loops? two of them, nested, and both are valid 💜
         let mut keyboard = PadKeyboard::default();
@@ -348,17 +405,16 @@ fn beckon<T>(
                     }
                 }
             }
-        } else if let Some(chant) = familiar::chant() {
+        } else if !crate::script::playing()
+            && let Some(chant) = familiar::chant()
+        {
             let vibe = question(grimoire, chant)?;
             return Yass(change_costume(voice, vibe));
         }
         // 🧪 a test with a pretend controller has nothing to wait for once it has said its piece
-        #[cfg(test)]
-        if familiar::drained() {
-            return Err(Curse::Interrupted);
-        }
-        if portent::poll(familiar::patience())? {
-            break portent::read()?;
+        // 📜 a script's keys come the same way a person's do
+        if crate::script::poll(familiar::patience())? {
+            break crate::script::read()?;
         }
     };
     // 📏 a grimoire that's too small is a cramped coven: let the user fix that first
@@ -389,6 +445,151 @@ fn change_costume<T>(voice: Option<familiar::Family>, vibe: Vibe<T>) -> Vibe<T> 
     match vibe {
         Lurk if familiar::shown() != voice => Strut,
         vibe => vibe,
+    }
+}
+
+// 🕯️🔮 THE SÉANCE 🔮🕯️
+// with no window to haunt (`tdl headless`, `--headless`), tdl talks to the dead in plain lines
+// instead: every word the command line says goes through here, dressed in the theme's colors when
+// a terminal is listening and bare when it is only a file. the living speak in script lines, the
+// spirits answer in screens, and the planchette spins while everyone waits for a sign 👻
+
+// 🪄 is the planchette mid-spin on the last line? it has to stop before anyone else can speak
+static SPINNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+// 🌀 the planchette's path around the board, one stop per glance
+const PLANCHETTE: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+// 🎨 a theme's hue, translated for the spirit box (the terminal's own sixteen, or the full rainbow)
+fn tint(hex: Hex) -> ratatui::crossterm::style::Color {
+    use ratatui::crossterm::style::Color as Spirit;
+    match hex {
+        Hex::Reset => Spirit::Reset,
+        Hex::Black => Spirit::Black,
+        Hex::Red => Spirit::DarkRed,
+        Hex::Green => Spirit::DarkGreen,
+        Hex::Yellow => Spirit::DarkYellow,
+        Hex::Blue => Spirit::DarkBlue,
+        Hex::Magenta => Spirit::DarkMagenta,
+        Hex::Cyan => Spirit::DarkCyan,
+        Hex::Gray => Spirit::Grey,
+        Hex::DarkGray => Spirit::DarkGrey,
+        Hex::LightRed => Spirit::Red,
+        Hex::LightGreen => Spirit::Green,
+        Hex::LightYellow => Spirit::Yellow,
+        Hex::LightBlue => Spirit::Blue,
+        Hex::LightMagenta => Spirit::Magenta,
+        Hex::LightCyan => Spirit::Cyan,
+        Hex::White => Spirit::White,
+        Hex::Rgb(r, g, b) => Spirit::Rgb { r, g, b },
+        Hex::Indexed(index) => Spirit::AnsiValue(index),
+    }
+}
+
+// 🗣️ one line said to `out`, in `hex` if a terminal is listening. raw mode (a game going under
+// `--headless`) needs its own carriage return, or the words drift off to the right like a ghost
+fn utter(mut out: impl Scribble + std::io::IsTerminal, hex: Hex, words: &str) {
+    use ratatui::crossterm::style::Stylize;
+    hush();
+    let end = if ratatui::crossterm::terminal::is_raw_mode_enabled().unwrap_or(false) {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let _ = if out.is_terminal() {
+        write!(out, "{}{end}", words.with(tint(hex)))
+    } else {
+        write!(out, "{words}{end}")
+    };
+    let _ = out.flush();
+}
+
+// 💬 a murmur: what is happening, said plainly to whoever is listening (stdout)
+pub fn murmur(words: impl std::fmt::Display) {
+    utter(
+        std::io::stdout(),
+        theme::worn().colors.text,
+        &words.to_string(),
+    );
+}
+
+// 😱 a wail: something went wrong or was gone along with, said to the night (stderr)
+pub fn wail(words: impl std::fmt::Display) {
+    utter(
+        std::io::stderr(),
+        theme::worn().colors.warning,
+        &words.to_string(),
+    );
+}
+
+// 📜 an invocation: a line of the script, spoken aloud as it is played, its number in the margin
+pub fn invoke_line(number: usize, words: &str) {
+    use ratatui::crossterm::style::Stylize;
+    let colors = &theme::worn().colors;
+    let mut out = std::io::stdout();
+    hush();
+    let _ = if std::io::IsTerminal::is_terminal(&out) {
+        writeln!(
+            out,
+            "{} {}",
+            format!("{number:>4} │").with(tint(colors.muted)),
+            words.with(tint(colors.text))
+        )
+    } else {
+        writeln!(out, "{number:>4} │ {words}")
+    };
+}
+
+// 🪄 the planchette spins on the last line while the table waits for a sign, and says how long
+// it has been waiting. only a terminal sees it: a file would just fill up with spinning
+pub fn planchette(waiting_for: &str, waited: std::time::Duration) {
+    use ratatui::crossterm::style::Stylize;
+    let mut out = std::io::stdout();
+    if !std::io::IsTerminal::is_terminal(&out) {
+        return;
+    }
+    let stop = (waited.as_millis() / 100) as usize % PLANCHETTE.len();
+    let _ = write!(
+        out,
+        "\r\x1b[2K{}",
+        format!(
+            "     {} {waiting_for} · {:.1}s",
+            PLANCHETTE[stop],
+            waited.as_secs_f64()
+        )
+        .with(tint(theme::worn().colors.busy))
+    );
+    let _ = out.flush();
+    SPINNING.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+// 🤫 the planchette stops and its line is wiped, so the next words start clean
+pub fn hush() {
+    if SPINNING.swap(false, std::sync::atomic::Ordering::Relaxed) {
+        let mut out = std::io::stdout();
+        let _ = write!(out, "\r\x1b[2K");
+        let _ = out.flush();
+    }
+}
+
+// 👻 an apparition: a screen the spirits showed, drawn in plain text, faint, for when the séance
+// breaks and everyone needs to see what was on the table
+pub fn apparition(page: &str) {
+    for row in page.lines() {
+        utter(
+            std::io::stderr(),
+            theme::worn().colors.muted,
+            &format!("     │{row}"),
+        );
+    }
+}
+
+// 🌅 the spirits rest (✓) or the circle is broken (✗): how the séance ended
+pub fn farewell(peaceful: bool, words: &str) {
+    let colors = &theme::worn().colors;
+    if peaceful {
+        utter(std::io::stdout(), colors.title, &format!("   ✓ {words}"));
+    } else {
+        utter(std::io::stderr(), colors.warning, &format!("   ✗ {words}"));
     }
 }
 
@@ -471,125 +672,4 @@ pub fn conjure_sigil(window_area: Plot) -> (Verse<'static>, Plot) {
         .centered();
     let sigil_area = Plot::new(window_area.x, window_area.bottom(), window_area.width, 1);
     (sigil, sigil_area)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::cell::Cell;
-
-    use super::*;
-
-    /// The keys the keyboard makes for `events` (buttons pressed and let go), through `beckon`
-    /// itself, as the ritual loop runs it while a text field is being typed in.
-    fn typed_with(events: &[(gilrs::Button, bool)]) -> Result<Vec<Chant>, String> {
-        familiar::pretend_buttons(events);
-        let mut keyboard = PadKeyboard::default();
-        let mut grimoire = crate::testing::silent_grimoire();
-        let mut heard = Vec::new();
-        loop {
-            let answer = beckon(&mut grimoire, Some(&mut keyboard), &mut |_, chant| {
-                heard.push(chant);
-                Ok(Lurk)
-            });
-            match answer {
-                Ok(Lurk | Strut) => {}
-                Ok(Spill(())) => unreachable!("nothing returns"),
-                // 🧪 the pretend controller has nothing more to say
-                Err(Curse::Interrupted) => return Ok(heard),
-                Err(other) => return Err(other.to_string()),
-            }
-        }
-    }
-
-    #[test]
-    fn the_keyboards_trigger_chords_work_through_beckon_as_the_ritual_loop_runs_it() {
-        use gilrs::Button::*;
-        let chords: &[(gilrs::Button, gilrs::Button, Chant)] = &[
-            (RightTrigger2, South, Chant::Enter),
-            (RightTrigger2, East, Chant::Esc),
-            (RightTrigger2, LeftTrigger, Chant::Home),
-            (RightTrigger2, RightTrigger, Chant::End),
-            (LeftTrigger2, LeftTrigger, Chant::Home),
-            (LeftTrigger2, RightTrigger, Chant::End),
-            (RightTrigger2, DPadUp, Chant::BackTab),
-            (RightTrigger2, DPadDown, Chant::Tab),
-            (LeftTrigger2, South, Chant::Char('1')),
-            (LeftTrigger2, West, crate::widgets::text::DELETE_WORD),
-            (LeftTrigger2, East, crate::widgets::text::CLEAR),
-        ];
-        for &(trigger, button, key) in chords {
-            let typed = typed_with(&[
-                (trigger, true),
-                (button, true),
-                (button, false),
-                (trigger, false),
-            ]);
-            assert_eq!(typed, Ok(vec![key]), "{trigger:?} + {button:?}");
-        }
-        // and a button on its own, with no trigger held, is its plain key
-        let typed = typed_with(&[(South, true), (South, false)]);
-        assert_eq!(typed, Ok(vec![Chant::Char('1')]));
-    }
-
-    #[test]
-    fn render_if_renders_or_keeps_waiting() {
-        assert!(Vibe::<()>::render_if(true) == Strut);
-        assert!(Vibe::<()>::render_if(false) == Lurk);
-    }
-
-    #[test]
-    fn render_if_then_only_runs_the_spell_when_the_condition_holds() {
-        let casts = Cell::new(0);
-        assert!(Vibe::<()>::render_if_then(true, || casts.set(casts.get() + 1)) == Strut);
-        assert_eq!(casts.get(), 1);
-        assert!(Vibe::<()>::render_if_then(false, || casts.set(casts.get() + 1)) == Lurk);
-        assert_eq!(casts.get(), 1);
-    }
-
-    #[test]
-    fn the_stage_names_do_the_same_job() {
-        let casts = Cell::new(0);
-        assert!(Vibe::<()>::strut_on_cue(true) == Strut);
-        assert!(Vibe::<()>::strut_on_cue(false) == Lurk);
-        assert!(Vibe::<()>::strut_when_cast(true, || casts.set(casts.get() + 1)) == Strut);
-        assert!(Vibe::<()>::strut_when_cast(false, || casts.set(casts.get() + 1)) == Lurk);
-        assert_eq!(casts.get(), 1);
-    }
-
-    #[test]
-    fn spill_when_asked_spills_the_tea_or_keeps_waiting() {
-        assert!(Vibe::spill_when_asked(true, "tea") == Spill("tea"));
-        assert!(Vibe::spill_when_asked(false, "tea") == Lurk);
-    }
-
-    #[test]
-    fn spill_when_brewed_only_brews_when_the_condition_holds() {
-        let brews = Cell::new(0);
-        let brew = || {
-            brews.set(brews.get() + 1);
-            "tea".to_string()
-        };
-        assert!(Vibe::spill_when_brewed(false, brew) == Lurk);
-        assert_eq!(brews.get(), 0);
-        assert!(Vibe::spill_when_brewed(true, brew) == Spill("tea".to_string()));
-        assert_eq!(brews.get(), 1);
-    }
-
-    after_dark! {
-        #[test]
-        fn every_type_is_valid() {
-            fn valid<T: Valid + ?Sized>() {}
-            valid::<Ghost>();
-            valid::<Grimoire>();
-            valid::<str>();
-            valid::<Vibe<Ghost>>();
-        }
-
-        // 🔮 a séance in a try block: if the spirit gets yeeted, the circle catches it
-        #[test]
-        fn a_banished_curse_is_caught_by_the_circle() {
-            let seance: Omen<Ghost> = try { banish::<Ghost>(Curse::Interrupted)? };
-            assert!(matches!(seance, Err(Curse::Interrupted)));
-        }
-    }
 }

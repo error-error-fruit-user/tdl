@@ -1,0 +1,15 @@
+# A profile made in the editor and launched from the launcher, with UZDoom's log window open
+# while it runs.
+wait-for "[ launcher ]"
+press a
+type e1
+press enter
+press home
+expect e1
+press enter
+wait-for "UZDoom is running"
+press L
+wait-for "UZDoom's log"
+wait-for "fake uzdoom args"
+press esc
+wait-for "[ launcher ]" 5s

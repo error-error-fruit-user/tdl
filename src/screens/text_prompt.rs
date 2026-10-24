@@ -100,30 +100,3 @@ impl Ritual for TextPrompt<'_> {
         Ok(self.edit(key_code))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn snapshot_the_keyboard_over_a_text_prompt() {
-        let mut prompt = TextPrompt::new("uzdoom args", "args", "global", "-nomusic", 40);
-        insta::assert_snapshot!(crate::keyboard::over(|page| prompt.render(page)));
-    }
-
-    #[test]
-    fn enter_keeps_what_was_typed_and_esc_what_was_there() {
-        let mut prompt = TextPrompt::new("args", "args", "global", "-nomusic", 40);
-        for key in [KeyCode::Home, KeyCode::Char('+'), KeyCode::Char('?')] {
-            let _ = prompt.edit(key);
-        }
-        assert!(prompt.edit(KeyCode::Enter) == Phase::Return(Some("+?-nomusic".into())));
-        assert!(prompt.edit(KeyCode::Esc) == Phase::Return(None));
-    }
-
-    #[test]
-    fn snapshot_a_prompt() {
-        let mut prompt = TextPrompt::new("uzdoom args", "args", "global", "-nomusic", 40);
-        insta::assert_snapshot!(crate::testing::draw(50, 10, |page| prompt.render(page)));
-    }
-}

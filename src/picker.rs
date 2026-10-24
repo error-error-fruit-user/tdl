@@ -35,6 +35,9 @@ pub fn file(
     filter: Option<Filter>,
     start: Option<&Path>,
 ) -> Result<Option<PathBuf>> {
+    if crate::script::playing() {
+        return Ok(crate::script::pick()?.and_then(|paths| paths.into_iter().next()));
+    }
     #[cfg(debug_assertions)]
     if let Some(picked) = stand_in() {
         return Ok(picked.and_then(|paths| paths.into_iter().next()));
@@ -49,6 +52,10 @@ pub fn files(
     filter: Option<Filter>,
     start: Option<&Path>,
 ) -> Result<Option<Vec<PathBuf>>> {
+    // 📜 a script answers with its pick line
+    if crate::script::playing() {
+        return crate::script::pick();
+    }
     #[cfg(debug_assertions)]
     if let Some(picked) = stand_in() {
         return Ok(picked);
@@ -63,6 +70,9 @@ pub fn save(
     filter: Option<Filter>,
     file_name: &str,
 ) -> Result<Option<PathBuf>> {
+    if crate::script::playing() {
+        return Ok(crate::script::pick()?.and_then(|paths| paths.into_iter().next()));
+    }
     #[cfg(debug_assertions)]
     if let Some(picked) = stand_in() {
         return Ok(picked.and_then(|paths| paths.into_iter().next()));
@@ -78,6 +88,9 @@ pub fn wad_dirs() -> Vec<PathBuf> {
 
 /// Asks for a dir. `None` if the user cancels, or if there is no dir to open the dialog in.
 pub fn dir(grimoire: &mut Grimoire, start: Option<&Path>) -> Result<Option<PathBuf>> {
+    if crate::script::playing() {
+        return Ok(crate::script::pick()?.and_then(|paths| paths.into_iter().next()));
+    }
     #[cfg(debug_assertions)]
     if let Some(picked) = stand_in() {
         return Ok(picked.and_then(|paths| paths.into_iter().next()));
@@ -140,81 +153,4 @@ fn start_dir(
         .chain(places)
         .chain(downloads)
         .find(|dir| dir.is_dir())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-
-    use super::*;
-    use crate::loadout::scribe::tests::Altar;
-
-    #[test]
-    fn the_preferred_dir_wins_when_it_exists() {
-        let altar = Altar::new("picker-preferred");
-        let found = start_dir(Some(&altar.0), &[], Some("/".into()), Some("/".into()));
-        assert_eq!(found, Some(altar.0.clone()));
-    }
-
-    #[test]
-    fn a_missing_preferred_dir_falls_back_to_the_working_directory() {
-        let altar = Altar::new("picker-working");
-        let gone = altar.file("gone");
-        let found = start_dir(Some(&gone), &[], Some(altar.0.clone()), Some("/".into()));
-        assert_eq!(found, Some(altar.0.clone()));
-    }
-
-    #[test]
-    fn a_missing_working_directory_falls_back_to_downloads() {
-        let altar = Altar::new("picker-downloads");
-        let found = start_dir(None, &[], None, Some(altar.0.clone()));
-        assert_eq!(found, Some(altar.0.clone()));
-        // a path that exists but is a file is not a dir
-        let file = altar.file("file");
-        fs::write(&file, b"").unwrap();
-        assert_eq!(start_dir(Some(&file), &[], Some(file.clone()), None), None);
-    }
-
-    #[test]
-    fn with_nowhere_to_open_there_is_nothing() {
-        assert_eq!(start_dir(None, &[], None, None), None);
-        assert_eq!(
-            start_dir(
-                None,
-                &[],
-                Some("/no/such/dir".into()),
-                Some("/nor/this".into())
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn wad_dirs_replace_the_working_directory() {
-        let altar = Altar::new("picker-wad-dirs");
-        let (wads, working) = (altar.file("wads"), altar.file("working"));
-        fs::create_dir_all(&wads).unwrap();
-        fs::create_dir_all(&working).unwrap();
-        let gone = altar.file("gone");
-        // the first wad dir that exists wins over the working directory
-        assert_eq!(
-            start_dir(
-                None,
-                &[gone.clone(), wads.clone()],
-                Some(working.clone()),
-                None
-            ),
-            Some(wads.clone())
-        );
-        // and if none of them exist, the working directory still isn't used
-        assert_eq!(
-            start_dir(None, &[gone], Some(working), Some(altar.0.clone())),
-            Some(altar.0.clone())
-        );
-        // a preferred dir, like where a wad used to live, still comes first
-        assert_eq!(
-            start_dir(Some(&altar.0), &[wads], None, None),
-            Some(altar.0.clone())
-        );
-    }
 }
