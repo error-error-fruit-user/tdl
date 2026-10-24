@@ -1,6 +1,7 @@
-//! What the terminal shows while UZDoom runs, so a slow start never looks like tdl has frozen: a
-//! spinner and a clock that keep moving, and the last thing UZDoom printed, which shows its
-//! startup getting along.
+//! What the terminal shows while UZDoom runs (launching, hosting or joining), so a slow start
+//! never looks like tdl has frozen: a spinner and a clock that keep moving, and the last thing
+//! UZDoom printed, which shows its startup getting along. `L` opens UZDoom's log over it: all it
+//! has printed, kept up to date as it prints more.
 
 use std::time::{Duration, Instant};
 
@@ -26,6 +27,9 @@ const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 /// How wide the window is, so it doesn't change size as UZDoom's lines come and go.
 const WIDTH: u16 = 50;
 const HINT: &str = "quit UZDoom to come back · Ctrl+C stops it";
+const LOG_HINT: &str = "L shows UZDoom's log";
+/// The log window's own hint.
+const LOG_KEYS: &str = "↑↓ PgUp PgDn Home End · L or Esc closes";
 
 /// Waits for `game` to quit, redrawing the window as it goes. `details` are extra lines to keep
 /// on screen, such as the join code a host has to pass on. Keys pressed meanwhile are thrown away,
@@ -39,6 +43,8 @@ pub fn summon(
 ) -> Result<()> {
     let started = Instant::now();
     let seed = quips::seed();
+    // 📜 the log window while it is open
+    let mut log: Option<Log> = None;
     loop {
         if game.has_quit()? {
             return game.wait();
@@ -51,16 +57,113 @@ pub fn summon(
             seed,
             show_quip: quips::shown(),
         };
-        grimoire.bewitch(|page| waiting.draw(page))?;
-        if event::poll(FRAME)?
-            && let Event::Key(key) = event::read()?
-            && key.is_press()
-            && key.code == KeyCode::Char('c')
-            && key.modifiers.contains(KeyModifiers::CONTROL)
-        {
+        let lines = if log.is_some() { game.lines() } else { vec![] };
+        grimoire.bewitch(|page| {
+            waiting.draw(page);
+            if let Some(log) = &mut log {
+                log.draw(page, &lines);
+            }
+        })?;
+        if !event::poll(FRAME)? {
+            continue;
+        }
+        let Event::Key(key) = event::read()? else {
+            continue;
+        };
+        if !key.is_press() {
+            continue;
+        }
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
             game.stop()?;
             return Err(Error::Interrupted);
         }
+        match (&mut log, key.code) {
+            (None, KeyCode::Char('l' | 'L')) => log = Some(Log::default()),
+            (Some(_), KeyCode::Char('l' | 'L') | KeyCode::Esc) => log = None,
+            (Some(log), code) => log.scroll(code),
+            _ => {}
+        }
+    }
+}
+
+/// UZDoom's log window: how far back from its latest line it is scrolled (0 follows the lines
+/// as they come), and how many lines it showed last, for a page's worth of scrolling.
+#[derive(Default)]
+struct Log {
+    back: usize,
+    rows: usize,
+}
+
+impl Log {
+    fn scroll(&mut self, code: KeyCode) {
+        let page = self.rows.max(1);
+        self.back = match code {
+            KeyCode::Up | KeyCode::Char('k') => self.back + 1,
+            KeyCode::Down | KeyCode::Char('j') => self.back.saturating_sub(1),
+            KeyCode::PageUp => self.back + page,
+            KeyCode::PageDown => self.back.saturating_sub(page),
+            KeyCode::Home | KeyCode::Char('g') => usize::MAX,
+            KeyCode::End | KeyCode::Char('G') => 0,
+            _ => self.back,
+        };
+    }
+
+    /// The window over most of the screen: the lines that fit, ending `back` from the latest, and
+    /// the hint under them.
+    fn draw(&mut self, page: &mut Page, lines: &[String]) {
+        let area = page.area();
+        let (window, window_area, ..) = ritual::conjure_window(
+            "UZDoom's log",
+            area.width,
+            area.height,
+            theme::worn().colors.busy,
+            area,
+        );
+        let inner = window.inner(window_area);
+        page.render_widget(ratatui::widgets::Clear, window_area);
+        page.render_widget(window, window_area);
+        // 🧾 a blank row and the hint go under the lines
+        self.rows = inner.height.saturating_sub(2) as usize;
+        let longest_back = lines.len().saturating_sub(self.rows);
+        self.back = self.back.min(longest_back);
+        let end = lines.len() - self.back;
+        let start = end.saturating_sub(self.rows);
+        let text = Style::new().fg(theme::worn().colors.text);
+        if lines.is_empty() {
+            let row = Rect::new(inner.x, inner.y, inner.width, 1).intersection(inner);
+            page.render_widget(
+                Line::styled("UZDoom hasn't printed anything yet", text),
+                row,
+            );
+        }
+        for (i, line) in lines[start..end].iter().enumerate() {
+            let row = Rect::new(inner.x, inner.y + i as u16, inner.width, 1).intersection(inner);
+            page.render_widget(Line::styled(shorten(line, inner.width as usize), text), row);
+        }
+        let where_ = if self.back == 0 {
+            String::new()
+        } else {
+            format!(
+                "{} line{} back · ",
+                self.back,
+                if self.back == 1 { "" } else { "s" }
+            )
+        };
+        let hint = Rect::new(
+            inner.x,
+            inner.y + inner.height.saturating_sub(1),
+            inner.width,
+            1,
+        )
+        .intersection(inner);
+        page.render_widget(
+            Line::styled(
+                format!("{where_}{LOG_KEYS}"),
+                Style::new().fg(theme::worn().colors.muted),
+            )
+            .centered(),
+            hint,
+        );
     }
 }
 
@@ -120,6 +223,10 @@ impl Waiting<'_> {
             ));
         }
         lines.push(Line::raw(""));
+        lines.push(Line::styled(
+            LOG_HINT,
+            Style::new().fg(theme::worn().colors.muted),
+        ));
         lines.push(Line::styled(
             HINT,
             Style::new().fg(theme::worn().colors.muted),
@@ -205,6 +312,40 @@ mod tests {
         };
         let screen = testing::draw(60, 14, |page| waiting.draw(page));
         assert!(screen.contains("Starting UZDoom · 0:00"));
+    }
+
+    fn uzdoom_said(count: usize) -> Vec<String> {
+        (1..=count).map(|i| format!("line {i}")).collect()
+    }
+
+    #[test]
+    fn snapshot_the_log_follows_the_latest_lines() {
+        let lines = uzdoom_said(30);
+        let screen = testing::draw(60, 16, |page| Log::default().draw(page, &lines));
+        assert!(screen.contains("line 30") && !screen.contains("line 1 "));
+        assert_snapshot!(screen);
+    }
+
+    #[test]
+    fn the_log_scrolls_back_no_further_than_its_first_line() {
+        let lines = uzdoom_said(30);
+        let mut log = Log::default();
+        testing::draw(60, 16, |page| log.draw(page, &lines));
+        log.scroll(KeyCode::Up);
+        let screen = testing::draw(60, 16, |page| log.draw(page, &lines));
+        assert!(screen.contains("line 29") && !screen.contains("line 30"));
+        assert!(screen.contains("1 line back"));
+        log.scroll(KeyCode::Home);
+        let screen = testing::draw(60, 16, |page| log.draw(page, &lines));
+        assert!(screen.lines().any(|row| row.contains("line 1 ")));
+        log.scroll(KeyCode::End);
+        assert_eq!(log.back, 0);
+    }
+
+    #[test]
+    fn an_empty_log_says_so() {
+        let screen = testing::draw(60, 16, |page| Log::default().draw(page, &[]));
+        assert!(screen.contains("UZDoom hasn't printed anything yet"));
     }
 
     #[test]

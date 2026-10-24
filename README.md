@@ -30,7 +30,7 @@ Beware the code -- a programmer's rite!
 - **Search** with `/`: profiles by name (or by their wads with `*`), and wads by file name in the editor
 - **Copy, cut and paste** profiles and wads, one or many at a time, with `Shift+V`/`M` to select, `Y`, `X` and `P`
 - **Wads screen** (`L`): every wad in every wad dir and the downloads, by dir or all in one list, to copy or move between dirs or paste into a profile
-- **Per-profile saves** and a `session.log` of UZDoom's output
+- **Per-profile saves** and a `session.log` of UZDoom's output, which `L` shows live while UZDoom runs (launching, hosting or joining)
 - **Status at a glance**: a panel under the launcher shows what the selected profile would run with (UZDoom, base wad, ini, wads) and whether anything is broken, with the global settings (UZDoom, base wad, ini, UZDoom arguments) beside it
 - **Themes**: every color, border and glyph comes from a `theme.toml` you can change, or the built-in hellfire one, and the splash screen dresses up in its own `splash.toml` (logo, words, and a fire that can cycle through any colors) and `pride.toml` (pride flags, one picked at random each time)
 - **Placeholders, not surprises**: a wad that moved is shown in the editor with what's wrong, and only that profile is held back from launching

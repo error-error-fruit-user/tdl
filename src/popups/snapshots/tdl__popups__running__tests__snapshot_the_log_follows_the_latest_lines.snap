@@ -1,0 +1,18 @@
+---
+source: src/popups/running.rs
+expression: screen
+---
+
+ ┏━━━━━━━━━━━━━━━━━━━━[ UZDoom's log ]━━━━━━━━━━━━━━━━━━━━┓
+ ┃ line 22                                                ┃
+ ┃ line 23                                                ┃
+ ┃ line 24                                                ┃
+ ┃ line 25                                                ┃
+ ┃ line 26                                                ┃
+ ┃ line 27                                                ┃
+ ┃ line 28                                                ┃
+ ┃ line 29                                                ┃
+ ┃ line 30                                                ┃
+ ┃                                                        ┃
+ ┃        ↑↓ PgUp PgDn Home End · L or Esc closes         ┃
+ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛

@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     ffi::OsStr,
     fs::File,
     io::{self, Read, Write},
@@ -19,22 +20,48 @@ use crate::{
 
 /// How long a stopped UZDoom gets to go quietly before it is killed outright.
 const GRACE: Duration = Duration::from_secs(2);
+/// How many of UZDoom's lines are kept to show in its log window; `session.log` has them all.
+const KEPT_LINES: usize = 10_000;
 
 /// UZDoom while it runs. Its output is copied to `session.log` on a thread of its own, so whoever
-/// started it is free to keep the screen moving, and the latest line is kept to show how far its
-/// startup has got.
+/// started it is free to keep the screen moving, and its lines are kept to show how far its
+/// startup has got and, in the log window, everything it said.
 pub struct Game {
     child: Child,
-    latest: Arc<Mutex<String>>,
+    output: Arc<Mutex<Output>>,
     logger: Option<JoinHandle<()>>,
+}
+
+/// What UZDoom has printed so far: its last [`KEPT_LINES`] non-blank lines, the latest last.
+#[derive(Default)]
+struct Output {
+    lines: VecDeque<String>,
+}
+
+impl Output {
+    fn push(&mut self, line: String) {
+        if self.lines.len() == KEPT_LINES {
+            self.lines.pop_front();
+        }
+        self.lines.push_back(line);
+    }
 }
 
 impl Game {
     /// The last line UZDoom printed, or empty if it hasn't printed one yet.
     pub fn latest_line(&self) -> String {
-        self.latest
+        self.output
             .lock()
-            .map(|line| line.clone())
+            .ok()
+            .and_then(|output| output.lines.back().cloned())
+            .unwrap_or_default()
+    }
+
+    /// Everything UZDoom has printed that is still kept, oldest first.
+    pub fn lines(&self) -> Vec<String> {
+        self.output
+            .lock()
+            .map(|output| output.lines.iter().cloned().collect())
             .unwrap_or_default()
     }
 
@@ -141,23 +168,23 @@ fn execute(
         command.spawn()
     }
     .map_err(Error::Spawn)?;
-    let latest = Arc::new(Mutex::new(String::new()));
+    let output = Arc::new(Mutex::new(Output::default()));
     let logger = child.stdout.take().map(|stdout| {
         // the log is best effort, but stdout must still be drained or the game blocks on a full pipe
         let log = File::create(data_subdir.join("session.log")).ok();
-        let latest = latest.clone();
-        thread::spawn(move || copy_output(stdout, log, &latest))
+        let output = output.clone();
+        thread::spawn(move || copy_output(stdout, log, &output))
     });
     Ok(Game {
         child,
-        latest,
+        output,
         logger,
     })
 }
 
 /// Copies everything from `output` into `log` (if there is one) until UZDoom closes it, keeping
-/// the last non-blank line in `latest` as it goes.
-fn copy_output(mut output: impl Read, mut log: Option<File>, latest: &Mutex<String>) {
+/// its non-blank lines in `kept` as it goes.
+fn copy_output(mut output: impl Read, mut log: Option<File>, kept: &Mutex<Output>) {
     let mut buffer = [0; 8 * 1024];
     let mut line = Vec::new();
     loop {
@@ -176,9 +203,9 @@ fn copy_output(mut output: impl Read, mut log: Option<File>, latest: &Mutex<Stri
             if byte == b'\n' || byte == b'\r' {
                 let text = String::from_utf8_lossy(&line).trim().to_string();
                 if !text.is_empty()
-                    && let Ok(mut latest) = latest.lock()
+                    && let Ok(mut kept) = kept.lock()
                 {
-                    *latest = text;
+                    kept.push(text);
                 }
                 line.clear();
             } else {
@@ -528,9 +555,23 @@ for file in "${files[@]}"; do add "$file" "PWAD IWAD"; done
 
     #[test]
     fn the_latest_line_is_the_last_one_with_something_on_it() {
-        let latest = Mutex::new(String::new());
+        let kept = Mutex::new(Output::default());
         let output = b"W_Init: Init WADfiles.\nadding a.wad, 2 lumps\r\n\n   \npartial";
-        copy_output(&output[..], None, &latest);
-        assert_eq!(*latest.lock().unwrap(), "adding a.wad, 2 lumps");
+        copy_output(&output[..], None, &kept);
+        let kept = kept.into_inner().unwrap();
+        assert_eq!(
+            kept.lines,
+            ["W_Init: Init WADfiles.", "adding a.wad, 2 lumps"]
+        );
+    }
+
+    #[test]
+    fn only_the_latest_lines_are_kept() {
+        let mut output = Output::default();
+        for i in 0..KEPT_LINES + 3 {
+            output.push(i.to_string());
+        }
+        assert_eq!(output.lines.len(), KEPT_LINES);
+        assert_eq!(output.lines.front().unwrap(), "3");
     }
 }
