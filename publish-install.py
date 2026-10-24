@@ -30,6 +30,8 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 RELEASES = os.path.join(HERE, "published", "releases")
 WINDOWS = platform.system() == "Windows"
+# What publish.py is told about the voice to speak in
+PUBLISH_VOICE = []
 WHAT = "tdl"
 # The installer it runs, which takes --computer-speak too
 INSTALLER = 'tdl-install'
@@ -355,7 +357,7 @@ def build(args):
                          os.path.join(RELEASES, program + EXE))
             note(f"copied the release build into {RELEASES}")
         return
-    run([sys.executable, "publish.py"])
+    run([sys.executable, "publish.py", *PUBLISH_VOICE])
     # 🧹 a plain tdl left by --source would be taken over the AppImage just built
     if not WINDOWS:
         for program in PROGRAMS:
@@ -470,6 +472,8 @@ def main():
                              "through hell" + (" (and have the installer do the same)" if INSTALLER else ""))
     args = parser.parse_args()
     speak_in("computer-speak.toml" if args.computer_speak else "toiling-through-hell.toml")
+    if args.computer_speak:
+        PUBLISH_VOICE.append("--computer-speak")
     note(f"=== {os.path.basename(__file__)} {' '.join(sys.argv[1:])} ===")
     refuse_root_build(args)
 

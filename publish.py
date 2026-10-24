@@ -36,6 +36,8 @@ LICENSE_PREFIXES = ("LICENSE", "LICENCE", "COPYING", "UNLICENSE", "NOTICE")
 
 
 def cargo(*args, **kwargs):
+    shown = " ".join(["cargo", *args])
+    tell("run", f"+ {shown}", command=shown)
     return subprocess.run(["cargo", *args], check=True, **kwargs)
 
 
@@ -112,11 +114,78 @@ def clear(folder):
     os.makedirs(folder)
 
 
+# The voice it speaks in, from installation-groans: the workspace's checkout beside this project,
+# else GitHub. Toiling Through Hell unless told --computer-speak; without one (or Python older than
+# 3.11, which can't read TOML), plain lines.
+GROANS = "https://raw.githubusercontent.com/error-error-fruit-user/installation-groans/main/"
+VOICE = {}
+
+
+def speak_in(name):
+    """Speaks in the installation-groans voice `name` (a file name) from now on, if it is found."""
+    global VOICE
+    try:
+        import tomllib
+    except ImportError:
+        return
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(os.path.dirname(here), "installation-groans", name)
+    try:
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as source:
+                text = source.read()
+        else:
+            import urllib.request
+            with urllib.request.urlopen(GROANS + name, timeout=5) as answer:
+                text = answer.read().decode()
+        VOICE = tomllib.loads(text)
+    except Exception:
+        VOICE = {}
+
+
+def tell(event, plain, **fills):
+    """Says `event` as one of the voice's phrases for it, picked at random and filled from `fills`,
+    or `plain` without one (a problem says `plain` too, if its phrase leaves the problem out). Now
+    and then the voice interjects (its [interjection])."""
+    import random
+    phrases = VOICE.get("phrases", {}).get(event) or []
+    out = sys.stderr if event == "problem" else sys.stdout
+    if not phrases:
+        print(plain, file=out, flush=True)
+        return
+    said = random.choice(phrases)
+    for name, value in fills.items():
+        said = said.replace("{" + name + "}", str(value))
+    print(said[:1].upper() + said[1:], file=out, flush=True)
+    if event == "problem" and str(fills.get("problem", plain)) not in said:
+        print(plain, file=out, flush=True)
+    interjection = VOICE.get("interjection", {})
+    if interjection.get("phrases") and random.random() < float(interjection.get("chance", 0)):
+        colors = {"yellow": 33, "green": 32, "blue": 34, "magenta": 35, "cyan": 36, "white": 37}
+        code = colors.get(interjection.get("color", "red"), 31)
+        shout = random.choice(interjection["phrases"])
+        tty = sys.stdout.isatty() and "NO_COLOR" not in os.environ
+        print(f"\033[1;{code}m{shout}\033[0m" if tty else shout, flush=True)
+
+
+def built(target, count=None):
+    """Says a file of the release is made: `target`, with how many files went into it."""
+    size = os.path.getsize(target) / (1024 * 1024)
+    inside = f"{count} files, " if count is not None else ""
+    tell("copy", f"{target}: {inside}{size:.1f} MB",
+         what=f"{os.path.basename(target)} ({inside}{size:.1f} MB)", place=os.path.dirname(target) or ".")
+
+
 def main():
     rust_on_path()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--no-appimages", action="store_true", help="don't build the AppImages")
+    parser.add_argument("--computer-speak", action="store_true",
+                        help="say what it does plainly and formally, rather than as a descent "
+                             "through hell")
     options = parser.parse_args()
+    speak_in("computer-speak.toml" if options.computer_speak else "toiling-through-hell.toml")
+    tell("begin", "Publishing tdl", what="tdl", place=os.path.join("published", "releases"))
 
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     if shutil.which("cargo-license") is None:
@@ -148,4 +217,12 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+        tell("done", "Published.", what="tdl")
+    except SystemExit as stop:
+        # 🗣️ a reason to stop is said in the voice too
+        if isinstance(stop.code, str):
+            tell("problem", stop.code, problem=stop.code)
+            sys.exit(1)
+        raise
