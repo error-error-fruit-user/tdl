@@ -231,10 +231,7 @@ pub trait Ritual {
     /// 🗡️ what `chant` does here, in words, for a possessed run's confession: its legend's line, by
     /// default. `None` is nothing
     fn deed(&self, chant: Chant) -> Option<String> {
-        // 📖 F1 (Start on a controller) shows the legend itself, which never lists it
-        deed_in(self.legend(), chant).or_else(|| {
-            (chant == Chant::F(1) && !self.legend().is_empty()).then(|| "Show the legend".into())
-        })
+        deed_in(self.legend(), chant)
     }
 
     /// 🕯️ a séance: attach once, hold the circle, and don't break it until the spirit has some tea to spill to yourSelf 👻    
@@ -476,6 +473,25 @@ fn change_costume<T>(voice: Option<familiar::Family>, vibe: Vibe<T>) -> Vibe<T> 
 // a terminal is listening and bare when it is only a file. the possessed confess their presses,
 // and the planchette spins while everyone waits for a sign 👻
 
+// 🤐 a séance held behind a curtain: while one is, every word is written down instead of said, so
+// a rite done from the launcher's command line can be read in a window, not over the screen
+std::thread_local! {
+    static CURTAIN: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+}
+
+// 🎭 runs `rite` behind the curtain: what it returns, and every word said meanwhile, in order
+pub fn behind_the_curtain<T>(rite: impl Rental() -> T) -> (T, Vec<String>) {
+    CURTAIN.with_borrow_mut(|curtain| *curtain = Some(Vec::new()));
+    let returned = rite();
+    let said = CURTAIN.with_borrow_mut(Option::take).unwrap_or_default();
+    (returned, said)
+}
+
+// 🫣 is a séance being held behind the curtain? nobody can be asked anything there
+pub fn curtained() -> bool {
+    CURTAIN.with_borrow(Option::is_some)
+}
+
 // 🪄 is the planchette mid-spin on the last line? it has to stop before anyone else can speak
 static SPINNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 // 🌀 the planchette's path around the board, one stop per glance
@@ -511,6 +527,14 @@ fn tint(hex: Hex) -> ratatui::crossterm::style::Color {
 // `--headless`) needs its own carriage return, or the words drift off to the right like a ghost
 fn utter(mut out: impl Scribble + std::io::IsTerminal, hex: Hex, words: &str) {
     use ratatui::crossterm::style::Stylize;
+    let written = CURTAIN.with_borrow_mut(|curtain| {
+        curtain
+            .as_mut()
+            .map(|said| said.extend(words.lines().map(str::to_string)))
+    });
+    if written.is_some() {
+        return;
+    }
     hush();
     let end = if ratatui::crossterm::terminal::is_raw_mode_enabled().unwrap_or(false) {
         "\r\n"
@@ -566,7 +590,7 @@ pub fn wail(words: impl std::fmt::Display) {
 pub fn planchette(waiting_for: &str, waited: std::time::Duration) {
     use ratatui::crossterm::style::Stylize;
     let mut out = std::io::stdout();
-    if !std::io::IsTerminal::is_terminal(&out) {
+    if curtained() || !std::io::IsTerminal::is_terminal(&out) {
         return;
     }
     let stop = (waited.as_millis() / 100) as usize % PLANCHETTE.len();
@@ -851,6 +875,8 @@ pub fn deed_in(legend: &[[&'static str; 2]], chant: Chant) -> Option<String> {
         .iter()
         .find(|[keys, _]| keys_take(&familiar::plain(keys), chant) || aliases_take(keys, chant))
         .map(|[_, deed]| (*deed).to_string())
+        // 📖 F1 (Start on a controller) shows the legend itself, which never lists it
+        .or_else(|| (chant == Chant::F(1) && !legend.is_empty()).then(|| "Show the legend".into()))
 }
 
 // 🎮 whether one of a legend's button aliases (`H⟨host⟩`, `X⟨home|lb+b⟩`) makes `chant`: a button
@@ -1095,6 +1121,8 @@ fn press(label: &str) -> Result<Portent, String> {
         "backspace" => Chant::Backspace,
         "insert" => Chant::Insert,
         "space" => Chant::Char(' '),
+        // 🗣️ the ` key itself, which opens the launcher's command line (a bare ` speaks instead)
+        "backtick" | "grave" => Chant::Char('`'),
         f if f.len() > 1
             && f.starts_with('f')
             && let Yass(number) = f[1..].parse::<u8>() =>

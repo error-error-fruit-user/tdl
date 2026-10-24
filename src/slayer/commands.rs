@@ -4,6 +4,11 @@
 //! `--headless` flows, run by [`Launcher::rite`](crate::screens::launcher::Launcher::rite); the
 //! rest is here. Each rite saves what it changes, the way the launcher does, and an `Err` says what
 //! stopped it.
+//!
+//! [`shell`] runs a shell command for the launcher's command line (`sh ...`) and a headless
+//! script's `` `sh ... ``, behind guard rails: nothing that needs root or administrator, and
+//! nothing that looks made to do harm (see [`forbidden`]). Those are rails, not a sandbox: they
+//! stop accidents and the obvious, not someone set on getting around them.
 
 use std::{
     ffi::OsString,
@@ -149,6 +154,11 @@ fn fault(wad: &Wad) -> Option<String> {
 /// Asks `question` on the terminal. With no terminal to ask on, the answer is no, and so is
 /// anything but y or yes.
 fn ask(question: &str) -> bool {
+    // 🫣 from the launcher's command line, the terminal is the launcher's
+    if crate::ritual::curtained() {
+        wail(format!("{question} Add --yes to say yes from here"));
+        return false;
+    }
     if !io::stdin().is_terminal() {
         wail(format!("{question} No one to ask, so no (--yes says yes)"));
         return false;
@@ -902,4 +912,401 @@ fn watch(loadout: &mut Loadout, dir: &Path, name: Option<&str>) -> Outcome {
         if count == 1 { "" } else { "s" }
     ));
     Ok(())
+}
+
+/// How long a shell command may run before it is stopped.
+const SHELL_TIME: std::time::Duration = std::time::Duration::from_secs(30);
+/// The most lines of a shell command's output that are kept.
+const SHELL_LINES: usize = 500;
+
+/// Runs `command` the way bash would (sh where there is no bash), from the working directory, with
+/// no input, for at most [`SHELL_TIME`], saying what it prints (its errors as wails), unless it is
+/// [`forbidden`] or tdl is running as root or administrator. `Err` if it was refused, didn't finish
+/// or failed.
+pub fn shell(command: &str) -> Outcome {
+    use std::process::{Command, Stdio};
+    let command = command.trim();
+    if command.is_empty() {
+        return Err("sh needs a command after it, like sh ls".into());
+    }
+    if let Some(why) = forbidden(command) {
+        return Err(format!("Not run: {why}"));
+    }
+    if elevated() {
+        return Err(
+            "Not run: tdl is running as root or administrator, and runs no shell commands so"
+                .into(),
+        );
+    }
+    let program = ["bash", "sh"]
+        .into_iter()
+        .find(|program| which(program))
+        .ok_or("Not run: there is no bash or sh to run it with")?;
+    let mut shell = Command::new(program);
+    shell
+        .arg("-c")
+        .arg(command)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        // 🔑 nothing that could answer a password prompt for it
+        .env_remove("SUDO_ASKPASS")
+        .env_remove("SSH_ASKPASS");
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut shell, 0);
+    let mut child = shell
+        .spawn()
+        .map_err(|error| format!("Could not run {program}: {error}"))?;
+    let read = |pipe: Option<Box<dyn io::Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut text = String::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_string(&mut text);
+            }
+            text
+        })
+    };
+    let out = read(
+        child
+            .stdout
+            .take()
+            .map(|pipe| Box::new(pipe) as Box<dyn io::Read + Send>),
+    );
+    let err = read(
+        child
+            .stderr
+            .take()
+            .map(|pipe| Box::new(pipe) as Box<dyn io::Read + Send>),
+    );
+    let began = std::time::Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+            break Some(status);
+        }
+        if began.elapsed() > SHELL_TIME {
+            // 🛑 the whole group, so nothing it started lives on
+            #[cfg(unix)]
+            let _ = Command::new("kill")
+                .args(["-s", "KILL", "--", &format!("-{}", child.id())])
+                .status();
+            let _ = child.kill();
+            let _ = child.wait();
+            break None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    let (out, err) = (
+        out.join().unwrap_or_default(),
+        err.join().unwrap_or_default(),
+    );
+    for line in out.lines().take(SHELL_LINES) {
+        murmur(line);
+    }
+    for line in err.lines().take(SHELL_LINES) {
+        wail(line);
+    }
+    match status {
+        None => Err(format!("Stopped after {}s", SHELL_TIME.as_secs())),
+        Some(status) if status.success() => Ok(()),
+        Some(status) => Err(match status.code() {
+            Some(code) => format!("It ended with code {code}"),
+            None => "It was stopped by a signal".into(),
+        }),
+    }
+}
+
+/// Whether `program` is on the PATH.
+fn which(program: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|path| {
+        std::env::split_paths(&path)
+            .any(|dir| dir.join(program).is_file() || dir.join(format!("{program}.exe")).is_file())
+    })
+}
+
+/// Whether tdl itself runs as root (or, on Windows, as administrator).
+fn elevated() -> bool {
+    #[cfg(unix)]
+    {
+        std::process::Command::new("id")
+            .arg("-u")
+            .output()
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim() == "0")
+            .unwrap_or(true)
+    }
+    #[cfg(not(unix))]
+    {
+        std::process::Command::new("net")
+            .arg("session")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(true)
+    }
+}
+
+/// Programs a command line can never start: they take root or administrator, run the system,
+/// rewrite disks or users, or hide what is really being run.
+const DENIED: &[(&str, &str)] = &[
+    ("sudo", "it needs root"),
+    ("sudoedit", "it needs root"),
+    ("su", "it needs root"),
+    ("doas", "it needs root"),
+    ("pkexec", "it needs root"),
+    ("run0", "it needs root"),
+    ("gksu", "it needs root"),
+    ("gksudo", "it needs root"),
+    ("kdesu", "it needs root"),
+    ("runas", "it needs administrator"),
+    ("passwd", "it changes users"),
+    ("chpasswd", "it changes users"),
+    ("useradd", "it changes users"),
+    ("userdel", "it changes users"),
+    ("usermod", "it changes users"),
+    ("groupadd", "it changes users"),
+    ("groupdel", "it changes users"),
+    ("visudo", "it changes who may be root"),
+    ("chown", "it changes who owns files"),
+    ("chgrp", "it changes who owns files"),
+    ("mkfs", "it rewrites disks"),
+    ("mke2fs", "it rewrites disks"),
+    ("fdisk", "it rewrites disks"),
+    ("sfdisk", "it rewrites disks"),
+    ("cfdisk", "it rewrites disks"),
+    ("gdisk", "it rewrites disks"),
+    ("parted", "it rewrites disks"),
+    ("wipefs", "it rewrites disks"),
+    ("shred", "it destroys files"),
+    ("dd", "it writes disks byte by byte"),
+    ("mount", "it changes the system's disks"),
+    ("umount", "it changes the system's disks"),
+    ("losetup", "it changes the system's disks"),
+    ("cryptsetup", "it changes the system's disks"),
+    ("swapon", "it changes the system's memory"),
+    ("swapoff", "it changes the system's memory"),
+    ("shutdown", "it stops the system"),
+    ("reboot", "it stops the system"),
+    ("poweroff", "it stops the system"),
+    ("halt", "it stops the system"),
+    ("init", "it runs the system"),
+    ("telinit", "it runs the system"),
+    ("systemctl", "it runs the system"),
+    ("service", "it runs the system"),
+    ("iptables", "it changes the firewall"),
+    ("ip6tables", "it changes the firewall"),
+    ("nft", "it changes the firewall"),
+    ("ufw", "it changes the firewall"),
+    ("firewall-cmd", "it changes the firewall"),
+    ("crontab", "it schedules commands"),
+    ("at", "it schedules commands"),
+    ("insmod", "it changes the kernel"),
+    ("rmmod", "it changes the kernel"),
+    ("modprobe", "it changes the kernel"),
+    ("sysctl", "it changes the kernel"),
+    ("killall", "it stops every process of a kind"),
+    ("pkill", "it stops processes by pattern"),
+    ("eval", "it hides the command it runs"),
+    ("source", "it hides the commands it runs"),
+    (".", "it hides the commands it runs"),
+    ("bash", "a shell inside the shell hides what it runs"),
+    ("sh", "a shell inside the shell hides what it runs"),
+    ("zsh", "a shell inside the shell hides what it runs"),
+    ("dash", "a shell inside the shell hides what it runs"),
+    ("ksh", "a shell inside the shell hides what it runs"),
+    ("fish", "a shell inside the shell hides what it runs"),
+    ("csh", "a shell inside the shell hides what it runs"),
+    ("tcsh", "a shell inside the shell hides what it runs"),
+    ("busybox", "a shell inside the shell hides what it runs"),
+    ("cmd", "a shell inside the shell hides what it runs"),
+    ("powershell", "a shell inside the shell hides what it runs"),
+    ("pwsh", "a shell inside the shell hides what it runs"),
+    ("format", "it rewrites disks"),
+    ("diskpart", "it rewrites disks"),
+    ("bcdedit", "it changes how the system starts"),
+    ("reg", "it changes the system's registry"),
+    ("takeown", "it changes who owns files"),
+    ("icacls", "it changes who may use files"),
+    ("cacls", "it changes who may use files"),
+    ("net", "it changes users and the network"),
+    ("netsh", "it changes the network"),
+    ("sc", "it runs the system's services"),
+    ("schtasks", "it schedules commands"),
+    ("wmic", "it runs the system"),
+];
+
+/// Wrappers that run the command after them, which is the one that is looked at.
+const WRAPPERS: &[&str] = &[
+    "command", "exec", "env", "nohup", "nice", "time", "builtin", "xargs", "stdbuf", "ionice",
+    "setsid", "timeout", "watch", "strace", "chroot",
+];
+
+/// Interpreters whose `-c` or `-e` runs code given on the command line, which hides what it does.
+const INTERPRETERS: &[&str] = &[
+    "python",
+    "python3",
+    "python2",
+    "perl",
+    "ruby",
+    "node",
+    "php",
+    "lua",
+    "awk",
+    "gawk",
+    "osascript",
+];
+
+/// Why `command` must not run, if it mustn't: it starts a [`DENIED`] program (looking past
+/// [`WRAPPERS`] and paths), hides what it runs, or reaches for what only harm needs (the whole
+/// disk, the system's files, everything at once).
+pub fn forbidden(command: &str) -> Option<String> {
+    let lower = command.to_lowercase();
+    if lower.contains(":(){") || lower.replace(' ', "").contains(":(){:|:&};:") {
+        return Some("it is a fork bomb".into());
+    }
+    if lower.contains("--no-preserve-root") {
+        return Some("it would delete everything".into());
+    }
+    // 💽 writing into the system's folders or straight onto a disk
+    let systems = [
+        "/etc",
+        "/boot",
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/lib",
+        "/sys",
+        "/proc",
+        "/dev/sd",
+        "/dev/nvme",
+        "/dev/mmcblk",
+        "/dev/disk",
+        "/dev/mem",
+        "/dev/port",
+        "c:\\windows",
+    ];
+    let squeezed: String = lower.split_whitespace().collect::<Vec<_>>().join(" ");
+    for system in systems {
+        for writer in [">", ">>", "tee ", "tee -a ", "cp -t ", "of="] {
+            if squeezed.contains(&format!("{writer}{system}"))
+                || squeezed.contains(&format!("{writer} {system}"))
+            {
+                return Some(format!("it writes into {system}"));
+            }
+        }
+    }
+    // ✂️ every command of a pipeline or a list, each looked at on its own
+    let segments =
+        lower.split([';', '|', '&', '\n', '`', '(', ')', '{', '}']);
+    for segment in segments {
+        let segment = segment.trim();
+        let mut words = segment.split_whitespace().peekable();
+        // 🏷️ VAR=value in front, and the wrappers that run what comes after them
+        while let Some(word) = words.peek() {
+            let bare = word.rsplit('/').next().unwrap_or(word);
+            if word.contains('=') && !word.starts_with('=')
+                || WRAPPERS.contains(&bare)
+                || word.starts_with('-')
+                || word.parse::<f64>().is_ok()
+            {
+                words.next();
+            } else {
+                break;
+            }
+        }
+        let Some(first) = words.next() else { continue };
+        let rest: Vec<&str> = words.collect();
+        if first.starts_with('$')
+            || first.contains("$(")
+            || first.starts_with('"')
+            || first.starts_with('\'')
+        {
+            return Some("a command chosen by a variable or a quote hides what it runs".into());
+        }
+        let program = first.rsplit(['/', '\\']).next().unwrap_or(first);
+        let program = program.trim_end_matches(".exe");
+        if let Some((_, why)) = DENIED
+            .iter()
+            .find(|(denied, _)| program == *denied || program.starts_with("mkfs."))
+        {
+            return Some(format!("{program}: {why}"));
+        }
+        let interpreter = program.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.');
+        if (INTERPRETERS.contains(&program) || INTERPRETERS.contains(&interpreter))
+            && rest.iter().any(|word| {
+                matches!(*word, "-c" | "-e" | "-r" | "--eval" | "-E") || program.ends_with("awk")
+            })
+        {
+            return Some(format!(
+                "{program}: code given on the command line hides what it does"
+            ));
+        }
+        // 🗑️ everything at once, or the system's or your whole home
+        let sweeping = |word: &&str| {
+            let word = word.trim_matches(|c| c == '"' || c == '\'');
+            matches!(
+                word,
+                "/" | "/*"
+                    | "~"
+                    | "~/"
+                    | "~/*"
+                    | "$home"
+                    | "${home}"
+                    | "*"
+                    | "."
+                    | ".."
+                    | "./*"
+                    | "../*"
+            ) || (word.starts_with('/') && word.trim_end_matches('/').matches('/').count() <= 1)
+                || word == "/home"
+                || word.starts_with("/home/")
+                    && word.trim_end_matches('/').matches('/').count() <= 2
+        };
+        let recursive = rest.iter().any(|word| {
+            word.starts_with('-')
+                && !word.starts_with("--")
+                && (word.contains('r') || word.contains('R'))
+                || *word == "--recursive"
+        });
+        match program {
+            "rm" | "rmdir" | "del" | "rd"
+                if (recursive || program != "rm") && rest.iter().any(sweeping) =>
+            {
+                return Some(format!("{program} would delete too much"));
+            }
+            "rm" if rest.iter().any(sweeping)
+                && rest
+                    .iter()
+                    .any(|word| word.starts_with('-') && word.contains('f')) =>
+            {
+                return Some("rm would delete too much".into());
+            }
+            "chmod"
+                if rest.iter().any(|word| {
+                    word.contains('s') && (word.contains('+') || word.contains('='))
+                }) || rest.iter().any(|word| {
+                    word.len() == 4
+                        && word.starts_with(['2', '4', '6', '7'])
+                        && word.parse::<u16>().is_ok()
+                }) =>
+            {
+                return Some("chmod would set a setuid bit".into());
+            }
+            "chmod" if recursive && rest.iter().any(sweeping) => {
+                return Some("chmod would change too much".into());
+            }
+            "find"
+                if rest
+                    .iter()
+                    .any(|word| *word == "-delete" || *word == "-exec")
+                    && rest.iter().any(sweeping) =>
+            {
+                return Some("find would change too much".into());
+            }
+            "kill" if rest.iter().any(|word| *word == "-1" || *word == "1") => {
+                return Some("kill would stop every process".into());
+            }
+            _ => {}
+        }
+    }
+    None
 }

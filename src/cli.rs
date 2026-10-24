@@ -801,6 +801,28 @@ pub enum Rite {
     },
 }
 
+impl Rite {
+    /// The rite a command phrase speaks: `wads add e1 "my mods/e1.wad"`, as `tdl cli` would take
+    /// it, from a headless script's `` ` `` or the launcher's command line. `Err` is what is wrong
+    /// with it, in clap's words but without the help it points at, which nobody there can ask for.
+    pub fn from_phrase(phrase: &str) -> Result<Self, String> {
+        let words = crate::ritual::rite_words(phrase)?;
+        let args = Args::try_parse_from(["tdl", "cli"].map(String::from).into_iter().chain(words))
+            .map_err(|error| {
+                let said = error.to_string();
+                said.lines()
+                    .next()
+                    .unwrap_or_default()
+                    .trim_start_matches("error: ")
+                    .to_string()
+            })?;
+        match args.command {
+            Some(Commands::Cli { rite }) => Ok(rite),
+            _ => Err(format!("{phrase} isn't a tdl cli command")),
+        }
+    }
+}
+
 /// `tdl cli wads`: a profile's wads.
 #[derive(Subcommand, Clone, Debug, PartialEq)]
 pub enum WadRite {

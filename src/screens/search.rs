@@ -6,6 +6,9 @@
 //! What a row's name is depends on the screen: in the launcher it is the profile's name, or with a
 //! `*` in front of the query the file names of its wads; in the editor it is the wad's file name.
 //! Dirs are never looked at, so `doom` doesn't match every wad kept under `~/doom/`.
+//!
+//! The launcher's command line (`` ` ``) is a search line too, drawn with a `~` instead of a `/`
+//! and with a history of its own: what is typed on it is a `tdl cli` command, not a name.
 
 use std::cell::RefCell;
 
@@ -20,18 +23,29 @@ use crate::{layout, ritual::Page, theme, widgets::text};
 
 thread_local! {
     /// The searches kept this session, oldest first, each once. The screens all run on one
-    /// thread, so that is where it lives (and every test gets its own).
+    /// thread, so that is where it lives.
     static HISTORY: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// The commands typed on the command line this session, the same way.
+    static SPOKEN: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
+
+/// The history a line with `sigil` keeps: the commands' for `~`, the searches' otherwise.
+fn history(sigil: char) -> &'static std::thread::LocalKey<RefCell<Vec<String>>> {
+    if sigil == COMMAND { &SPOKEN } else { &HISTORY }
+}
+
+/// What a search line starts with, and what the command line starts with.
+const SEARCH: char = '/';
+const COMMAND: char = '~';
 /// How many searches are remembered.
 const HISTORY_LENGTH: usize = 32;
 
-/// Remembers `query` as the latest search, moving it to the end if it was there already.
-fn remember(query: &str) {
+/// Remembers `query` as the latest of its line's, moving it to the end if it was there already.
+fn remember(sigil: char, query: &str) {
     if query.is_empty() {
         return;
     }
-    HISTORY.with_borrow_mut(|history| {
+    history(sigil).with_borrow_mut(|history| {
         history.retain(|kept| kept != query);
         history.push(query.to_string());
         let extra = history.len().saturating_sub(HISTORY_LENGTH);
@@ -39,9 +53,10 @@ fn remember(query: &str) {
     });
 }
 
-/// The search `back` places before the latest (0 is the latest), if there is one.
-fn recalled(back: usize) -> Option<String> {
-    HISTORY.with_borrow(|history| history.iter().rev().nth(back).cloned())
+/// What was typed on a line with `sigil` `back` places before the latest (0 is the latest), if
+/// anything was.
+fn recalled(sigil: char, back: usize) -> Option<String> {
+    history(sigil).with_borrow(|history| history.iter().rev().nth(back).cloned())
 }
 
 /// How well a name matches a query; lower is better.
@@ -98,10 +113,11 @@ pub fn rank(cursor: usize, count: usize, score: impl Fn(usize) -> Option<Score>)
     ranked.into_iter().map(|(_, _, row)| row).collect()
 }
 
-/// A search being typed.
-#[derive(Default)]
+/// A search being typed, or a command on the command line.
 pub struct Search {
     pub query: String,
+    /// `/` for a search, `~` for a command.
+    sigil: char,
     /// Where the cursor is in the query.
     caret: usize,
     /// How far back in the history `↑` has gone (0 is the latest search), while it has.
@@ -123,8 +139,31 @@ pub enum Typed {
     Ignored,
 }
 
+impl Default for Search {
+    fn default() -> Self {
+        Self {
+            query: String::new(),
+            sigil: SEARCH,
+            caret: 0,
+            back: None,
+            draft: String::new(),
+        }
+    }
+}
+
 impl Search {
     pub const LEGEND: [&str; 2] = ["/ ;⟨rb+right⟩ ,⟨rb+left⟩", "Search, Next, Previous"];
+
+    /// The command line: a search line with a `~`, whose query is a `tdl cli` command.
+    pub fn command() -> Self {
+        Self {
+            sigil: COMMAND,
+            ..Self::default()
+        }
+    }
+
+    /// The longest a command may be typed.
+    const MAX_COMMAND: usize = 240;
 
     /// The longest a query may be typed.
     const MAX_LENGTH: usize = 64;
@@ -132,13 +171,13 @@ impl Search {
     pub fn key(&mut self, key_code: KeyCode) -> Typed {
         match key_code {
             KeyCode::Enter => {
-                remember(&self.query);
+                remember(self.sigil, &self.query);
                 Typed::Done(std::mem::take(&mut self.query))
             }
             KeyCode::Esc => Typed::Cancelled,
             KeyCode::Up => {
                 let back = self.back.map_or(0, |back| back + 1);
-                let Some(earlier) = recalled(back) else {
+                let Some(earlier) = recalled(self.sigil, back) else {
                     return Typed::Ignored;
                 };
                 if self.back.is_none() {
@@ -153,7 +192,7 @@ impl Search {
                     let draft = std::mem::take(&mut self.draft);
                     self.recall(draft)
                 }
-                Some(back) => match recalled(back - 1) {
+                Some(back) => match recalled(self.sigil, back - 1) {
                     Some(later) => {
                         self.back = Some(back - 1);
                         self.recall(later)
@@ -166,7 +205,11 @@ impl Search {
                 &mut self.query,
                 &mut self.caret,
                 key_code,
-                Self::MAX_LENGTH,
+                if self.sigil == COMMAND {
+                    Self::MAX_COMMAND
+                } else {
+                    Self::MAX_LENGTH
+                },
                 Some,
             ) {
                 Some(true) => Typed::Typing,
@@ -187,6 +230,8 @@ impl Search {
     /// cursor at the end of the query.
     pub fn render(&self, matches: usize, placeholder: &str, area: Rect, page: &mut Page) {
         let tally = match (self.query.is_empty(), matches) {
+            // 🗣️ a command matches nothing; it is only done
+            (false, _) if self.sigil == COMMAND => Span::raw(""),
             (true, _) => Span::styled(
                 format!("  {placeholder}"),
                 Style::new().fg(theme::worn().colors.muted),
@@ -199,7 +244,10 @@ impl Search {
             ),
         };
         let line = Line::from(vec![
-            Span::styled("/", Style::new().fg(theme::worn().colors.key)),
+            Span::styled(
+                self.sigil.to_string(),
+                Style::new().fg(theme::worn().colors.key),
+            ),
             Span::styled(
                 self.query.as_str(),
                 Style::new().fg(theme::worn().colors.text),

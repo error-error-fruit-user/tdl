@@ -215,25 +215,16 @@ fn main() {
     }
 }
 
-/// Does the `tdl cli` command a possessed run spoke after a `, confessed, with what it says said
+/// Does the `tdl cli` command (or `sh` and a shell command) a possessed run spoke after a `, confessed, with what it says said
 /// through the séance. One that fails is wailed about, and the possession carries on.
 fn speak(start: &Start, spoken: &str) {
     ritual::confess("tdl cli", Some(format!("tdl cli {spoken}")));
-    let rite = ritual::rite_words(spoken).and_then(|words| {
-        let args = std::iter::once("cli".to_string()).chain(words);
-        // ✂️ clap's own words, without the help it points at, which nobody here can ask for
-        let cli = Cli::parse(args).map_err(|error| {
-            let said = error.to_string();
-            said.lines()
-                .next()
-                .unwrap_or_default()
-                .trim_start_matches("error: ")
-                .to_string()
-        })?;
-        cli.rite
-            .ok_or_else(|| format!("`{spoken} isn't a tdl cli command"))
-    });
-    if let Err(problem) = rite.and_then(|rite| Launcher::rite(start.clone(), rite)) {
+    // 🐚 `sh ...` runs a shell command, behind the same guard rails as the launcher's command line
+    let outcome = match spoken.strip_prefix("sh ") {
+        Some(command) => slayer::commands::shell(command),
+        None => cli::Rite::from_phrase(spoken).and_then(|rite| Launcher::rite(start.clone(), rite)),
+    };
+    if let Err(problem) = outcome {
         ritual::wail(problem);
     }
 }

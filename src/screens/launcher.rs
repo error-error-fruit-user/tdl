@@ -117,6 +117,9 @@ pub struct Launcher {
     legacy: Vec<PathBuf>,
     /// The search being typed, if one is.
     search: Option<Search>,
+    /// The command line (`` ` ``) being typed, if it is: a `tdl cli` command, or `sh` and a shell
+    /// command.
+    spoken: Option<Search>,
     /// The last search's matches, for `;` and `,` to step through.
     found: Found,
     /// The profiles picked to be copied together.
@@ -246,6 +249,10 @@ impl Launcher {
         ["N⟨join⟩", "Join"],
         ["J↓/K↑", "Traverse (Home/End: First/Last)"],
         Search::LEGEND,
+        [
+            "`",
+            "Command Line (tdl cli Commands, or sh and a Shell Command)",
+        ],
         ["}⟨rb+down⟩/{⟨rb+up⟩", "Swap (Selected, If Any)"],
         Selection::LEGEND,
         ["Y/Shift+Y", "Copy Selected/All Profiles"],
@@ -354,6 +361,7 @@ impl Launcher {
             unseal_delete: start.unseal_delete,
             legacy,
             search: None,
+            spoken: None,
             found: Found::default(),
             selection: Selection::default(),
         }
@@ -1476,6 +1484,52 @@ impl Launcher {
         }
     }
 
+    /// Does what was typed on the command line: a `tdl cli` command, or after `sh ` a shell
+    /// command (see [`commands::shell`]). Launching, hosting and joining go through the launcher's
+    /// own windows; anything else is done on the launcher's loadout behind the séance's curtain,
+    /// and what it said is shown in a window afterwards.
+    fn speak(&mut self, grimoire: &mut Grimoire, phrase: &str) -> Result<()> {
+        if phrase.is_empty() {
+            return Ok(());
+        }
+        let (outcome, said) = match phrase.strip_prefix("sh ") {
+            Some(command) => ritual::behind_the_curtain(|| commands::shell(command)),
+            None => match Rite::from_phrase(phrase) {
+                Err(problem) => (Err(problem), Vec::new()),
+                Ok(Rite::Launch { profile }) => {
+                    return self.perform(grimoire, Command::Launch { profile });
+                }
+                Ok(Rite::Host { profile, game }) => {
+                    return self.perform(grimoire, game.command(profile));
+                }
+                Ok(Rite::Join { host, game }) => return self.perform(grimoire, game.command(host)),
+                Ok(rite) => {
+                    ritual::behind_the_curtain(|| commands::perform(&mut self.loadout, rite))
+                }
+            },
+        };
+        // 📋 rows may have come or gone: the cursor stays on the list, the matches are let go
+        let rows = self.loadout.profiles.len();
+        self.table_state.select(Some(self.cursor().min(rows)));
+        self.selection.clear();
+        self.found = Found::default();
+        let mut lines = said;
+        if let Err(problem) = outcome {
+            lines.push(format!("✗ {problem}"));
+        }
+        if lines.is_empty() {
+            lines.push("Done".into());
+        }
+        // ✂️ a window only holds so much: the end is what matters most
+        const MOST: usize = 30;
+        if lines.len() > MOST {
+            let cut = lines.len() - MOST;
+            lines.drain(..cut);
+            lines.insert(0, format!("… {cut} lines before these"));
+        }
+        Warning::announce(grimoire, "~", &lines)
+    }
+
     /// Moves the cursor to the next of the last search's matches, or with `back` the one before.
     fn search_again(&mut self, back: bool) -> bool {
         let row = if back {
@@ -1677,7 +1731,7 @@ impl Ritual for Launcher {
     type Return = ();
 
     fn typing(&self) -> bool {
-        self.search.is_some()
+        self.search.is_some() || self.spoken.is_some()
     }
 
     /// Gets everything ready before the launcher is first drawn (see [`Launcher::prepare`]).
@@ -1690,6 +1744,24 @@ impl Ritual for Launcher {
     /// terminal is wide enough, or the global settings alone on the new-profile row.
     fn legend(&self) -> &[[&'static str; 2]] {
         Self::LEGEND
+    }
+
+    /// While the command line or a search is being typed, keys type into it, whatever the legend
+    /// says they do otherwise.
+    fn deed(&self, chant: KeyCode) -> Option<String> {
+        let line = match (&self.spoken, &self.search) {
+            (Some(_), _) => "the command line",
+            (None, Some(_)) => "the search",
+            (None, None) => return ritual::deed_in(self.legend(), chant),
+        };
+        Some(match chant {
+            KeyCode::Enter if self.spoken.is_some() => "Do the command".into(),
+            KeyCode::Enter => "Go to the best match".into(),
+            KeyCode::Esc => format!("Call {line} off"),
+            KeyCode::Up | KeyCode::Down => format!("Bring back an earlier one on {line}"),
+            KeyCode::Char(c) => format!("Type {c} on {line}"),
+            _ => format!("Edit {line}"),
+        })
     }
 
     fn render(&mut self, page: &mut Page) {
@@ -1850,7 +1922,15 @@ impl Ritual for Launcher {
             width: list_area.width,
             ..sigil_area
         };
-        match &self.search {
+        match self.spoken.as_ref().or(self.search.as_ref()) {
+            Some(spoken) if self.spoken.is_some() => {
+                spoken.render(
+                    0,
+                    "a tdl cli command, or sh and a shell command",
+                    hint_row,
+                    page,
+                );
+            }
             Some(search) => {
                 let matches = self
                     .loadout
@@ -1878,6 +1958,22 @@ impl Ritual for Launcher {
         grimoire: &mut Grimoire,
         key_code: KeyCode,
     ) -> Result<Phase<Self::Return>> {
+        // 🗣️ the command line takes every key until it is spoken or called off
+        if let Some(spoken) = &mut self.spoken {
+            return match spoken.key(key_code) {
+                Typed::Typing => Ok(Phase::Render),
+                Typed::Ignored => Ok(Phase::Prompt),
+                Typed::Cancelled => {
+                    self.spoken = None;
+                    Ok(Phase::Render)
+                }
+                Typed::Done(phrase) => {
+                    self.spoken = None;
+                    self.speak(grimoire, phrase.trim())?;
+                    Ok(Phase::Render)
+                }
+            };
+        }
         // 🔎 a search being typed takes every key until it is kept or called off
         if self.search.is_some() {
             return Ok(self.search_key(key_code));
@@ -1961,6 +2057,10 @@ impl Ritual for Launcher {
             KeyCode::End => Ok(Phase::render_if_then(*index != count, || *index = count)),
             KeyCode::Char('/') => {
                 self.search = Some(Search::default());
+                Ok(Phase::Render)
+            }
+            KeyCode::Char('`') => {
+                self.spoken = Some(Search::command());
                 Ok(Phase::Render)
             }
             KeyCode::Char(';') => Ok(Phase::render_if(self.search_again(false))),

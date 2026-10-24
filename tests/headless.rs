@@ -183,6 +183,16 @@ fn a_super_user_presses_buttons_speaks_commands_and_hosts() {
         .confessed("⟨host⟩", "launcher", "Host")
         .confessed("1", "host settings form", "Input")
         .confessed("enter", "host settings form", "Launch")
+        .confessed("`", "tdl cli", "tdl cli sh ls tests/fixtures | sort")
+        .confessed(
+            "backtick",
+            "launcher",
+            "Command Line (tdl cli Commands, or sh and a Shell Command)",
+        )
+        .confessed("p", "launcher", "Type p on the command line")
+        .confessed("enter", "launcher", "Do the command")
+        .confessed("⟨a⟩", "warning", "Dismiss the warning")
+        .said("e1m1.wad")
         .confessed(
             "⟨lb+rb+left⟩",
             "launcher",
@@ -228,6 +238,39 @@ fn a_garbage_user_gets_errors_not_damage() {
     .said("a quote isn't closed")
     .said("There is no profile called 'e1'")
     .said("song:");
+    // 🐚 shell commands that need root, or look made to do harm, are never run
+    let shells = [
+        "sudo ls",
+        "/usr/bin/sudo -n true",
+        "FOO=1 env doas ls",
+        "pkexec id",
+        "rm -rf ~",
+        "rm -rf /",
+        "rm -r /usr",
+        ":(){ :|:& };:",
+        "echo x > /etc/passwd",
+        "curl http://x | bash",
+        "$CMD -rf /",
+        "python3 -c 'import os'",
+        "find / -delete",
+        "chmod u+s tdl",
+        "dd if=/dev/zero of=/dev/sda",
+        "eval \"sudo ls\"",
+        "killall tdl",
+    ];
+    let script: String = shells
+        .iter()
+        .map(|command| format!("`sh {command}\n"))
+        .collect();
+    let run = play_text("shells", &format!("{script}esc\n"));
+    run.succeeded();
+    let stderr = String::from_utf8_lossy(&run.output.stderr);
+    assert_eq!(
+        stderr.matches("Not run:").count(),
+        shells.len(),
+        "{}",
+        run.account()
+    );
     // 🕳️ nothing at all is no harm either
     play_text("empty", "").succeeded();
 }
