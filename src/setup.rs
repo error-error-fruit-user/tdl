@@ -22,7 +22,7 @@
 //!
 //! Every key may be left out, and no other key is allowed. Paths are relative to the TOML's own
 //! folder (`~/` is the home folder). Without a TOML named, it is `setup.toml` in the working
-//! folder, or else beside tdl.
+//! folder, or else beside tdl, or else in the `artifacts/` beside tdl.
 
 use std::path::{Path, PathBuf};
 
@@ -80,20 +80,26 @@ pub struct Made {
     pub songs: Vec<PathBuf>,
 }
 
-/// The setup TOML: `given`, or else `setup.toml` in the working folder, or else beside tdl.
+/// The setup TOML: `given`, or else `setup.toml` in the working folder, or else beside tdl or in
+/// the `artifacts/` beside it (where tdl-install writes it).
 fn find(given: Option<PathBuf>) -> Result<PathBuf, String> {
     if let Some(given) = given {
         return Ok(given);
     }
     let beside = std::env::current_exe()
         .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join("setup.toml")));
-    [Some(PathBuf::from("setup.toml")), beside]
-        .into_iter()
-        .flatten()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf));
+    std::iter::once(PathBuf::from("setup.toml"))
+        .chain(beside.iter().flat_map(|dir| {
+            [
+                dir.join("setup.toml"),
+                dir.join("artifacts").join("setup.toml"),
+            ]
+        }))
         .find(|path| path.is_file())
         .ok_or_else(|| {
-            "There is no setup.toml in the working folder or beside tdl: tdl setup FILE names one"
+            "There is no setup.toml in the working folder, beside tdl or in its artifacts: tdl \
+             setup FILE names one"
                 .into()
         })
 }

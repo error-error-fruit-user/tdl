@@ -9,7 +9,8 @@ First it says, under a red warning, exactly what it will do, and asks before doi
 tdl-install for Windows and as AppImages, into published/releases/), or with --source only tdl
 and tdl-install for this machine (cargo build --release), or with --no-build nothing at all; and
 runs the tdl-install in published/releases/, which copies the tdl beside it where it is asked to
-(--mode), puts UZDoom and Freedoom 2 next to it and points tdl at them. --mode, --dir,
+(--mode), puts UZDoom and Freedoom 2 in its artifacts/ folder (published/artifacts/ in place) and
+points tdl at them. --mode, --dir,
 --no-uzdoom, --no-freedoom and --no-link go to tdl-install (see its --help). Right after the
 warning it asks whether to make shortcuts for tdl (the app menu and the desktop, or the Start menu
 and the desktop on Windows) with the system's lock icon; --no-shortcuts makes none without asking.
@@ -36,7 +37,7 @@ PROGRAMS = ["tdl", "tdl-install"]
 
 # The journal: everything this does, with the time since it began (what it plans and is told,
 # every command and all it prints, every file it puts somewhere), added to JOURNAL on each run.
-JOURNAL = os.path.join(HERE, "published", "publish-install.log")
+JOURNAL = os.path.join(HERE, "published", "artifacts", "publish-install.log")
 BEGAN = time.monotonic()
 # Blender's line for every frame it renders, which would bury the rest
 CHATTER = ("Fra:", "Saved:", "Time:", "Read blend")
@@ -230,11 +231,19 @@ def plan(args):
     lines.append(where.get(args.mode) or
                  "    - asks where to put tdl: in place, for you (~/.local/opt/tdl, with the tdl command "
                  "on your PATH) or for everyone (/opt/tdl, needs root)")
+    if args.dir:
+        art = "artifacts/ in --dir"
+    elif args.mode == "in-place":
+        art = "published/artifacts/"
+    else:
+        art = "artifacts/ beside tdl (published/artifacts/ if tdl stays in place here)"
+    lines.append(f"    - puts everything but tdl itself, its artifacts, in {art}: its log among them")
     if not args.no_uzdoom:
-        lines.append("    - downloads UZDoom 5.0.3 into uzdoom/ beside tdl, checked against its pinned "
+        lines.append("    - downloads UZDoom 5.0.3 into uzdoom/ in the artifacts, checked against its pinned "
                      "size and hash")
     if not args.no_freedoom:
-        lines.append("    - downloads Freedoom 0.13.0 and puts freedoom2.wad in wads/base_wads/ beside tdl")
+        lines.append("    - downloads Freedoom 0.13.0 and puts freedoom2.wad in wads/base_wads/ in the "
+                     "artifacts")
     kept = [name for name, left_out in (("UZDoom", args.no_uzdoom), ("freedoom2.wad", args.no_freedoom))
             if not left_out]
     if kept and not args.no_link:

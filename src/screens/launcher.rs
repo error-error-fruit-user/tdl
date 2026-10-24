@@ -996,14 +996,19 @@ impl Launcher {
         Ok(())
     }
 
-    /// Where dirs named for wads are looked for: beside tdl's executable, and where tdl was
-    /// started from, each once.
+    /// Where dirs named for wads are looked for: beside tdl's executable, in the `artifacts/`
+    /// beside it (where tdl-install puts Freedoom), and where tdl was started from, each once.
     fn wad_pool_roots() -> Vec<PathBuf> {
         let beside = std::env::current_exe()
             .ok()
             .and_then(|exe| exe.parent().map(Path::to_path_buf));
+        let artifacts = beside.as_ref().map(|dir| dir.join("artifacts"));
         let mut roots: Vec<PathBuf> = Vec::new();
-        for root in beside.into_iter().chain(std::env::current_dir().ok()) {
+        for root in beside
+            .into_iter()
+            .chain(artifacts)
+            .chain(std::env::current_dir().ok())
+        {
             if !roots.contains(&root) {
                 roots.push(root);
             }

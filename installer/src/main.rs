@@ -7,19 +7,23 @@
 //! - **for everyone**: the same in `/opt/tdl` (`%ProgramFiles%\tdl`), with the command in
 //!   `/usr/local/bin` (the machine's PATH on Windows); this needs root (administrator).
 //!
-//! In every mode it makes two folders beside tdl:
+//! tdl is the payload; everything else it makes goes in an `artifacts/` folder: `artifacts/` beside
+//! tdl, or, when it runs in place from a project's `published/releases/`, that project's
+//! `published/artifacts/` (`--artifacts` says another):
 //!
 //! ```text
-//! uzdoom/                   UZDoom's own folder: the Windows release unpacked, or the AppImage
-//! wads/base_wads/           freedoom2.wad, with Freedoom's license
+//! artifacts/uzdoom/            UZDoom's own folder: the Windows release unpacked, or the AppImage
+//! artifacts/wads/base_wads/    freedoom2.wad, with Freedoom's license
+//! artifacts/setup.toml         what `tdl setup` keeps
+//! artifacts/tdl-install.log    the journal
 //! ```
 //!
-//! tdl then offers `wads` and `wads/base_wads` as wad pools when it starts. Each download is a
+//! tdl then offers `artifacts/wads` and `artifacts/wads/base_wads` as wad pools when it starts. Each download is a
 //! pinned release, checked against its size and BLAKE3 hash before anything is unpacked. What is
 //! already there is left alone.
 //!
 //! One thing happens outside those folders, and `--no-link` leaves it out: the UZDoom and the base
-//! wad are written in `setup.toml` beside tdl, and kept as tdl's global ones by running the `tdl`
+//! wad are written in `artifacts/setup.toml`, and kept as tdl's global ones by running the `tdl`
 //! there with `setup` on it.
 
 #[macro_use]
@@ -82,10 +86,15 @@ struct Cli {
     /// given (and in place if there is no terminal to ask on).
     #[arg(long, value_enum)]
     mode: Option<Mode>,
-    /// The folder tdl is in, to put `uzdoom` and `wads` in. Defaults to the one this program is in
-    /// (in place) or the mode's own folder.
+    /// The folder tdl is in. Defaults to the one this program is in (in place) or the mode's own
+    /// folder.
     #[arg(long, value_name = "DIR")]
     dir: Option<PathBuf>,
+    /// Where everything but tdl goes (UZDoom, Freedoom 2, setup.toml, the journal). Defaults to
+    /// `artifacts/` in tdl's folder, or a project's `published/artifacts/` when this runs in place
+    /// from its `published/releases/`.
+    #[arg(long, value_name = "DIR")]
+    artifacts: Option<PathBuf>,
     /// Leaves UZDoom out.
     #[arg(long)]
     no_uzdoom: bool,
@@ -172,10 +181,15 @@ fn main() -> ExitCode {
         warn!("{} isn't a folder", dir.display());
         return ExitCode::FAILURE;
     }
-    // 📓 from here on the journal is kept in the install's folder
-    let journal = journal::open(&dir, "tdl-install.log");
+    let art = artifacts_dir(cli.artifacts.as_deref(), &dir, &here);
+    // 📓 from here on the journal is kept with the artifacts
+    let journal = journal::open(&art, "tdl-install.log");
     note!("this program is in {}", here.display());
-    note!("mode {mode:?}, installing in {}", dir.display());
+    note!(
+        "mode {mode:?}, installing in {}, artifacts in {}",
+        dir.display(),
+        art.display()
+    );
     note!(
         "leaving out: uzdoom {}, freedoom {}, linking {}",
         cli.no_uzdoom,
@@ -222,18 +236,18 @@ fn main() -> ExitCode {
         }
     };
     if !cli.no_uzdoom {
-        report("UZDoom", install_uzdoom(&dir, &scratch));
+        report("UZDoom", install_uzdoom(&art, &scratch));
     }
     if !cli.no_freedoom {
-        report("Freedoom 2", install_freedoom(&dir, &scratch));
+        report("Freedoom 2", install_freedoom(&art, &scratch));
     }
     if !cli.no_link {
         if mode == Mode::System {
             // 🔒 tdl setup would keep them in root's tdl settings, which nobody else uses
             match write_setup(
-                &dir,
-                uzdoom_in(&dir).as_deref(),
-                Some(dir.join("wads").join("base_wads").join(FREEDOOM_FILES[0].1))
+                &art,
+                uzdoom_in(&art).as_deref(),
+                Some(art.join("wads").join("base_wads").join(FREEDOOM_FILES[0].1))
                     .filter(|path| path.is_file())
                     .as_deref(),
             ) {
@@ -244,7 +258,7 @@ fn main() -> ExitCode {
                 Err(problem) => warn!("{problem}"),
             }
         } else {
-            link(&dir);
+            link(&art, &dir);
         }
     }
     if mode != Mode::InPlace {
@@ -578,6 +592,26 @@ fn windows_path(mode: Mode, dir: &Path) -> Outcome<String> {
 }
 
 /// Where UZDoom is inside `<dir>/uzdoom/` on this system, if it is there.
+/// Where everything but tdl goes: `given`, or, when this runs in place from a project's
+/// `published/releases/`, that project's `published/artifacts/`, or else `<dir>/artifacts/`.
+fn artifacts_dir(given: Option<&Path>, dir: &Path, here: &Path) -> PathBuf {
+    if let Some(given) = given {
+        return std::path::absolute(given).unwrap_or_else(|_| given.to_path_buf());
+    }
+    match here.parent() {
+        Some(published)
+            if dir == here
+                && here.file_name().is_some_and(|name| name == "releases")
+                && published
+                    .file_name()
+                    .is_some_and(|name| name == "published") =>
+        {
+            published.join("artifacts")
+        }
+        _ => dir.join("artifacts"),
+    }
+}
+
 fn uzdoom_in(dir: &Path) -> Option<PathBuf> {
     let name = if cfg!(windows) {
         "uzdoom.exe"
@@ -634,17 +668,17 @@ fn write_setup(dir: &Path, uzdoom: Option<&Path>, base_wad: Option<&Path>) -> Ou
     Ok(path)
 }
 
-/// Points tdl at the UZDoom and the base wad in `dir`: writes them in `dir/setup.toml` and runs the
-/// `tdl` there with `setup` on it. Without a `tdl` there, or if it fails, says what to run instead.
+/// Points tdl at the UZDoom and the base wad in `art`, the artifacts: writes them in
+/// `art/setup.toml` and runs the `tdl` in `dir` with `setup` on it. Without a `tdl` there, or if it fails, says what to run instead.
 /// Nothing is an error: the files are in place, and tdl can pick them (`U` and `B`).
-fn link(dir: &Path) {
-    let uzdoom = uzdoom_in(dir);
-    let base_wad = Some(dir.join("wads").join("base_wads").join(FREEDOOM_FILES[0].1))
+fn link(art: &Path, dir: &Path) {
+    let uzdoom = uzdoom_in(art);
+    let base_wad = Some(art.join("wads").join("base_wads").join(FREEDOOM_FILES[0].1))
         .filter(|path| path.is_file());
     if uzdoom.is_none() && base_wad.is_none() {
         return;
     }
-    let setup = match write_setup(dir, uzdoom.as_deref(), base_wad.as_deref()) {
+    let setup = match write_setup(art, uzdoom.as_deref(), base_wad.as_deref()) {
         Ok(setup) => setup,
         Err(problem) => {
             warn!("{problem}");

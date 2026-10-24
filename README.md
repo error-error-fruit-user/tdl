@@ -60,7 +60,7 @@ The profiles here are examples made for the screenshots.
 - [UZDoom](https://github.com/UZDoom/UZDoom) installed
 - A Doom base wad (e.g. `DOOM2.WAD`, or the free [Freedoom](https://freedoom.github.io/))
 
-[`tdl-install`](#the-installer) puts both UZDoom and Freedoom 2 next to tdl.
+[`tdl-install`](#the-installer) puts both UZDoom and Freedoom 2 in the `artifacts/` folder next to tdl.
 - Python 3.8 or later, only to [upgrade the files of a tdl before 1.0.0](#upgrading-from-before-100) and to [host a mod folder](#mod-folders)
 
 ## Install
@@ -75,14 +75,16 @@ cargo +nightly build --release --features spooky  # or nightly, with its unstabl
 
 ### The installer
 
-`tdl-install` (`installer/`, built with `cargo build --release -p tdl-install`, and shipped beside `tdl.exe` in the Windows release) downloads UZDoom 5.0.3 and Freedoom 0.13.0, checks each against its size and hash, and puts them beside itself, so keep it next to tdl (or pass `--dir` with tdl's dir):
+`tdl-install` (`installer/`, built with `cargo build --release -p tdl-install`, and shipped beside `tdl.exe` in the Windows release) downloads UZDoom 5.0.3 and Freedoom 0.13.0, checks each against its size and hash, and puts them in an `artifacts/` folder beside tdl, so keep it next to tdl (or pass `--dir` with tdl's dir). tdl is the payload, the one thing at the top; everything else the installer makes is an artifact. Run in place from a project's `published/releases/`, the artifacts go in that project's `published/artifacts/` instead, and `--artifacts DIR` puts them anywhere:
 
 ```
-uzdoom/                    UZDoom's own folder: the Windows release unpacked, or uzdoom.AppImage on Linux
-wads/base_wads/            freedoom2.wad and Freedoom's license
+artifacts/uzdoom/            UZDoom's own folder: the Windows release unpacked, or uzdoom.AppImage on Linux
+artifacts/wads/base_wads/    freedoom2.wad and Freedoom's license
+artifacts/setup.toml         what tdl setup keeps
+artifacts/tdl-install.log    its log
 ```
 
-What is there already is left alone (`--no-uzdoom` and `--no-freedoom` leave either out). It tells you what it does in a voice from [Installation Groans](https://github.com/error-error-fruit-user/installation-groans), built in when it is built: Toiling Through Hell, your computer's descent through hell to install it, or with `--computer-speak` a plain, formal line per step. Its log (`tdl-install.log`) keeps the plain account either way. The downloads go through the system's temporary folder and are deleted afterwards. The UZDoom and the base wad, and a Freedoom profile that plays it, are written in `setup.toml` beside tdl (anything else already in it stays) and kept as tdl's global ones by running the `tdl` there with `tdl setup setup.toml` (if there is no `tdl` there the installer prints that command; `--no-link` skips it). Next time tdl starts it offers `wads` and `wads/base_wads` as [wad pools](#the-wads-screen). There is no UZDoom release it can place on macOS or other systems, so there it installs Freedoom only and says so.
+What is there already is left alone (`--no-uzdoom` and `--no-freedoom` leave either out). It tells you what it does in a voice from [Installation Groans](https://github.com/error-error-fruit-user/installation-groans), built in when it is built: Toiling Through Hell, your computer's descent through hell to install it, or with `--computer-speak` a plain, formal line per step. Its log (`tdl-install.log`) keeps the plain account either way. The downloads go through the system's temporary folder and are deleted afterwards. The UZDoom and the base wad, and a Freedoom profile that plays it, are written in `artifacts/setup.toml` (anything else already in it stays) and kept as tdl's global ones by running the `tdl` beside it with `tdl setup artifacts/setup.toml` (if there is no `tdl` there the installer prints that command; `--no-link` skips it). Next time tdl starts it offers `artifacts/wads` and `artifacts/wads/base_wads` as [wad pools](#the-wads-screen). There is no UZDoom release it can place on macOS or other systems, so there it installs Freedoom only and says so.
 
 ## Usage
 
@@ -149,7 +151,7 @@ tdl join 10.0.0.2 --code abc234 --port 9000           # the join form, filled in
   ```
 
 - In the launcher, `` ` `` opens the command line: a line like the search's, with a `~` in front, that takes a `tdl cli` command (`~new e1 doom/e1.wad`, `~profiles`). Launching, hosting and joining go through the launcher's own windows; anything else is done on the open loadout, and what it says is shown in a window. `↑`/`↓` bring back earlier commands. `sh` and a shell command (`~sh ls ~/doom`) runs it the way bash would, from the dir tdl started in, with no input and for at most 30 seconds, showing what it prints. Guard rails keep it from running anything that needs root or administrator (`sudo`, `su`, `doas`, `pkexec`, `runas`...), anything that runs the system (disks, users, services, the firewall, the kernel), anything that hides what it runs (a shell inside the shell, `eval`, `python -c`, a command in a variable) and anything that reaches for everything at once (`rm -rf ~`, writing into `/etc` or onto a disk, a fork bomb); and tdl running as root runs none at all. They are rails, not a sandbox: they stop accidents and the obvious, not someone set on getting around them. A headless script's `` `sh ... `` runs one the same way, and the key itself is `backtick`.
-- `setup [TOML]` keeps what a TOML says, with no windows, and closes: `uzdoom`, `base_wad`, `ini`, `theme` and `splash` (a name or a file), `loadout` (opened every time), `wads` (wad dirs kept for every loadout), `song` (the song that plays, or `none` for the built-in track) and `songs` (more songs tdl knows, for the **song** setting). `remember_loadout = false` sets the loadout up without opening it every time. Each `[[profiles]]` table (`name`, `wads`, and its own `base_wad`, `uzdoom`, `ini` and `args`) is made in the loadout, or, if one has its name already, its wads are taken again, so a rebuilt pk3 is never one that changed; `place` puts it there in the list (`1` is first), else a new one goes last and an old one stays where it was. Paths are relative to the TOML's folder (`~/` is your home); any other key is an error. Without a TOML named, it is `setup.toml` in the working folder, or else beside tdl. The installer writes one beside tdl.
+- `setup [TOML]` keeps what a TOML says, with no windows, and closes: `uzdoom`, `base_wad`, `ini`, `theme` and `splash` (a name or a file), `loadout` (opened every time), `wads` (wad dirs kept for every loadout), `song` (the song that plays, or `none` for the built-in track) and `songs` (more songs tdl knows, for the **song** setting). `remember_loadout = false` sets the loadout up without opening it every time. Each `[[profiles]]` table (`name`, `wads`, and its own `base_wad`, `uzdoom`, `ini` and `args`) is made in the loadout, or, if one has its name already, its wads are taken again, so a rebuilt pk3 is never one that changed; `place` puts it there in the list (`1` is first), else a new one goes last and an old one stays where it was. Paths are relative to the TOML's folder (`~/` is your home); any other key is an error. Without a TOML named, it is `setup.toml` in the working folder, or else beside tdl, or else in the `artifacts/` beside tdl, where the installer writes one.
 
   ```toml
   uzdoom = "uzdoom/uzdoom.AppImage"
@@ -231,7 +233,7 @@ Opened with `W`, `B` or `R` in the editor (or `B` in the launcher) to pick inste
 
 `N` on a wad, here or in the editor's wad list, renames its file where it is. Only the name before the extension is typed, so UZDoom still knows what kind of file it is, and a name another file in the dir has (or, in the editor, another wad in the profile) is turned down. Every profile using the wad follows it, and so does the global base wad. A download keeps the host's name for it, so it can't be renamed.
 
-When tdl starts, it looks beside its executable and in the dir it was started from for dirs with `wad` in their name (`wads`, `My_WADs`, and ones inside those, like `wads/base_wads`). For each that wads aren't looked for in yet, it asks whether to keep it as a wad pool for every loadout (**[G]lobal**), for this **[L]oadout**, or **[N]ever** to ask about it again; `Esc` asks again next time. It doesn't ask when `--wads` or `--forget-wads` is given.
+When tdl starts, it looks beside its executable, in the `artifacts/` beside it, and in the dir it was started from for dirs with `wad` in their name (`wads`, `My_WADs`, and ones inside those, like `wads/base_wads`). For each that wads aren't looked for in yet, it asks whether to keep it as a wad pool for every loadout (**[G]lobal**), for this **[L]oadout**, or **[N]ever** to ask about it again; `Esc` asks again next time. It doesn't ask when `--wads` or `--forget-wads` is given.
 
 `A` (or `Enter` on the last row) adds a dir to look in, asking whether to keep it for this **[S]ession**, **[G]lobal**ly or for this **[V]ault**, as `--wads` does. `D` on a dir's row dismisses it: tdl stops looking in it, everywhere it was kept, and its files stay. On a wad, `D` asks whether to **[E]rase** it from the disk (with wads selected, all of them; a profile using an erased wad shows it missing, and one watching its dir lets it go) or **[D]ismiss** the dir it is in. `.downloads` is always there. `/` searches the wads shown by file name.
 
