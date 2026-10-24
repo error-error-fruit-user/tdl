@@ -164,7 +164,7 @@ fn ask(question: &str) -> bool {
         return false;
     }
     crate::ritual::hush();
-    print!("{question} [y/N] ");
+    print!("{question} [y/n] ");
     let _ = io::stdout().flush();
     let mut answer = String::new();
     io::stdin().lock().read_line(&mut answer).is_ok()

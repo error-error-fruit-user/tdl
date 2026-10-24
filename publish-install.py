@@ -194,7 +194,7 @@ def agreed(accept):
     if not sys.stdin.isatty():
         note("no one to ask, and no --accept: nothing was done")
         sys.exit("There is no one to ask, so nothing was done: pass --accept to go ahead.")
-    answer = input("Are you sure? [y/N] ").strip()
+    answer = input("Are you sure? [y/n] ").strip()
     note(f"asked to go ahead, the answer was {answer!r}")
     return answer.lower() in ("y", "yes")
 
@@ -236,7 +236,7 @@ def wants_shortcuts(args, what):
         where = " and ".join(place.replace(os.path.expanduser("~"), "~", 1)
                              for place in shortcut_places())
     answer = input(f"Make shortcuts for {what} in {where}, with the system's lock icon? "
-                   "[y/N] ").strip()
+                   "[y/n] ").strip()
     note(f"asked about shortcuts for {what}, the answer was {answer!r}")
     return answer.lower() in ("y", "yes")
 

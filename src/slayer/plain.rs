@@ -657,7 +657,7 @@ fn joined_name(host: &str, profiles: &[Profile]) -> String {
 /// Asks `question` on the terminal and says whether the answer is yes. Anything but y or yes is
 /// no, and so is having no terminal to ask on, so nothing is downloaded unless someone said so.
 fn ask(question: &str) -> bool {
-    answer(question, "[y/N]", "no").is_some_and(|answer| is_yes(&answer))
+    answer(question, "[y/n]", "no").is_some_and(|answer| is_yes(&answer))
 }
 
 /// Asks `question` on the terminal, with the `answers` it takes after it, and returns what was
