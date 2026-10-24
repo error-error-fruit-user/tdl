@@ -3,9 +3,10 @@
 //!
 //! - **in place**: where this program is (or `--dir`); nothing else changes;
 //! - **for you**: tdl is copied to `~/.local/opt/tdl` (`%LOCALAPPDATA%\Programs\tdl` on Windows)
-//!   and the `tdl` command is put on your PATH;
-//! - **for everyone**: the same in `/opt/tdl` (`%ProgramFiles%\tdl`), with the command in
-//!   `/usr/local/bin` (the machine's PATH on Windows); this needs root (administrator).
+//!   and the `tdl` command is put on your PATH.
+//!
+//! Nothing is installed for everyone, so it never needs root or an administrator, and it won't run
+//! as root.
 //!
 //! tdl is the payload; everything else it makes goes in an `artifacts/` folder: `artifacts/` beside
 //! tdl, or, when it runs in place from a project's `published/releases/`, that project's
@@ -150,8 +151,6 @@ enum Mode {
     InPlace,
     /// Copied into your own folder, with the `tdl` command on your PATH.
     User,
-    /// Copied into the system's folder, with the `tdl` command on everyone's PATH. Needs root.
-    System,
 }
 
 /// The folder this program is in. An AppImage runs from a mount that goes away with it, so for
@@ -213,9 +212,7 @@ fn main() -> ExitCode {
         cli.no_freedoom,
         cli.no_link
     );
-    if mode == Mode::System
-        && let Err(problem) = check_privileges()
-    {
+    if let Err(problem) = refuse_root() {
         warn!("{problem}");
         return ExitCode::FAILURE;
     }
@@ -236,7 +233,7 @@ fn main() -> ExitCode {
     let scratch = Scratch::new();
     let mut failed = false;
     let mut report = |what: &str, outcome: Outcome<Option<PathBuf>>| match outcome {
-        Ok(Some(path)) => say!("{what}: {}", path.display()),
+        Ok(Some(path)) => note!("{what}: {}", path.display()),
         Ok(None) => {}
         Err(problem) => {
             warn!("{what} wasn't installed: {problem}");
@@ -256,31 +253,11 @@ fn main() -> ExitCode {
         );
     }
     if !cli.no_link {
-        if mode == Mode::System {
-            // 🔒 tdl setup would keep them in root's tdl settings, which nobody else uses
-            match write_setup(
-                &art,
-                uzdoom_in(&art).as_deref(),
-                Some(art.join("wads").join("base_wads").join(FREEDOOM_FILES[0].1))
-                    .filter(|path| path.is_file())
-                    .as_deref(),
-            ) {
-                Ok(setup) => {
-                    journal::section("setup");
-                    say!(
-                        "Each user points tdl at them in tdl (U and B), or runs: tdl setup {}",
-                        setup.display()
-                    )
-                }
-                Err(problem) => warn!("{problem}"),
-            }
-        } else {
-            let mut steps = journal::Steps::open(&art, cli.reinstall);
-            if steps.done("tdl-install: link") {
-                steps.skip("tdl's UZDoom and base wad", "tdl's settings");
-            } else if link(&art, &dir) {
-                steps.finish("tdl-install: link");
-            }
+        let mut steps = journal::Steps::open(&art, cli.reinstall);
+        if steps.done("tdl-install: link") {
+            steps.skip("tdl's UZDoom and base wad", "tdl's settings");
+        } else if link(&art, &dir) {
+            steps.finish("tdl-install: link");
         }
     }
     if mode != Mode::InPlace {
@@ -305,7 +282,6 @@ fn main() -> ExitCode {
         journal::finish("tdl");
         return ExitCode::FAILURE;
     }
-    say!("tdl offers the wads folders as wad pools when it starts.");
     journal::finish("tdl");
     ExitCode::SUCCESS
 }
@@ -347,11 +323,6 @@ fn plan(cli: &Cli, dir: &Path, art: &Path) -> Vec<String> {
             dir.display(),
             bin_dir(cli.mode, dir)
         ),
-        Mode::System => format!(
-            "  - copy tdl to {} and put the tdl command on everyone's PATH ({}); needs root",
-            dir.display(),
-            bin_dir(cli.mode, dir)
-        ),
     });
     lines.push(format!(
         "  - put everything but tdl itself, its artifacts, in {}: its log among them",
@@ -390,7 +361,7 @@ fn plan(cli: &Cli, dir: &Path, art: &Path) -> Vec<String> {
     }
     lines.push(String::new());
     lines.push(
-        "To change that, here or after the y: --mode in-place|user|system, --dir and --artifacts say \
+        "To change that, here or after the y: --mode in-place|user, --dir and --artifacts say \
          where, --no-uzdoom, --no-freedoom and --no-link leave those out, --reinstall does \
          everything again, --desktop-shortcut and --menu-entry make shortcuts, and \
          --computer-speak speaks plainly."
@@ -411,32 +382,23 @@ fn install_dir(mode: Mode, here: &Path) -> Outcome<PathBuf> {
         (Mode::InPlace, _) => here.to_path_buf(),
         (Mode::User, true) => var("LOCALAPPDATA")?.join("Programs").join("tdl"),
         (Mode::User, false) => var("HOME")?.join(".local").join("opt").join("tdl"),
-        (Mode::System, true) => var("ProgramFiles")?.join("tdl"),
-        (Mode::System, false) => PathBuf::from("/opt/tdl"),
     })
 }
 
-/// A system install writes where only root can: says so before anything is done.
-fn check_privileges() -> Outcome<()> {
-    #[cfg(windows)]
-    let elevated = std::process::Command::new("net")
-        .args(["session"])
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false);
+/// tdl is installed for whoever runs this, or in place: never as root, whose install nobody else
+/// could use or change.
+fn refuse_root() -> Outcome<()> {
     #[cfg(not(windows))]
-    let elevated = std::process::Command::new("id")
-        .arg("-u")
-        .output()
-        .map(|output| output.stdout.trim_ascii() == b"0")
-        .unwrap_or(false);
-    if elevated {
-        Ok(())
-    } else if cfg!(windows) {
-        Err("Installing for everyone needs an administrator: run this from an elevated terminal, or choose \"for you\"".into())
-    } else {
-        Err("Installing for everyone needs root: run this with sudo, or choose \"for you\"".into())
+    {
+        let root = std::process::Command::new("id")
+            .arg("-u")
+            .output()
+            .is_ok_and(|output| output.stdout.trim_ascii() == b"0");
+        if root {
+            return Err("Don't run tdl-install as root (with sudo): it installs tdl for you, or in place, and needs no root".into());
+        }
     }
+    Ok(())
 }
 
 /// The names tdl may have beside this program.
@@ -501,7 +463,6 @@ fn place_tdl(here: &Path, dir: &Path) -> Outcome<()> {
 fn bin_dir(mode: Mode, dir: &Path) -> String {
     match (mode, std::env::var_os("HOME")) {
         _ if cfg!(windows) => dir.display().to_string(),
-        (Mode::System, _) => "/usr/local/bin".into(),
         (_, Some(home)) => Path::new(&home)
             .join(".local")
             .join("bin")
@@ -526,10 +487,9 @@ fn put_on_path(mode: Mode, dir: &Path) -> Outcome<String> {
 #[cfg(not(windows))]
 fn unix_path(mode: Mode, dir: &Path) -> Outcome<String> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
-    let bin = match (mode, &home) {
-        (Mode::System, _) => PathBuf::from("/usr/local/bin"),
-        (_, Some(home)) => home.join(".local").join("bin"),
-        (_, None) => return Err("$HOME isn't set".into()),
+    let bin = match &home {
+        Some(home) => home.join(".local").join("bin"),
+        None => return Err("$HOME isn't set".into()),
     };
     link_command(&bin, &dir.join("tdl"))?;
     let mut note = format!("The tdl command: {}", bin.join("tdl").display());
@@ -616,11 +576,8 @@ fn add_to_profile(profile: &Path, bin: &Path) -> Outcome<bool> {
 /// environment is changed so that every program sees it.
 #[cfg(windows)]
 fn windows_path(mode: Mode, dir: &Path) -> Outcome<String> {
-    let scope = if mode == Mode::System {
-        "Machine"
-    } else {
-        "User"
-    };
+    let _ = mode;
+    let scope = "User";
     let script = format!(
         "$d = $env:TDL_DIR; $p = [Environment]::GetEnvironmentVariable('Path', '{scope}'); \
          if (($p -split ';') -notcontains $d) {{ \

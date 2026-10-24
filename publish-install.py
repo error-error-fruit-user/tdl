@@ -121,10 +121,6 @@ def plan(args):
                  "adding a line to ~/.profile that puts it on your PATH if it isn't"
                  if not WINDOWS else
                  "    - copies tdl to %LOCALAPPDATA%\\Programs\\tdl (or --dir) and puts it on your PATH"),
-        "system": ("    - copies tdl to /opt/tdl (or --dir) and puts the tdl command in /usr/local/bin "
-                   "(needs root: the installer runs with sudo)" if not WINDOWS else
-                   "    - copies tdl to %ProgramFiles%\\tdl (or --dir) and puts it on the machine's PATH "
-                   "(needs administrator)"),
     }
     lines.append(where[args.mode])
     if args.dir:
@@ -153,7 +149,7 @@ def plan(args):
     lines.append("")
     lines.append("To change that, here or after the y: --no-build installs what is published already, "
                  "--source builds only for this machine, --no-uzdoom, --no-freedoom and --no-link "
-                 "leave those out, --mode in-place|user|system and --dir say where, "
+                 "leave those out, --mode in-place|user and --dir say where, "
                  "--desktop-shortcut and --menu-entry make shortcuts, --reinstall does it all again, and --computer-speak speaks "
                  "plainly.")
     return lines
@@ -206,7 +202,7 @@ def parser():
     build_how.add_argument("--source", action="store_true",
                            help="build tdl and tdl-install for this machine only (cargo build --release)")
     passed = flags.add_argument_group("passed to tdl-install")
-    passed.add_argument("--mode", choices=["in-place", "user", "system"], default="in-place")
+    passed.add_argument("--mode", choices=["in-place", "user"], default="in-place")
     passed.add_argument("--dir")
     passed.add_argument("--no-uzdoom", action="store_true")
     passed.add_argument("--no-freedoom", action="store_true")
@@ -229,11 +225,10 @@ def main():
     flags = parser()
     args = flags.parse_args()
     groans.start(JOURNAL, args.computer_speak)
-    if as_root() and not args.no_build:
-        groans.note("run as root: refused to build")
-        sys.exit("Don't run this with sudo: building as root leaves files in published/ that only "
-                 "root can change. Run it as yourself; to install for everyone, it runs only the "
-                 "installer with sudo.")
+    if as_root():
+        groans.note("run as root: refused")
+        sys.exit("Don't run this with sudo: it builds and installs for you (or in place), and root "
+                 "would leave files in published/ and an install that only root can change.")
     groans.warning(plan(args))
     names = [name for action in flags._actions for name in action.option_strings
              if name not in ("-h", "--help", "--accept")]
@@ -246,7 +241,6 @@ def main():
         args = flags.parse_args(sys.argv[1:] + added)
         groans.note(f"with the flags given at the question: {' '.join(added)}")
     check_owner([folder for folder in (os.path.join(HERE, "published"),) if os.path.isdir(folder)])
-    groans.say("begin", "Publishing and installing tdl", what="tdl", place=os.path.join(HERE, "published"))
     build(args)
     groans.section("install")
     command = [installer(), "--accept", "--mode", args.mode]
@@ -258,11 +252,6 @@ def main():
                                       ("--reinstall", args.reinstall),
                                       ("--desktop-shortcut", args.desktop_shortcut),
                                       ("--menu-entry", args.menu_entry)) if on]
-    # 🔑 an install for everyone runs the installer alone with sudo
-    if args.mode == "system" and not WINDOWS and not as_root():
-        groans.note("running the installer with sudo")
-        command = ["sudo", "--preserve-env=GROANS_JOURNAL,GROANS_DEPTH,GROANS_VOICE,GROANS_COLOR,"
-                   "GROANS_SECTION,GROANS_CAPTURED", *command]
     groans.run(command, cwd=HERE, voiced=True)
 
 
