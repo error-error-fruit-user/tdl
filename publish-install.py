@@ -11,8 +11,8 @@ and tdl-install for this machine (cargo build --release), or with --no-build not
 runs the tdl-install in published/releases/, which copies the tdl beside it where it is asked to
 (--mode), puts UZDoom and Freedoom 2 in its artifacts/ folder (published/artifacts/ in place) and
 points tdl at them. --mode, --dir,
---no-uzdoom, --no-freedoom and --no-link go to tdl-install (see its --help). Right after the
-warning it asks whether to make shortcuts for tdl (the app menu and the desktop, or the Start menu
+--no-uzdoom, --no-freedoom and --no-link go to tdl-install (see its --help). Once it may go
+ahead, it asks whether to make shortcuts for tdl (the app menu and the desktop, or the Start menu
 and the desktop on Windows) with the system's lock icon; --no-shortcuts makes none without asking.
 
 Dependency-free Python 3.8+.
@@ -194,7 +194,7 @@ def agreed(accept):
     if not sys.stdin.isatty():
         note("no one to ask, and no --accept: nothing was done")
         sys.exit("There is no one to ask, so nothing was done: pass --accept to go ahead.")
-    answer = input("Go ahead? [y/N] ").strip()
+    answer = input("Are you sure? [y/N] ").strip()
     note(f"asked to go ahead, the answer was {answer!r}")
     return answer.lower() in ("y", "yes")
 
@@ -222,7 +222,7 @@ def shortcut_places():
 
 
 def wants_shortcuts(args, what):
-    """Asks, right after the warning, whether to make shortcuts for `what` (--no-shortcuts: no,
+    """Asks, once it may go ahead, whether to make shortcuts for `what` (--no-shortcuts: no,
     without asking)."""
     if args.no_shortcuts:
         note("--no-shortcuts: no shortcuts, and no question about them")
@@ -474,10 +474,10 @@ def main():
     refuse_root_build(args)
 
     warning(plan(args))
-    shortcuts = wants_shortcuts(args, "tdl")
     if not agreed(args.accept):
         note("not going ahead: nothing was done")
         sys.exit("Nothing was done.")
+    shortcuts = wants_shortcuts(args, "tdl")
     check_owner([folder for folder in (os.path.normpath(os.path.join(HERE, "published")),) if os.path.isdir(folder)])
     tell("begin", f"Publishing and installing {WHAT}", what=WHAT, place=os.path.join(HERE, "published"))
     ask_mode(args)
