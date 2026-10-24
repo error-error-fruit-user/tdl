@@ -30,6 +30,8 @@ pub struct Settings {
     pub quip: String,
     /// A song of the player's own instead of the built-in track, for every loadout.
     pub song: Option<PathBuf>,
+    /// The songs tdl knows, which J/K go round on the song.
+    pub songs: Vec<PathBuf>,
     /// The `theme.toml` worn instead of the built-in theme.
     pub theme: Option<PathBuf>,
     /// The `splash.toml` the splash screen wears instead of the built-in one.
@@ -64,6 +66,7 @@ impl Settings {
             quips: !global.no_quips,
             quip: global.splash_quip.typed(),
             song: global.song.as_ref().map(PathBuf::from),
+            songs: global.songs.iter().map(PathBuf::from).collect(),
             theme: global.theme.as_ref().map(PathBuf::from),
             splash_look: global.splash.as_ref().map(PathBuf::from),
             pride_flags: global.pride_flags.as_ref().map(PathBuf::from),
@@ -82,6 +85,11 @@ impl Settings {
         global.no_quips = !self.quips;
         global.music = self.music;
         global.song = self.song.map(PathBuf::into_os_string);
+        global.songs = self
+            .songs
+            .into_iter()
+            .map(PathBuf::into_os_string)
+            .collect();
         global.theme = self.theme.map(PathBuf::into_os_string);
         global.splash = self.splash_look.map(PathBuf::into_os_string);
         global.pride_flags = self.pride_flags.map(PathBuf::into_os_string);
@@ -155,7 +163,8 @@ impl SettingsForm {
         ["Esc", "Quit (Asks to Save Changes)"],
     ];
     const SONG_LEGEND: &[[&'static str; 2]] = &[
-        ["Enter", "Pick a Song"],
+        ["J/K, ←/→", "Built-in, Then Each Song tdl Knows"],
+        ["Enter", "Pick a Song (tdl Knows It From Then On)"],
         ["Backspace", "Back to the Built-in Track"],
         ["Tab/↓, Backtab/↑", "Traverse"],
         ["Esc", "Quit (Asks to Save Changes)"],
@@ -318,7 +327,7 @@ impl Ritual for SettingsForm {
             Field {
                 label: "song",
                 value: &song,
-                placeholder: "built-in, Enter to pick",
+                placeholder: "built-in, ←/→ or Enter",
                 room: 24,
                 caret: None,
             },
@@ -460,7 +469,12 @@ impl SettingsForm {
             return Ok(());
         };
         match music::check_song(&path) {
-            Ok(_) => self.settings.song = Some(path),
+            Ok(_) => {
+                if !self.settings.songs.contains(&path) {
+                    self.settings.songs.push(path.clone());
+                }
+                self.settings.song = Some(path);
+            }
             Err(problem) => Warning::summon(grimoire, &problem)?,
         }
         Ok(())
@@ -532,6 +546,12 @@ impl SettingsForm {
                 self.settings.music = self.settings.music.previous();
                 Phase::Render
             }
+            // 🎶 the song goes round the built-in track and the songs tdl knows
+            KeyCode::Char(key @ ('j' | 'k')) if self.focus == Self::SONG => {
+                self.cycle_song(key == 'j')
+            }
+            KeyCode::Right if self.focus == Self::SONG => self.cycle_song(true),
+            KeyCode::Left if self.focus == Self::SONG => self.cycle_song(false),
             // 👗 the theme, the splash and the pride go round the ones that can be picked by name
             KeyCode::Char(key @ ('j' | 'k')) if self.is_dressing() => self.cycle(key == 'j'),
             KeyCode::Right if self.is_dressing() => self.cycle(true),
@@ -602,6 +622,20 @@ impl SettingsForm {
         };
         let next = step(field.as_deref(), &names, forward);
         Phase::render_if(std::mem::replace(field, next) != *field)
+    }
+
+    /// Goes on to the next (or `forward` false, the previous) song tdl knows that is still there,
+    /// after the built-in track.
+    fn cycle_song(&mut self, forward: bool) -> Phase<Option<Places>> {
+        let names: Vec<String> = self
+            .settings
+            .songs
+            .iter()
+            .filter(|song| song.is_file())
+            .map(|song| song.display().to_string())
+            .collect();
+        let next = step(self.settings.song.as_deref(), &names, forward);
+        Phase::render_if(std::mem::replace(&mut self.settings.song, next) != self.settings.song)
     }
 
     /// Moves to the field `by` away, wrapping around, with the cursor at the end of its text.

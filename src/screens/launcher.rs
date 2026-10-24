@@ -647,10 +647,7 @@ impl Launcher {
     /// `tdl setup`: keeps what the setup TOML gives, which comes in as `--keep-` flags would (this
     /// run's UZDoom, base wad, ini and the rest, as [`Launcher::keep_unasked`] says), with no
     /// windows; what couldn't be kept is an error.
-    pub fn setup_plain(
-        start: Start,
-        profiles: &[crate::setup::Profile],
-    ) -> std::result::Result<(), String> {
+    pub fn setup_plain(start: Start, made: &crate::setup::Made) -> std::result::Result<(), String> {
         let mut launcher = Self::open_plain(start)?;
         launcher.use_session_files();
         if let Some(path) = launcher.session_base_wad.take() {
@@ -663,8 +660,36 @@ impl Launcher {
         if !problems.is_empty() {
             return Err(problems.join("\n"));
         }
-        for profile in profiles {
+        launcher.set_up_songs(made)?;
+        for profile in &made.profiles {
             launcher.set_up_profile(profile)?;
+        }
+        Ok(())
+    }
+
+    /// Keeps the song a setup TOML plays and the songs it has tdl know, in the settings the loadout
+    /// uses.
+    fn set_up_songs(&mut self, made: &crate::setup::Made) -> std::result::Result<(), String> {
+        if made.song.is_none() && made.songs.is_empty() {
+            return Ok(());
+        }
+        let uac = &mut self.loadout.uac;
+        for song in &made.songs {
+            let song = song.clone().into_os_string();
+            if !uac.songs.contains(&song) {
+                uac.songs.push(song);
+            }
+        }
+        if let Some(song) = &made.song {
+            uac.song = song.clone().map(PathBuf::into_os_string);
+        }
+        self.loadout
+            .keep_uac()
+            .map_err(|error| format!("Could not keep the songs: {error}"))?;
+        match &made.song {
+            Some(Some(song)) => ritual::murmur(format!("Playing {} from now on", song.display())),
+            Some(None) => ritual::murmur("Playing the built-in track from now on"),
+            None => {}
         }
         Ok(())
     }

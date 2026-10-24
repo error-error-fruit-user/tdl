@@ -22,6 +22,7 @@ A **loadout** is one pair of these dirs: the standard ones, or any others. Pass 
 | `splash_quip` | The splash screen's quip: `Random`, or `Custom` with the text as typed, in which every `#<number>` stands for that built-in quip (a number this tdl has no quip for shows a random one). |
 | `no_quips` | `true` to leave the quips out of every window. |
 | `song` | The path of a song to play instead of the built-in track, picked in the settings. |
+| `songs` | The paths of the songs tdl knows, gone round with J/K on the song in the settings: each one picked there, set with `tdl cli settings song`, or kept by `tdl setup` (`song`, `songs`). Missing in older files. |
 | `uzdoom` | The UZDoom executable used by profiles that don't set their own, `U` in the launcher, or kept from `--uzdoom`. |
 | `base_wad` | The default base wad, saved like a profile's: `path`, `hash`, `size`, `volatile` and `modified`; `W` in the launcher, or kept from `--base-wad`. |
 | `uzdoom_args` | Extra arguments for UZDoom, as one line of text split at spaces, passed on every launch, host and join before the wads; **uzdoom args** in the settings. |

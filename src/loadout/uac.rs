@@ -56,6 +56,10 @@ pub struct Uac {
     /// another. Picked in the settings; missing in older files, which count as the built-in one.
     #[serde(default, with = "optional_path")]
     pub song: Option<OsString>,
+    /// The songs tdl knows, gone round with J/K on the song in the settings: every song picked
+    /// there or kept by `tdl setup` (`song`, `songs`). Missing in older files, which count as none.
+    #[serde(default, with = "paths")]
+    pub songs: Vec<OsString>,
     /// Path to the UZDoom executable, used by profiles that don't set their own.
     #[serde(default, with = "optional_path")]
     pub uzdoom: Option<OsString>,

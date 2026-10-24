@@ -605,7 +605,11 @@ fn settings(loadout: &mut Loadout, changes: &[String]) -> Outcome {
                 } else {
                     crate::music::use_song(Path::new(value))
                         .map_err(|problem| format!("song: {problem}"))?;
-                    Some(file(value)?)
+                    let song = file(value)?;
+                    if !uac.songs.contains(&song) {
+                        uac.songs.push(song.clone());
+                    }
+                    Some(song)
                 }
             }
             _ => uac.pride = on(name, value)?,
@@ -666,6 +670,10 @@ fn show_settings(loadout: &Loadout) -> Outcome {
     ];
     for (name, value) in lines {
         murmur(format!("  {name:<14}{value}"));
+    }
+    for (place, song) in uac.songs.iter().enumerate() {
+        let name = if place == 0 { "songs known" } else { "" };
+        murmur(format!("  {name:<14}{}", shown(song)));
     }
     Ok(())
 }

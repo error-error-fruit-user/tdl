@@ -10,6 +10,8 @@
 //! loadout = "~/doom/loadout"   # the loadout to open every time
 //! remember_loadout = false     # ...or only to set up now, leaving the one tdl opens alone
 //! wads = ["wads", "~/doom"]    # wad dirs, kept for every loadout
+//! song = "songs/mine.wav"      # the song that plays ("none": the built-in track); tdl knows it
+//! songs = ["songs/other.ogg"]  # more songs tdl knows, gone round in the settings
 //!
 //! [[profiles]]                 # made in the loadout, or, if it is there, its wads taken again
 //! name = "Freedoom"
@@ -62,6 +64,20 @@ struct Setup {
     loadout: Option<String>,
     #[serde(default)]
     wads: Vec<String>,
+    song: Option<String>,
+    #[serde(default)]
+    songs: Vec<String>,
+}
+
+/// What a setup TOML does besides what it puts in the `Cli`: the profiles it makes and the songs
+/// it keeps, their paths made whole.
+#[derive(Debug, Default)]
+pub struct Made {
+    pub profiles: Vec<Profile>,
+    /// The song to play: `Some(None)` for the built-in track.
+    pub song: Option<Option<PathBuf>>,
+    /// The songs tdl is to know (the song among them).
+    pub songs: Vec<PathBuf>,
 }
 
 /// The setup TOML: `given`, or else `setup.toml` in the working folder, or else beside tdl.
@@ -95,9 +111,9 @@ fn whole(path: &str, dir: &Path) -> String {
 
 /// Reads the setup TOML (`given`, or the default one) into `cli`, as if each thing in it had been
 /// given with its `--keep-` flag (the loadout only for this run with `remember_loadout = false`).
-/// Returns where the TOML was, and the profiles it makes, their paths made whole. `Err` says what
-/// is wrong with it.
-pub fn read(given: Option<PathBuf>, cli: &mut Cli) -> Result<(PathBuf, Vec<Profile>), String> {
+/// Returns where the TOML was, and what else it does ([`Made`]). `Err` says what is wrong with it,
+/// a song that can't be played among it.
+pub fn read(given: Option<PathBuf>, cli: &mut Cli) -> Result<(PathBuf, Made), String> {
     let path = find(given)?;
     let text = std::fs::read_to_string(&path)
         .map_err(|error| format!("Could not read {}: {error}", path.display()))?;
@@ -160,5 +176,30 @@ pub fn read(given: Option<PathBuf>, cli: &mut Cli) -> Result<(PathBuf, Vec<Profi
             ..profile
         })
         .collect();
-    Ok((path, profiles))
+    let song_at = |given: &str| -> Result<PathBuf, String> {
+        let song = PathBuf::from(whole(given, &dir));
+        crate::music::check_song(&song)?;
+        Ok(song)
+    };
+    let song = match setup.song.as_deref() {
+        Some(none) if none.eq_ignore_ascii_case("none") => Some(None),
+        Some(given) => Some(Some(song_at(given)?)),
+        None => None,
+    };
+    let mut songs = setup
+        .songs
+        .iter()
+        .map(|given| song_at(given))
+        .collect::<Result<Vec<_>, _>>()?;
+    if let Some(Some(song)) = &song {
+        songs.insert(0, song.clone());
+    }
+    Ok((
+        path,
+        Made {
+            profiles,
+            song,
+            songs,
+        },
+    ))
 }

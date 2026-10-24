@@ -162,8 +162,8 @@ fn main() {
         return;
     }
     // 🧰 tdl setup keeps what its TOML gives, with no windows, and closes
-    if let Some((path, profiles)) = setup {
-        if let Err(message) = Launcher::setup_plain(start, &profiles) {
+    if let Some((path, made)) = setup {
+        if let Err(message) = Launcher::setup_plain(start, &made) {
             eprintln!("{message}");
             std::process::exit(1);
         }

@@ -118,6 +118,28 @@ impl Drop for Altar {
 }
 
 /// The fake UZDoom, as a path.
+/// A song tdl can play, written into `dir`: a tenth of a second of silence as a PCM wav.
+fn song(dir: &std::path::Path, name: &str) -> String {
+    let samples = 4410u32;
+    let mut wav = Vec::new();
+    wav.extend(b"RIFF");
+    wav.extend((36 + samples * 2).to_le_bytes());
+    wav.extend(b"WAVEfmt ");
+    wav.extend(16u32.to_le_bytes());
+    wav.extend(1u16.to_le_bytes()); // PCM
+    wav.extend(1u16.to_le_bytes()); // mono
+    wav.extend(44100u32.to_le_bytes());
+    wav.extend((44100u32 * 2).to_le_bytes());
+    wav.extend(2u16.to_le_bytes());
+    wav.extend(16u16.to_le_bytes());
+    wav.extend(b"data");
+    wav.extend((samples * 2).to_le_bytes());
+    wav.resize(wav.len() + samples as usize * 2, 0);
+    let path = dir.join(name);
+    fs::write(&path, wav).unwrap();
+    path.display().to_string()
+}
+
 fn uzdoom() -> String {
     Altar::root()
         .join("tests/fake-uzdoom")
@@ -309,6 +331,17 @@ fn the_settings() {
     super_user
         .rite(&["set", "e1", "args", "global"])
         .says("args      none");
+    // a song of their own, which tdl knows from then on, and back to the built-in track
+    let mine = song(&super_user.dir, "mine.wav");
+    super_user
+        .rite(&["settings", "song", &mine])
+        .says("song          ")
+        .says("mine.wav")
+        .says("songs known");
+    super_user
+        .rite(&["settings", "song", "none"])
+        .says("the built-in track")
+        .says("songs known");
     // 🗑️ garbage: settings that aren't any, half said, or pointing at what isn't a song or theme
     let garbage = Altar::new("settings-garbage");
     garbage
@@ -470,6 +503,19 @@ fn setting_up() {
         .tdl(&["setup", &toml.display().to_string()])
         .says("Took again the wads of the profile e1");
     // a profile put first in the list, as nacht's setup-waw.toml puts Nacht des Schreckens
+    // songs: one to play, and more tdl knows
+    let songs = super_user.dir.join("songs.toml");
+    song(&super_user.dir, "beauty.wav");
+    song(&super_user.dir, "lullaby.wav");
+    fs::write(
+        &songs,
+        "loadout = \"local\"\nremember_loadout = false\nsong = \"beauty.wav\"\nsongs = [\"lullaby.wav\"]\n",
+    )
+    .unwrap();
+    super_user
+        .tdl(&["setup", &songs.display().to_string()])
+        .says("Playing")
+        .says("beauty.wav from now on");
     let first = super_user.dir.join("first.toml");
     fs::write(
         &first,
@@ -494,6 +540,16 @@ fn setting_up() {
         .map(|name| out.find(name).unwrap())
         .collect();
     assert!(order.is_sorted(), "Schreckens isn't first in\n{out}");
+    let output = Command::new(env!("CARGO_BIN_EXE_tdl"))
+        .env("HOME", super_user.dir.join("home"))
+        .env("XDG_CONFIG_HOME", super_user.dir.join("home/.config"))
+        .args(["--session", "--loadout", &local, "cli", "settings"])
+        .output()
+        .unwrap();
+    Said { output }
+        .says("beauty.wav")
+        .says("songs known")
+        .says("lullaby.wav");
     // 🗑️ garbage: keys that aren't, TOML that isn't, files that aren't there, a profile with no name
     let garbage = Altar::new("setup-garbage");
     let write = |name: &str, text: &str| {
@@ -506,6 +562,7 @@ fn setting_up() {
     let missing = write("missing.toml", "uzdoom = \"/no/such/uzdoom\"\n");
     let nameless = write("nameless.toml", "[[profiles]]\nwads = []\n");
     let escaping = write("escaping.toml", "[[profiles]]\nname = \"../../escape\"\n");
+    let tuneless = write("tuneless.toml", "song = \"tuneless.toml\"\n");
     let misplaced = write(
         "misplaced.toml",
         "[[profiles]]\nname = \"e1\"\nplace = -1\n",
@@ -522,6 +579,9 @@ fn setting_up() {
     garbage
         .tdl(&["setup", &nameless])
         .fails_with_code(2, "missing field `name`");
+    garbage
+        .tdl(&["setup", &tuneless])
+        .fails_with_code(2, "isn't a song tdl can play");
     garbage
         .tdl(&["setup", &misplaced])
         .fails_with_code(2, "invalid value");
