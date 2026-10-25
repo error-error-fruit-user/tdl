@@ -81,7 +81,7 @@ pub struct Made {
 }
 
 /// The setup TOML: `given`, or else `setup.toml` in the working folder, or else beside tdl or in
-/// the `artifacts/` beside it (where tdl-install writes it).
+/// the `artifacts/` beside it (where install-tdl writes it).
 fn find(given: Option<PathBuf>) -> Result<PathBuf, String> {
     if let Some(given) = given {
         return Ok(given);

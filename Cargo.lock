@@ -993,6 +993,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "install-tdl"
+version = "1.0.0"
+dependencies = [
+ "blake3",
+ "clap",
+ "regex-lite",
+ "toml",
+ "ureq",
+ "zip",
+]
+
+[[package]]
 name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2559,18 +2571,6 @@ dependencies = [
  "tiny_http",
  "toml",
  "ureq",
-]
-
-[[package]]
-name = "tdl-install"
-version = "1.0.0"
-dependencies = [
- "blake3",
- "clap",
- "regex-lite",
- "toml",
- "ureq",
- "zip",
 ]
 
 [[package]]

@@ -3,7 +3,7 @@
 
 usage: python3 appimage.py [--out FOLDER] [program...]
 
-Builds tdl and tdl-install (its installer) with `cargo build --release` and wraps each executable
+Builds tdl and install-tdl (its installer) with `cargo build --release` and wraps each executable
 in <name>.AppImage in FOLDER (default: published/releases/). They are terminal programs: the
 AppImage runs the program with its arguments, and its desktop entry opens a terminal.
 
@@ -60,7 +60,7 @@ groans = load_groans()
 RUNTIME = os.path.join(ROOT, "secrets", "appimage", "runtime-x86_64")
 RUNTIME_URL = "https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64"
 
-PROGRAMS = ["tdl", "tdl-install"]
+PROGRAMS = ["tdl", "install-tdl"]
 
 DESKTOP = """[Desktop Entry]
 Type=Application

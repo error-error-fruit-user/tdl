@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.99.1"
 license = "0BSD"
 
-# 📦 `tdl-install` (installer/) puts UZDoom and Freedoom 2 next to tdl
+# 📦 `install-tdl` (installer/) puts UZDoom and Freedoom 2 next to tdl
 [workspace]
 members = ["installer"]
 

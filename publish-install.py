@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Publish tdl, then install it with the tdl-install just published.
+"""Publish tdl, then install it with the install-tdl just published.
 
-usage: python3 publish-install.py [--accept] [--no-build | --source] [tdl-install options]
+usage: python3 publish-install.py [--accept] [--no-build | --source] [install-tdl options]
 
 First it says, under a red warning, exactly what it will do, and asks once: "Are you sure? [y/n]".
 The answer can carry any of its flags after the y (`y --mode user --menu-entry`), which win over
 the same flags on the command line; --accept goes ahead without asking, with what the command line
 says and the defaults for the rest (no shortcuts among them). Then it builds the release with
-publish.py (tdl and tdl-install for Windows and as AppImages, into published/releases/), or with
---source only tdl and tdl-install for this machine (cargo build --release), or with --no-build
-nothing at all; and runs the tdl-install in published/releases/, which copies the tdl beside it
+publish.py (tdl and install-tdl for Windows and as AppImages, into published/releases/), or with
+--source only tdl and install-tdl for this machine (cargo build --release), or with --no-build
+nothing at all; and runs the install-tdl in published/releases/, which copies the tdl beside it
 where --mode says (in place by default), puts UZDoom and Freedoom 2 in its artifacts/ folder
 (published/artifacts/ in place) and points tdl at them. --mode, --dir, --no-uzdoom,
---no-freedoom, --no-link, --desktop-shortcut and --menu-entry go to tdl-install (see its --help).
+--no-freedoom, --no-link, --desktop-shortcut and --menu-entry go to install-tdl (see its --help).
 
 It speaks in a voice from ../installation-groans (Toiling Through Hell, or --computer-speak), and
 everything it and what it runs did is in published/artifacts/publish-install.log.
@@ -33,7 +33,7 @@ JOURNAL = os.path.join(HERE, "published", "artifacts", "publish-install.log")
 WINDOWS = platform.system() == "Windows"
 EXE = ".exe" if WINDOWS else ""
 # The workspace's programs, as --source leaves them in published/releases/
-PROGRAMS = ["tdl", "tdl-install"]
+PROGRAMS = ["tdl", "install-tdl"]
 GROANS_GITHUB = "https://raw.githubusercontent.com/error-error-fruit-user/installation-groans/main/"
 
 
@@ -107,14 +107,14 @@ def plan(args):
     if args.no_build:
         lines.append("  - build nothing, and install what published/releases/ has now")
     elif args.source:
-        lines.append(f"  - build tdl{EXE} and tdl-install{EXE} for this machine (cargo build --release) and "
+        lines.append(f"  - build tdl{EXE} and install-tdl{EXE} for this machine (cargo build --release) and "
                      "copy them into published/releases/")
     else:
         lines.append("  - build tdl's release into published/releases/, replacing what is there: "
-                     "tdl.exe and tdl-install.exe cross-built for Windows (Rust's "
-                     "x86_64-pc-windows-gnu target), tdl.AppImage and tdl-install.AppImage (needs "
+                     "tdl.exe and install-tdl.exe cross-built for Windows (Rust's "
+                     "x86_64-pc-windows-gnu target), tdl.AppImage and install-tdl.AppImage (needs "
                      "mksquashfs), LICENSE and THIRD_PARTY_LICENSES.txt (needs cargo-license)")
-    lines.append("  - run tdl-install from published/releases/, which:")
+    lines.append("  - run install-tdl from published/releases/, which:")
     where = {
         "in-place": "    - leaves tdl where it is, in published/releases/ (or --dir), and adds no command",
         "user": ("    - copies tdl to ~/.local/opt/tdl (or --dir) and puts the tdl command in ~/.local/bin, "
@@ -182,14 +182,14 @@ def build(args):
 
 
 def installer():
-    """The tdl-install in published/releases/: the .exe on Windows, else the plain one --source
+    """The install-tdl in published/releases/: the .exe on Windows, else the plain one --source
     built or the AppImage."""
-    names = ["tdl-install.exe"] if WINDOWS else ["tdl-install", "tdl-install.AppImage"]
+    names = ["install-tdl.exe"] if WINDOWS else ["install-tdl", "install-tdl.AppImage"]
     for name in names:
         path = os.path.join(RELEASES, name)
         if os.path.isfile(path):
             return path
-    sys.exit("There is no tdl-install in published/releases/: build it (leave out --no-build).")
+    sys.exit("There is no install-tdl in published/releases/: build it (leave out --no-build).")
 
 
 def parser():
@@ -200,8 +200,8 @@ def parser():
     build_how.add_argument("--no-build", action="store_true",
                            help="install what published/releases/ has now, building nothing")
     build_how.add_argument("--source", action="store_true",
-                           help="build tdl and tdl-install for this machine only (cargo build --release)")
-    passed = flags.add_argument_group("passed to tdl-install")
+                           help="build tdl and install-tdl for this machine only (cargo build --release)")
+    passed = flags.add_argument_group("passed to install-tdl")
     passed.add_argument("--mode", choices=["in-place", "user"], default="in-place")
     passed.add_argument("--dir")
     passed.add_argument("--no-uzdoom", action="store_true")
@@ -216,7 +216,7 @@ def parser():
                             "one left off")
     flags.add_argument("--computer-speak", action="store_true",
                        help="say what it does plainly and formally, rather than as a descent through "
-                            "hell (and have tdl-install do the same)")
+                            "hell (and have install-tdl do the same)")
     return flags
 
 

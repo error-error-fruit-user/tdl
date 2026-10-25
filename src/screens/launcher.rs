@@ -996,7 +996,7 @@ impl Launcher {
     }
 
     /// Where dirs named for wads are looked for: beside tdl's executable, in the `artifacts/`
-    /// beside it (where tdl-install puts Freedoom), and where tdl was started from, each once.
+    /// beside it (where install-tdl puts Freedoom), and where tdl was started from, each once.
     fn wad_pool_roots() -> Vec<PathBuf> {
         let beside = std::env::current_exe()
             .ok()

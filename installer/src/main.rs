@@ -1,4 +1,4 @@
-//! `tdl-install`: puts UZDoom and Freedoom 2 next to tdl, so a new player has something to play
+//! `install-tdl`: puts UZDoom and Freedoom 2 next to tdl, so a new player has something to play
 //! with, and sets tdl up to use them. It asks (or `--mode` says) where tdl lives:
 //!
 //! - **in place**: where this program is (or `--dir`); nothing else changes;
@@ -16,7 +16,7 @@
 //! artifacts/uzdoom/            UZDoom's own folder: the Windows release unpacked, or the AppImage
 //! artifacts/wads/base_wads/    freedoom2.wad, with Freedoom's license
 //! artifacts/setup.toml         what `tdl setup` keeps
-//! artifacts/tdl-install.log    the journal
+//! artifacts/install-tdl.log    the journal
 //! ```
 //!
 //! tdl then offers `artifacts/wads` and `artifacts/wads/base_wads` as wad pools when it starts. Each download is a
@@ -254,10 +254,10 @@ fn main() -> ExitCode {
     }
     if !cli.no_link {
         let mut steps = journal::Steps::open(&art, cli.reinstall);
-        if steps.done("tdl-install: link") {
+        if steps.done("install-tdl: link") {
             steps.skip("tdl's UZDoom and base wad", "tdl's settings");
         } else if link(&art, &dir) {
-            steps.finish("tdl-install: link");
+            steps.finish("install-tdl: link");
         }
     }
     if mode != Mode::InPlace {
@@ -395,7 +395,7 @@ fn refuse_root() -> Outcome<()> {
             .output()
             .is_ok_and(|output| output.stdout.trim_ascii() == b"0");
         if root {
-            return Err("Don't run tdl-install as root (with sudo): it installs tdl for you, or in place, and needs no root".into());
+            return Err("Don't run install-tdl as root (with sudo): it installs tdl for you, or in place, and needs no root".into());
         }
     }
     Ok(())
@@ -542,7 +542,7 @@ fn link_command(bin: &Path, target: &Path) -> Outcome<()> {
 /// Returns whether it wrote one.
 #[cfg(not(windows))]
 fn add_to_profile(profile: &Path, bin: &Path) -> Outcome<bool> {
-    const MARK: &str = "# added by tdl-install";
+    const MARK: &str = "# added by install-tdl";
     let problem = |error: io::Error| format!("{}: {error}", profile.display());
     let old = fs::read_to_string(profile).unwrap_or_default();
     if old.contains(MARK) {
@@ -1005,7 +1005,7 @@ struct Scratch(PathBuf);
 
 impl Scratch {
     fn new() -> Self {
-        Self(std::env::temp_dir().join(format!("tdl-install-{}", std::process::id())))
+        Self(std::env::temp_dir().join(format!("install-tdl-{}", std::process::id())))
     }
 
     fn dir(&self) -> Outcome<&Path> {

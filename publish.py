@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Cross-build the Windows release into published/releases/, with THIRD_PARTY_LICENSES.txt, and Linux
-AppImages of tdl and tdl-install.
+AppImages of tdl and install-tdl.
 
 usage: python3 publish.py [--no-appimages]
 
-Needs cargo-license (cargo install cargo-license). published/releases/ gets tdl.exe, tdl-install.exe
+Needs cargo-license (cargo install cargo-license). published/releases/ gets tdl.exe, install-tdl.exe
 (the installer for UZDoom and Freedoom 2, from installer/), LICENSE,
 upgrade_legacy.py and the license text of every crate linked into the binary. Then appimage.py
-makes tdl.AppImage and tdl-install.AppImage there (needs mksquashfs;
+makes tdl.AppImage and install-tdl.AppImage there (needs mksquashfs;
 --no-appimages skips them). A crate that ships
 no license file gets its text from licenses/ instead (see licenses/README.md); the
 script fails, naming them, if any has none.
@@ -59,7 +59,7 @@ import appimage
 
 TARGET = "x86_64-pc-windows-gnu"
 # The workspace's own programs, shipped side by side
-PROGRAMS = ["tdl", "tdl-install"]
+PROGRAMS = ["tdl", "install-tdl"]
 OUT = os.path.join("published", "releases")
 # A crate that ships no license file gets its text from here
 KEPT = "licenses"

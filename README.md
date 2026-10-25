@@ -60,7 +60,7 @@ The profiles here are examples made for the screenshots.
 - [UZDoom](https://github.com/UZDoom/UZDoom) installed
 - A Doom base wad (e.g. `DOOM2.WAD`, or the free [Freedoom](https://freedoom.github.io/))
 
-[`tdl-install`](#the-installer) puts both UZDoom and Freedoom 2 in the `artifacts/` folder next to tdl.
+[`install-tdl`](#the-installer) puts both UZDoom and Freedoom 2 in the `artifacts/` folder next to tdl.
 - Python 3.8 or later, only to [upgrade the files of a tdl before 1.0.0](#upgrading-from-before-100) and to [host a mod folder](#mod-folders)
 
 ## Install
@@ -75,7 +75,7 @@ cargo +nightly build --release --features spooky  # or nightly, with its unstabl
 
 ### The installer
 
-`tdl-install` (`installer/`, built with `cargo build --release -p tdl-install`, and shipped beside `tdl.exe` in the Windows release) downloads UZDoom 5.0.3 and Freedoom 0.13.0, checks each against its size and hash, and puts them in an `artifacts/` folder beside tdl, so keep it next to tdl (or pass `--dir` with tdl's dir). tdl is the payload, the one thing at the top; everything else the installer makes is an artifact. Run in place from a project's `published/releases/`, the artifacts go in that project's `published/artifacts/` instead, and `--artifacts DIR` puts them anywhere:
+`install-tdl` (`installer/`, built with `cargo build --release -p install-tdl`, and shipped beside `tdl.exe` in the Windows release) downloads UZDoom 5.0.3 and Freedoom 0.13.0, checks each against its size and hash, and puts them in an `artifacts/` folder beside tdl, so keep it next to tdl (or pass `--dir` with tdl's dir). tdl is the payload, the one thing at the top; everything else the installer makes is an artifact. Run in place from a project's `published/releases/`, the artifacts go in that project's `published/artifacts/` instead, and `--artifacts DIR` puts them anywhere:
 
 ```
 artifacts/uzdoom/            UZDoom's own folder: the Windows release unpacked, or uzdoom.AppImage on Linux
