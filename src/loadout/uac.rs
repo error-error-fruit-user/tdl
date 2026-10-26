@@ -304,4 +304,64 @@ impl Uac {
         }
         self.save(path)
     }
+
+    /// Knows `song` from now on. A song known already that is a copy of it (the same file at
+    /// another place, as another install puts it) is the same song: it takes the new place,
+    /// where it was in the list, and the song playing follows.
+    pub fn know_song(&mut self, song: OsString) {
+        if self.songs.contains(&song) {
+            return;
+        }
+        match self
+            .songs
+            .iter()
+            .position(|known| same_song(Path::new(known), Path::new(&song)))
+        {
+            Some(copy) => {
+                if self.song.as_ref() == Some(&self.songs[copy]) {
+                    self.song = Some(song.clone());
+                }
+                self.songs[copy] = song;
+            }
+            None => self.songs.push(song),
+        }
+        self.forget_copies();
+    }
+
+    /// Forgets the copies among the songs it knows (the same file at another place), keeping the
+    /// one it came to know last; the song playing follows it. Whether anything was forgotten.
+    pub fn forget_copies(&mut self) -> bool {
+        let before = self.songs.len();
+        let mut index = self.songs.len();
+        while index > 0 {
+            index -= 1;
+            let kept = self.songs[index].clone();
+            let mut earlier = 0;
+            while earlier < index {
+                if same_song(Path::new(&self.songs[earlier]), Path::new(&kept)) {
+                    if self.song.as_ref() == Some(&self.songs[earlier]) {
+                        self.song = Some(kept.clone());
+                    }
+                    self.songs.remove(earlier);
+                    index -= 1;
+                } else {
+                    earlier += 1;
+                }
+            }
+        }
+        self.songs.len() != before
+    }
+}
+
+/// Whether two song files are copies of one song: other places holding the same bytes (their
+/// sizes first, so only a likely copy is read). A file that can't be read is no copy.
+pub fn same_song(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return false;
+    }
+    match (fs::metadata(a), fs::metadata(b)) {
+        (Ok(first), Ok(second)) if first.is_file() && first.len() == second.len() => {}
+        _ => return false,
+    }
+    matches!((fs::read(a), fs::read(b)), (Ok(first), Ok(second)) if first == second)
 }

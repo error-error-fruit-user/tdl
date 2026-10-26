@@ -260,6 +260,7 @@ impl Loadout {
                 Uac::default()
             }
         };
+        own.forget_copies();
         own.carry_over(&global);
         self.uac = own;
     }

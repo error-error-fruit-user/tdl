@@ -470,8 +470,17 @@ impl SettingsForm {
         };
         match music::check_song(&path) {
             Ok(_) => {
+                // a copy of a song it knows (the same file at another place) takes its place
                 if !self.settings.songs.contains(&path) {
-                    self.settings.songs.push(path.clone());
+                    match self
+                        .settings
+                        .songs
+                        .iter()
+                        .position(|known| crate::loadout::uac::same_song(known, &path))
+                    {
+                        Some(copy) => self.settings.songs[copy] = path.clone(),
+                        None => self.settings.songs.push(path.clone()),
+                    }
                 }
                 self.settings.song = Some(path);
             }

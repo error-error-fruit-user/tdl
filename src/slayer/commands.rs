@@ -606,9 +606,7 @@ fn settings(loadout: &mut Loadout, changes: &[String]) -> Outcome {
                     crate::music::use_song(Path::new(value))
                         .map_err(|problem| format!("song: {problem}"))?;
                     let song = file(value)?;
-                    if !uac.songs.contains(&song) {
-                        uac.songs.push(song.clone());
-                    }
+                    uac.know_song(song.clone());
                     Some(song)
                 }
             }

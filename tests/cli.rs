@@ -118,7 +118,8 @@ impl Drop for Altar {
 }
 
 /// The fake UZDoom, as a path.
-/// A song tdl can play, written into `dir`: a tenth of a second of silence as a PCM wav.
+/// A song tdl can play, written into `dir`: a tenth of a second of near silence as a PCM wav,
+/// its first sample its name's length, so songs of other names are other songs.
 fn song(dir: &std::path::Path, name: &str) -> String {
     let samples = 4410u32;
     let mut wav = Vec::new();
@@ -134,7 +135,8 @@ fn song(dir: &std::path::Path, name: &str) -> String {
     wav.extend(16u16.to_le_bytes());
     wav.extend(b"data");
     wav.extend((samples * 2).to_le_bytes());
-    wav.resize(wav.len() + samples as usize * 2, 0);
+    wav.extend((name.len() as u16).to_le_bytes());
+    wav.resize(wav.len() + (samples as usize - 1) * 2, 0);
     let path = dir.join(name);
     fs::write(&path, wav).unwrap();
     path.display().to_string()
@@ -550,6 +552,36 @@ fn setting_up() {
         .says("beauty.wav")
         .says("songs known")
         .says("lullaby.wav");
+    // the same song at another place, as another install of a map puts it: one song, at its new
+    // place, and the song playing follows it there
+    let again = super_user.dir.join("again");
+    fs::create_dir_all(&again).unwrap();
+    fs::copy(super_user.dir.join("beauty.wav"), again.join("beauty.wav")).unwrap();
+    let copy = super_user.dir.join("copy.toml");
+    fs::write(
+        &copy,
+        "loadout = \"local\"\nremember_loadout = false\nsongs = [\"again/beauty.wav\"]\n",
+    )
+    .unwrap();
+    super_user.tdl(&["setup", &copy.display().to_string()]);
+    let output = Command::new(env!("CARGO_BIN_EXE_tdl"))
+        .env("HOME", super_user.dir.join("home"))
+        .env("XDG_CONFIG_HOME", super_user.dir.join("home/.config"))
+        .args(["--session", "--loadout", &local, "cli", "settings"])
+        .output()
+        .unwrap();
+    let settings = Said { output };
+    let out = settings.out();
+    assert_eq!(
+        out.matches("beauty.wav").count(),
+        2,
+        "the song and one known, in\n{out}"
+    );
+    assert!(
+        out.contains("again/beauty.wav"),
+        "the copy's place isn't known in\n{out}"
+    );
+    settings.says("lullaby.wav");
     // 🗑️ garbage: keys that aren't, TOML that isn't, files that aren't there, a profile with no name
     let garbage = Altar::new("setup-garbage");
     let write = |name: &str, text: &str| {

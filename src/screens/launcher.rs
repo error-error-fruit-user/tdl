@@ -283,7 +283,7 @@ impl Launcher {
         let uac_path = Uac::path(standard_config_dir);
         let mut notices = Vec::new();
         let mut uac_writable = true;
-        let global = match Uac::load(&uac_path) {
+        let mut global = match Uac::load(&uac_path) {
             Loaded::Fine(global) => global,
             Loaded::Missing => Uac::default(),
             Loaded::Restored(global) => {
@@ -299,6 +299,8 @@ impl Launcher {
                 Uac::default()
             }
         };
+        // 🎵 the same song known at two places (two installs' copies) is known once
+        global.forget_copies();
         let passed_loadout = start.loadout.as_deref().map(absolute);
         let kept_loadout = global.loadout.as_ref().map(PathBuf::from).filter(|kept| {
             if start.forget_loadout.is_on() {
@@ -674,22 +676,23 @@ impl Launcher {
             return Ok(());
         }
         let uac = &mut self.loadout.uac;
-        for song in &made.songs {
-            let song = song.clone().into_os_string();
-            if !uac.songs.contains(&song) {
-                uac.songs.push(song);
-            }
-        }
+        // the song first, so it follows a copy it is of to where that copy is known
         if let Some(song) = &made.song {
             uac.song = song.clone().map(PathBuf::into_os_string);
         }
+        for song in &made.songs {
+            uac.know_song(song.clone().into_os_string());
+        }
+        let playing = uac.song.clone().map(PathBuf::from);
         self.loadout
             .keep_uac()
             .map_err(|error| format!("Could not keep the songs: {error}"))?;
-        match &made.song {
-            Some(Some(song)) => ritual::murmur(format!("Playing {} from now on", song.display())),
-            Some(None) => ritual::murmur("Playing the built-in track from now on"),
-            None => {}
+        match (&made.song, playing) {
+            (Some(Some(_)), Some(song)) => {
+                ritual::murmur(format!("Playing {} from now on", song.display()))
+            }
+            (Some(_), _) => ritual::murmur("Playing the built-in track from now on"),
+            (None, _) => {}
         }
         Ok(())
     }
