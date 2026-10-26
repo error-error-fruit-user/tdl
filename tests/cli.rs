@@ -582,6 +582,38 @@ fn setting_up() {
         "the copy's place isn't known in\n{out}"
     );
     settings.says("lullaby.wav");
+    // a loadout with settings of its own: what its setup keeps is the loadout's alone
+    song(&super_user.dir, "own.wav");
+    let own = super_user.dir.join("own.toml");
+    fs::write(
+        &own,
+        "loadout = \"own\"\nremember_loadout = false\nown_settings = true\nsong = \"own.wav\"\n",
+    )
+    .unwrap();
+    super_user
+        .tdl(&["setup", &own.display().to_string()])
+        .says("own.wav from now on");
+    let settings_of = |loadout: &str| {
+        let output = Command::new(env!("CARGO_BIN_EXE_tdl"))
+            .env("HOME", super_user.dir.join("home"))
+            .env("XDG_CONFIG_HOME", super_user.dir.join("home/.config"))
+            .args(["--session", "--loadout"])
+            .arg(super_user.dir.join(loadout))
+            .args(["cli", "settings"])
+            .output()
+            .unwrap();
+        Said { output }.out()
+    };
+    let mine = settings_of("own");
+    assert!(
+        mine.contains("own.wav"),
+        "the loadout's own song isn't in\n{mine}"
+    );
+    let global = settings_of("local");
+    assert!(
+        !global.contains("own.wav"),
+        "the global settings took the song:\n{global}"
+    );
     // 🗑️ garbage: keys that aren't, TOML that isn't, files that aren't there, a profile with no name
     let garbage = Altar::new("setup-garbage");
     let write = |name: &str, text: &str| {

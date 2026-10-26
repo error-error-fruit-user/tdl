@@ -651,6 +651,17 @@ impl Launcher {
     /// windows; what couldn't be kept is an error.
     pub fn setup_plain(start: Start, made: &crate::setup::Made) -> std::result::Result<(), String> {
         let mut launcher = Self::open_plain(start)?;
+        // 🏠 settings of the loadout's own first, so everything the setup keeps is kept there
+        if let Some(own) = made.own_settings
+            && own != launcher.loadout.config.own_settings
+        {
+            let other = launcher.loadout.other_settings();
+            let in_use = launcher.loadout.uac.clone();
+            launcher
+                .loadout
+                .use_settings(own, other, &in_use)
+                .map_err(|error| format!("Could not switch the loadout's settings: {error}"))?;
+        }
         launcher.use_session_files();
         if let Some(path) = launcher.session_base_wad.take() {
             let wad = Wad::hashed(&path, &mut ())

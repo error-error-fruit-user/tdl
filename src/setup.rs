@@ -9,6 +9,8 @@
 //! splash = "my_splash.toml"    # a name, or a splash.toml
 //! loadout = "~/doom/loadout"   # the loadout to open every time
 //! remember_loadout = false     # ...or only to set up now, leaving the one tdl opens alone
+//! own_settings = true          # the loadout keeps settings of its own (its settings.rite), so
+//!                              # what this keeps is the loadout's alone, the global ones left be
 //! wads = ["wads", "~/doom"]    # wad dirs, kept for every loadout
 //! song = "songs/mine.wav"      # the song that plays ("none": the built-in track); tdl knows it
 //! songs = ["songs/other.ogg"]  # more songs tdl knows, gone round in the settings
@@ -56,6 +58,7 @@ struct Setup {
     #[serde(default)]
     profiles: Vec<Profile>,
     remember_loadout: Option<bool>,
+    own_settings: Option<bool>,
     uzdoom: Option<String>,
     base_wad: Option<String>,
     ini: Option<String>,
@@ -74,6 +77,8 @@ struct Setup {
 #[derive(Debug, Default)]
 pub struct Made {
     pub profiles: Vec<Profile>,
+    /// Whether the loadout keeps settings of its own (then what the setup keeps is kept there).
+    pub own_settings: Option<bool>,
     /// The song to play: `Some(None)` for the built-in track.
     pub song: Option<Option<PathBuf>>,
     /// The songs tdl is to know (the song among them).
@@ -204,6 +209,7 @@ pub fn read(given: Option<PathBuf>, cli: &mut Cli) -> Result<(PathBuf, Made), St
         path,
         Made {
             profiles,
+            own_settings: setup.own_settings,
             song,
             songs,
         },
