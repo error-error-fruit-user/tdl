@@ -5,11 +5,9 @@ edition = "2024"
 rust-version = "1.99.1"
 license = "0BSD"
 
-# 📦 `install-tdl` (installer/) installs tdl with UZDoom and Freedoom 2; installation-groans (the
-# submodule, its library) is a workspace of its own
+# 📦 `install-tdl` (installer/) installs tdl with UZDoom and Freedoom 2
 [workspace]
 members = ["installer"]
-exclude = ["installation-groans"]
 
 [features]
 # Builds with nightly Rust's unstable features (`associated_type_defaults`, for `Ritual::Tea`, and

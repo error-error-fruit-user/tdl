@@ -26,12 +26,11 @@ GROANS_GITHUB = "https://raw.githubusercontent.com/error-error-fruit-user/instal
 
 
 def load_groans():
-    """installation-groans' groans.py, which these scripts speak through: the project's
-    installation-groans submodule, else the workspace's checkout beside the project, else a copy
+    """installation-groans' groans.py, which these scripts speak through: the workspace's
+    checkout beside the project, else a copy
     fetched from its GitHub into published/artifacts/groans/."""
     project = os.path.dirname(os.path.abspath(__file__))
-    places = [os.path.join(project, "installation-groans"),
-              os.path.join(os.path.dirname(project), "installation-groans"),
+    places = [os.path.join(os.path.dirname(project), "installation-groans"),
               os.path.join(project, "published", "artifacts", "groans")]
     folder = next((place for place in places if os.path.isfile(os.path.join(place, "groans.py"))), None)
     if folder is None:

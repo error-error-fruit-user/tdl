@@ -7,5 +7,5 @@ license = "0BSD"
 description = "Installs tdl, with UZDoom and Freedoom 2 beside it"
 
 [dependencies]
-# the installers' library, from tdl's installation-groans submodule
-installation-groans = { path = "../installation-groans" }
+# the installers' library (the workspace's checkout stands in for it: ../.cargo/config.toml)
+installation-groans = { git = "https://github.com/error-error-fruit-user/installation-groans.git" }
