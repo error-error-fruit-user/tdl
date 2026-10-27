@@ -996,12 +996,29 @@ dependencies = [
 name = "install-tdl"
 version = "1.0.0"
 dependencies = [
+ "installation-groans",
+]
+
+[[package]]
+name = "installation-groans"
+version = "0.1.0"
+dependencies = [
  "blake3",
- "clap",
+ "installation-groans-macros",
+ "ratatui",
  "regex-lite",
  "toml",
  "ureq",
  "zip",
+]
+
+[[package]]
+name = "installation-groans-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

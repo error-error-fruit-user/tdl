@@ -4,15 +4,16 @@
 usage: python3 publish-install.py [--accept] [--no-build | --source] [install-tdl options]
 
 First it says, under a red warning, exactly what it will do, and asks once: "Are you sure? [y/n]".
-The answer can carry any of its flags after the y (`y --mode user --menu-entry`), which win over
+The answer can carry any of its flags after the y (`y --user-wide --menu-entry`), which win over
 the same flags on the command line; --accept goes ahead without asking, with what the command line
 says and the defaults for the rest (no shortcuts among them). Then it builds the release with
 publish.py (tdl and install-tdl for Windows and as AppImages, into published/releases/), or with
 --source only tdl and install-tdl for this machine (cargo build --release), or with --no-build
-nothing at all; and runs the install-tdl in published/releases/, which copies the tdl beside it
-where --mode says (in place by default), puts UZDoom and Freedoom 2 in its artifacts/ folder
-(published/artifacts/ in place) and points tdl at them. --mode, --dir, --no-uzdoom,
---no-freedoom, --no-link, --desktop-shortcut and --menu-entry go to install-tdl (see its --help).
+nothing at all; and runs the install-tdl in published/releases/, which installs the tdl beside it
+where --locally or --user-wide says (one of them is needed: without it, nothing is done), puts
+UZDoom and Freedoom 2 in its artifacts/ folder (published/artifacts/ in place), points tdl at them
+and opens it. --locally, --user-wide, --dir, --no-uzdoom, --no-freedoom, --no-setup, --no-play,
+--desktop-shortcut and --menu-entry go to install-tdl (see its --help).
 
 It speaks in a voice from ../installation-groans (Toiling Through Hell, or --computer-speak), and
 everything it and what it runs did is in published/artifacts/publish-install.log.
@@ -101,8 +102,19 @@ def check_owner(folders):
                              f"nothing can replace it. Take it back with:\n  {fix}")
 
 
+def mode(args):
+    """Where to install: "in-place" (--locally), "user" (--user-wide), or None until one is given."""
+    return "in-place" if args.locally else "user" if args.user_wide else None
+
+
 def plan(args):
-    """What saying yes does, step by step."""
+    """What saying yes does, step by step; until it is told where, that it must be."""
+    if mode(args) is None:
+        user = "%LOCALAPPDATA%\\Programs\\tdl" if WINDOWS else "~/.local/opt/tdl"
+        return ["Say where to install tdl, here after the y or on the command line:",
+                "  --locally    in place, in published/releases/",
+                f"  --user-wide  for you only, in {user}",
+                "One of them is needed: without it, nothing is done."]
     lines = ["Saying yes will:"]
     if args.no_build:
         lines.append("  - build nothing, and install what published/releases/ has now")
@@ -122,10 +134,10 @@ def plan(args):
                  if not WINDOWS else
                  "    - copies tdl to %LOCALAPPDATA%\\Programs\\tdl (or --dir) and puts it on your PATH"),
     }
-    lines.append(where[args.mode])
+    lines.append(where[mode(args)])
     if args.dir:
         art = "artifacts/ in --dir"
-    elif args.mode == "in-place":
+    elif mode(args) == "in-place":
         art = "published/artifacts/"
     else:
         art = "artifacts/ beside tdl"
@@ -138,18 +150,20 @@ def plan(args):
                      "artifacts")
     kept = [name for name, left_out in (("UZDoom", args.no_uzdoom), ("freedoom2.wad", args.no_freedoom))
             if not left_out]
-    if kept and not args.no_link:
+    if kept and not args.no_setup:
         lines.append(f"    - keeps that {' and '.join(kept)} as tdl's global "
                      f"{'ones' if len(kept) > 1 else 'one'}, in your tdl settings")
     for flag, where_to in (("desktop_shortcut", "a shortcut on your desktop"),
                            ("menu_entry", "an entry in your app menu")):
         if getattr(args, flag):
             lines.append(f"    - makes {where_to} for tdl, with the system's lock icon")
+    if not args.no_play:
+        lines.append("    - opens tdl at the end, once you press Enter")
     lines.append("    - leaves alone what is there already")
     lines.append("")
     lines.append("To change that, here or after the y: --no-build installs what is published already, "
-                 "--source builds only for this machine, --no-uzdoom, --no-freedoom and --no-link "
-                 "leave those out, --mode in-place|user and --dir say where, "
+                 "--source builds only for this machine, --no-uzdoom, --no-freedoom, --no-setup and "
+                 "--no-play leave those out, --locally or --user-wide and --dir say where, "
                  "--desktop-shortcut and --menu-entry make shortcuts, --reinstall does it all again, and --computer-speak speaks "
                  "plainly.")
     return lines
@@ -202,11 +216,17 @@ def parser():
     build_how.add_argument("--source", action="store_true",
                            help="build tdl and install-tdl for this machine only (cargo build --release)")
     passed = flags.add_argument_group("passed to install-tdl")
-    passed.add_argument("--mode", choices=["in-place", "user"], default="in-place")
+    where = passed.add_mutually_exclusive_group()
+    where.add_argument("--locally", action="store_true",
+                       help="install in place, in published/releases/ (this or --user-wide is needed)")
+    where.add_argument("--user-wide", action="store_true",
+                       help="install for you only (this or --locally is needed)")
     passed.add_argument("--dir")
     passed.add_argument("--no-uzdoom", action="store_true")
     passed.add_argument("--no-freedoom", action="store_true")
-    passed.add_argument("--no-link", action="store_true")
+    passed.add_argument("--no-setup", action="store_true",
+                        help="don't keep UZDoom and Freedoom 2 as tdl's (tdl setup)")
+    passed.add_argument("--no-play", action="store_true", help="don't open tdl at the end")
     passed.add_argument("--desktop-shortcut", action="store_true",
                         help="make a shortcut to tdl on the desktop")
     passed.add_argument("--menu-entry", action="store_true",
@@ -240,15 +260,19 @@ def main():
         # 🥇 the flags given with the y win over the command line's
         args = flags.parse_args(sys.argv[1:] + added)
         groans.note(f"with the flags given at the question: {' '.join(added)}")
+    if mode(args) is None:
+        groans.note("no --locally or --user-wide: nothing was done")
+        sys.exit("Nothing was done: say where to install it, with --locally or --user-wide.")
     check_owner([folder for folder in (os.path.join(HERE, "published"),) if os.path.isdir(folder)])
     build(args)
     groans.section("install")
-    command = [installer(), "--accept", "--mode", args.mode]
+    command = [installer(), "--accept", "--locally" if mode(args) == "in-place" else "--user-wide"]
     if args.dir:
         command += ["--dir", args.dir]
     command += [flag for flag, on in (("--no-uzdoom", args.no_uzdoom),
                                       ("--no-freedoom", args.no_freedoom),
-                                      ("--no-link", args.no_link),
+                                      ("--no-setup", args.no_setup),
+                                      ("--no-play", args.no_play),
                                       ("--reinstall", args.reinstall),
                                       ("--desktop-shortcut", args.desktop_shortcut),
                                       ("--menu-entry", args.menu_entry)) if on]
